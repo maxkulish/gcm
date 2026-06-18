@@ -54,6 +54,7 @@ and there is no single place that knows the full bootstrap recipe.
 | Architecture | Orchestrator command + subcommands; parallel subagent fan-out |
 | Interaction | All Q&A front-loaded into one preflight pass |
 | CI flavor | GitHub Actions + optional GHCR (from `real-estate-nl`), not GitLab |
+| Entry point | **`/repo-init:orchestrate`** - bare `/repo-init` + same-named subdir is an unsupported edge case (confirmed against Claude Code docs) |
 
 ## Reference repos (analyzed, grounding the templates)
 
@@ -81,24 +82,26 @@ Commands live in the global commands dir (`~/.claude/commands/`) so they are reu
 across every project:
 
 ```
-~/.claude/commands/
-├── repo-init.md                  # /repo-init  - orchestrator
-└── repo-init/
-    ├── scaffold.md               # /repo-init:scaffold - render stack template set (fresh only)
-    ├── claude.md                 # /repo-init:claude   - migrate .claude (non-interactive cmd:create)
-    ├── pi.md                     # /repo-init:pi       - migrate .pi + .lok + lok.toml (+ npm install)
-    ├── docs.md                   # /repo-init:docs     - mirror docs/ structure + AI-AGENTS.md from reference
-    ├── verify.md                 # /repo-init:verify   - build/test/lint + leftover-value scan
-    └── templates/
-        ├── golang/               # authored (minimal, .tmpl files)
-        ├── rust-ts/              # stub
-        └── python/               # stub
+~/.claude/commands/repo-init/
+├── orchestrate.md            # /repo-init:orchestrate - orchestrator (entry point)
+├── scaffold.md               # /repo-init:scaffold - render stack template set (fresh only)
+├── claude.md                 # /repo-init:claude   - migrate .claude (non-interactive cmd:create)
+├── pi.md                     # /repo-init:pi       - migrate .pi + .lok + lok.toml (+ npm install)
+├── docs.md                   # /repo-init:docs     - mirror docs/ structure + AI-AGENTS.md from reference
+├── verify.md                 # /repo-init:verify   - build/test/lint + leftover-value scan
+└── templates/                # .tmpl only - never .md, so nothing here registers as a command
+    ├── golang/               # authored (minimal, .tmpl files)
+    ├── rust-ts/              # stub (STUB.tmpl)
+    └── python/               # stub (STUB.tmpl)
 ```
 
 Each stage `.md` is the **single source of truth** for that stage. It is both (a) a
 standalone subcommand the user can run by hand (`/repo-init:pi`) and (b) the instruction
-file the orchestrator hands to a subagent. Template files use the `.tmpl` suffix so the
-command loader ignores them (same pattern as `/go:project-init`).
+file the orchestrator hands to a subagent. Only `.md` files register as commands, so all
+template/support files use a non-`.md` suffix (`.tmpl`) - same pattern as `/go:project-init`.
+There is **no** bare top-level `repo-init.md`; the orchestrator is `repo-init/orchestrate.md`
+(→ `/repo-init:orchestrate`) because a top-level file cannot safely coexist with a
+same-named command directory.
 
 ### Config manifest
 
@@ -138,7 +141,11 @@ go_version: "1.26"
    orchestrator appends the line to the existing `.gitignore` after the barrier. This
    avoids two writers touching `.gitignore`.
 4. **Fan out** the active stages as parallel subagents (single message, multiple Task
-   calls). Output paths are disjoint, so no worktree isolation is needed:
+   calls). The orchestrator (the main agent following the command) dispatches the subagents
+   via the Task tool - the same pattern `task:orchestrate` relies on, though not separately
+   documented - handing each subagent the relevant `repo-init/<stage>.md` plus the manifest
+   path. If parallel dispatch proves unreliable, the stages run sequentially (same files,
+   same outcome, slower). Output paths are disjoint, so no worktree isolation is needed:
 
    | Stage | Owns (writes only here) | Source |
    |-------|-------------------------|--------|
@@ -206,17 +213,47 @@ reference, the concrete strings to rewrite:
 
 ## Verification / acceptance criteria
 
-Acceptance = run `/repo-init` against `gcm` (Go, fresh) end-to-end and confirm:
+Acceptance = run `/repo-init:orchestrate` against `gcm` (Go, fresh) end-to-end and confirm:
 - `go build ./...` and `go test ./...` succeed.
 - `.claude/`, `.pi/`, `.lok/`, `docs/` present and populated.
 - Zero leftover `lok`/`lokomotiv`/`CLO`/`cloud-ai` occurrences.
 - `CLAUDE.md` < 60 lines.
 - Re-running a single stage (e.g. `/repo-init:docs`) is idempotent.
 
-Secondary: run `/repo-init` against the existing Rust project → retrofit mode detected,
+Secondary: run `/repo-init:orchestrate` against the existing Rust project → retrofit mode detected,
 scaffold skipped, tooling + docs applied, project still builds.
 
 A `--dry-run` flag prints the planned actions and file list without writing.
+
+## User-level installation & verification
+
+The `/repo-init:*` suite installs at the **user level** (`~/.claude/commands/repo-init/`), so
+it is available from every project, not just `gcm`. This is a first-class requirement.
+
+**Command-loading rules (confirmed against Claude Code docs):**
+- Entry point is **`/repo-init:orchestrate`**. A bare top-level `repo-init.md` coexisting with
+  a same-named `repo-init/` directory is an unsupported/undocumented edge case, so it is
+  avoided; the orchestrator lives at `repo-init/orchestrate.md`, matching the proven
+  `task/orchestrate.md` → `/task:orchestrate` pattern.
+- Nested paths namespace with colons: `repo-init/scaffold.md` → `/repo-init:scaffold`.
+- Only `.md` files register as commands; template/support files use `.tmpl` so nothing under
+  `templates/**` registers - including stubs (`STUB.tmpl`, never `STUB.md`).
+- User-level commands override project-level on a name clash and operate on the **target
+  repo's CWD** (`$PWD`) - exactly what bootstrap needs.
+- Files added under the existing `~/.claude/commands/` dir are picked up **within the
+  session** via `/reload-skills` (a full restart is only needed for a brand-new top-level
+  dir, which this is not).
+
+**Verification method ("does it work at user level?")**: after authoring the files, run
+`/reload-skills`; confirm `/repo-init:orchestrate` and every `/repo-init:<stage>` appear in
+the command list; invoke `/repo-init:orchestrate` from an unrelated project dir and confirm it
+writes to that project's CWD; confirm no file under `templates/**` appears as a command.
+
+Acceptance criteria for user-level operation:
+- `/repo-init:orchestrate` and every `/repo-init:<stage>` are listed and invocable from an
+  unrelated project's working directory.
+- No file under `~/.claude/commands/repo-init/templates/**` registers as a command.
+- Running the orchestrator from inside a target repo writes to `$PWD`, not to `~/.claude`.
 
 ## Stubs (Rust+TS, Python)
 
