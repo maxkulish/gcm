@@ -1,0 +1,246 @@
+name = "spec-review"
+description = "Multi-model specification review with output validation, health-check, and Claude fallback"
+
+# Args:
+#   {{ arg.1 }}  spec path
+#   {{ arg.2 }}  slug (used in output filenames)
+#   {{ arg.3 }}  Linear title
+#   {{ arg.4 }}  Linear description
+#   {{ arg.5 }}  Linear labels
+
+# Step 1: Pre-flight health check - probe reviewer binaries
+[[steps]]
+name = "health_check"
+timeout = "30s"
+continue_on_error = true
+shell = '''
+OLLAMA_OK=false
+GEMINI_OK=false
+
+if command -v ollama >/dev/null 2>&1; then
+  OLLAMA_OK=true
+fi
+
+if timeout 15 opencode run "reply OK" --model "google/${GEMINI_MODEL:-gemini-3.5-flash}" --dangerously-skip-permissions 2>/dev/null | grep -qi "ok"; then
+  GEMINI_OK=true
+fi
+
+echo "ollama=$OLLAMA_OK gemini=$GEMINI_OK"
+'''
+
+# Step 2: Gemini spec review
+[[steps]]
+name = "gemini_review"
+timeout = "5m"
+retries = 3
+continue_on_error = true
+depends_on = ["health_check"]
+shell = """
+PROMPT=$(sed \
+  -e 's|__SPEC_PATH__|{{ arg.1 }}|g' \
+  -e 's|__LINEAR_TITLE__|{{ arg.3 }}|g' \
+  -e 's|__LINEAR_DESC__|{{ arg.4 }}|g' \
+  -e 's|__LINEAR_LABELS__|{{ arg.5 }}|g' \
+  .lok/prompts/spec-review-prompt.md)
+
+OUTPUT=$(timeout 300 opencode run "$PROMPT" \
+  --model "google/${GEMINI_MODEL:-gemini-3.5-flash}" \
+  --dangerously-skip-permissions \
+  --dir "$PWD" 2>/tmp/lok-opencode-spec-stderr.log)
+
+if [ -z "$OUTPUT" ] || [ $(printf '%s' "$OUTPUT" | wc -c) -lt 100 ]; then
+  STDERR=$(head -5 /tmp/lok-opencode-spec-stderr.log 2>/dev/null || echo "no stderr")
+  echo "REVIEW_FAILED: Empty output from opencode/Gemini (stderr: $STDERR)"
+  exit 0
+fi
+
+echo "$OUTPUT"
+"""
+
+[steps.validate]
+check = "min_length(200)"
+backend = "claude"
+model = "haiku"
+replace_output = true
+max_input_length = 100000
+timeout_ms = 60000
+on_error = "pass"
+prompt = """
+{{ output }}
+
+---
+
+You are a review output validator. Determine whether the text ABOVE contains an actual structured specification review.
+
+VALID review: has numbered sections (## 1., ## 2.), assessment of problem statement, acceptance criteria, constraints, decomposition, a verdict (APPROVE / APPROVE_WITH_SUGGESTIONS / NEEDS_REVISION), actionable feedback.
+
+NOISE: MCP initialization messages ("Registering notification handlers", "YOLO mode"), timestamps only, stack traces, empty content, lines starting with REVIEW_FAILED.
+
+Respond with a JSON object on a single line:
+- If valid: {"status": "pass", "output": "<the cleaned review, with leading/trailing noise stripped>"}
+- If not valid: {"status": "fail", "reason": "<one-line reason>"}
+"""
+
+# Step 3: Ollama/Codex spec review
+[[steps]]
+name = "ollama_review"
+timeout = "5m"
+retries = 3
+continue_on_error = true
+depends_on = ["health_check"]
+shell = """
+PROMPT=$(sed \
+  -e 's|__SPEC_PATH__|{{ arg.1 }}|g' \
+  -e 's|__LINEAR_TITLE__|{{ arg.3 }}|g' \
+  -e 's|__LINEAR_DESC__|{{ arg.4 }}|g' \
+  -e 's|__LINEAR_LABELS__|{{ arg.5 }}|g' \
+  .lok/prompts/spec-review-prompt.md)
+
+OUTPUT=$(env -u CLAUDECODE timeout 300 ollama launch codex --model "${OLLAMA_MODEL:-glm-5:cloud}" -- \
+  exec "$PROMPT" \
+  --sandbox read-only \
+  --oss --local-provider ollama \
+  --ephemeral 2>/tmp/lok-ollama-spec-stderr.log)
+
+if [ -z "$OUTPUT" ] || [ $(printf '%s' "$OUTPUT" | wc -c) -lt 100 ]; then
+  STDERR=$(head -5 /tmp/lok-ollama-spec-stderr.log 2>/dev/null || echo "no stderr")
+  echo "REVIEW_FAILED: Empty output from Ollama/Codex (stderr: $STDERR)"
+  exit 0
+fi
+
+echo "$OUTPUT"
+"""
+
+[steps.validate]
+check = "min_length(200)"
+backend = "claude"
+model = "haiku"
+replace_output = true
+max_input_length = 100000
+timeout_ms = 60000
+on_error = "pass"
+prompt = """
+{{ output }}
+
+---
+
+You are a review output validator. Determine whether the text ABOVE contains an actual structured specification review.
+
+VALID review: numbered sections, assessment language, verdict, actionable feedback.
+NOISE: empty, timestamps only, error messages, partial output, lines starting with REVIEW_FAILED.
+
+Respond with a JSON object on a single line:
+- If valid: {"status": "pass", "output": "<the cleaned review, with leading/trailing noise stripped>"}
+- If not valid: {"status": "fail", "reason": "<one-line reason>"}
+"""
+
+# Step 4: Claude fallback - runs only when both external reviewers failed
+[[steps]]
+name = "claude_fallback"
+backend = "claude"
+timeout = "5m"
+retries = 2
+continue_on_error = true
+depends_on = ["gemini_review", "ollama_review"]
+min_deps_success = 0
+when = "(not steps.gemini_review.success or 'REVIEW_FAILED' in steps.gemini_review.output) and (not steps.ollama_review.success or 'REVIEW_FAILED' in steps.ollama_review.output)"
+prompt = """
+Both external reviewers (Gemini and Ollama/Codex) failed. You are the fallback specification reviewer.
+
+Read the spec at {{ arg.1 }} and produce a structured review covering:
+
+## 1. Problem Statement
+## 2. Acceptance Criteria
+## 3. Constraints & Assumptions
+## 4. Decomposition / Phases
+## 5. Risks & Open Questions
+
+Linear context:
+- Title: {{ arg.3 }}
+- Description: {{ arg.4 }}
+- Labels: {{ arg.5 }}
+
+## Verdict
+APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION
+
+## Priority Actions
+Ordered by severity.
+"""
+
+# Step 5: Synthesize
+[[steps]]
+name = "synthesis"
+backend = "claude"
+retries = 3
+depends_on = ["gemini_review", "ollama_review", "claude_fallback"]
+min_deps_success = 0
+when = "steps.gemini_review.success or steps.ollama_review.success or steps.claude_fallback.success"
+prompt = """
+You are synthesizing findings from multiple AI spec reviewers.
+
+GEMINI REVIEW (success={{ steps.gemini_review.success }}):
+{{ steps.gemini_review.output }}
+
+OLLAMA REVIEW (success={{ steps.ollama_review.success }}):
+{{ steps.ollama_review.output }}
+
+CLAUDE FALLBACK:
+{% if steps.claude_fallback is defined %}{{ steps.claude_fallback.output }}{% else %}SKIPPED - at least one external reviewer succeeded{% endif %}
+
+INSTRUCTIONS:
+- If all reviewers contain REVIEW_FAILED, return exactly: NO_REVIEWS_AVAILABLE
+- If only one source is valid, synthesize from it. Note which failed.
+- If multiple are valid, cross-reference into:
+
+## Agreement (High Confidence)
+| # | Finding | Severity |
+|---|---------|----------|
+
+## Disagreement (Needs Human Decision)
+| # | Topic | Gemini Position | Ollama Position | Claude Position |
+|---|-------|-----------------|-----------------|-----------------|
+
+## Novel Insights (Single Reviewer)
+| # | Finding | Source | Severity |
+|---|---------|--------|----------|
+
+## Consolidated Verdict
+ANY NEEDS_REVISION -> NEEDS_REVISION. All APPROVE -> APPROVE. Otherwise -> APPROVE_WITH_SUGGESTIONS.
+
+## Priority Actions
+Ordered by severity, agreement items first.
+"""
+
+# Step 6: Write review files
+[[steps]]
+name = "write_reviews"
+depends_on = ["gemini_review", "ollama_review", "claude_fallback", "synthesis"]
+min_deps_success = 0
+shell = """
+mkdir -p docs/reviews
+REVIEW_DATE=$(date +%Y-%m-%d)
+
+printf '%s\n' '# Spec Review: {{ arg.2 }}' '' '**Reviewer**: Gemini 3.5 Flash' "**Reviewed**: $REVIEW_DATE" '**Pipeline**: lok spec-review' '' '---' '' > docs/reviews/{{ arg.2 }}-spec-review-gemini.md
+cat >> docs/reviews/{{ arg.2 }}-spec-review-gemini.md << 'ENDGEMINI'
+{{ steps.gemini_review.output }}
+ENDGEMINI
+
+printf '%s\n' '# Spec Review: {{ arg.2 }}' '' '**Reviewer**: Codex via Ollama (glm-5:cloud)' "**Reviewed**: $REVIEW_DATE" '**Pipeline**: lok spec-review' '' '---' '' > docs/reviews/{{ arg.2 }}-spec-review-ollama.md
+cat >> docs/reviews/{{ arg.2 }}-spec-review-ollama.md << 'ENDOLLAMA'
+{{ steps.ollama_review.output }}
+ENDOLLAMA
+
+{% if steps.claude_fallback is defined %}
+printf '%s\n' '# Spec Review: {{ arg.2 }}' '' '**Reviewer**: Claude (fallback)' "**Reviewed**: $REVIEW_DATE" '**Pipeline**: lok spec-review' '**Note**: Both external reviewers failed; this is the fallback review' '' '---' '' > docs/reviews/{{ arg.2 }}-spec-review-claude-fallback.md
+cat >> docs/reviews/{{ arg.2 }}-spec-review-claude-fallback.md << 'ENDCLAUDE'
+{{ steps.claude_fallback.output }}
+ENDCLAUDE
+{% endif %}
+
+printf '%s\n' '# Spec Review Synthesis: {{ arg.2 }}' '' "**Synthesized**: $REVIEW_DATE" '**Pipeline**: lok spec-review' '' '---' '' > docs/reviews/{{ arg.2 }}-spec-review-synthesis.md
+cat >> docs/reviews/{{ arg.2 }}-spec-review-synthesis.md << 'ENDSYNTH'
+{{ steps.synthesis.output }}
+ENDSYNTH
+
+echo "Spec reviews written to docs/reviews/{{ arg.2 }}-spec-review-*.md"
+"""

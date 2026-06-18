@@ -1,0 +1,4 @@
+{
+  "autoStart": ["rust", "typescript"],
+  "autoInjectDiagnostics": ["rust", "typescript"]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "pi-task-orchestrator-gcm",
+  "version": "1.0.0",
+  "description": "Task lifecycle orchestrator for the gcm project (CLO / Linear)",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {},
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.72.1",
+    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-tui": "^0.70.5",
+    "js-yaml": "^4.1.0",
+    "typebox": "^1.1.24"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0"
+  }
+}

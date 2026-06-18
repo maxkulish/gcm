@@ -1,0 +1,143 @@
+# Workflow State File Template
+# Location: docs/status/clo-XX-workflow.yaml
+# Purpose: Persist workflow state between sessions for task orchestration
+#
+# This file is created and managed by /task:orchestrate
+# Do not edit manually unless debugging workflow issues
+
+# Task identification
+task_id: CLO-XX
+linear_url: https://linear.app/cloud-ai/issue/CLO-XX
+title: "[Task title from Linear]"
+branch: feat/clo-XX-short-desc
+task_type: development  # development | specification | operational
+created: "2024-01-01T00:00:00Z"
+
+# Current workflow state
+workflow:
+  # Possible phases: design | spec | plan | implement | pr | complete
+  current_phase: design
+
+  # Possible statuses:
+  #   awaiting_input - waiting for user action/input
+  #   in_progress - actively executing
+  #   checkpoint - paused for user validation
+  #   complete - phase or workflow finished
+  #   blocked - cannot proceed due to error/blocker
+  status: awaiting_input
+
+# Individual phase states
+phases:
+  design:
+    # Status: pending | in_progress | checkpoint | complete | skipped
+    status: pending
+    # Path to design document when created
+    design_doc: null
+    # Whether draft is ready for review
+    draft_ready: false
+    # Whether design is finalized and approved
+    finalized: false
+    # Discovery probe tracking
+    probe_completed: false
+    probe_decision: null  # design | ops | pivot | skip
+    # AI review tracking (per-model)
+    review_gemini: null     # Path to Gemini review file
+    review_ollama: null     # Path to Ollama review file
+    review_verdict: null    # APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION (strictest of both)
+    review_completed: false # Whether AI review ran successfully
+    # Review feedback application tracking
+    review_applied: false
+    applied_suggestions: []  # List of suggestions that were auto-applied
+    flagged_suggestions: []  # List of contradicting items with user resolution
+
+  spec:
+    # Only used for specification task type
+    status: pending
+    spec_file: null
+    approved: false
+
+  plan:
+    status: pending
+    # Path to plan file when created
+    plan_file: null
+    # Whether plan has been approved for implementation
+    approved: false
+
+  implement:
+    status: pending
+    # Current step number (1-indexed)
+    current_step: 0
+    # Total steps in plan
+    total_steps: 0
+    # List of commit SHAs created during implementation
+    commits: []
+    # Name of last completed implementation phase
+    last_phase_completed: null
+    # Codex/Gemini validation gate tracking
+    codex_validated: false
+    codex_verdict: null       # PASS | PASS_WITH_NOTES | FAIL
+    codex_report: null        # Path to Codex validation report
+    gemini_validation_report: null  # Path to Gemini validation report
+
+  pr:
+    status: pending
+    # GitHub PR URL
+    pr_url: null
+    # GitHub PR number
+    pr_number: null
+    # Count of review rounds addressed
+    reviews_addressed: 0
+    # Whether PR has final approval
+    approved: false
+    # Pre-flight CI check tracking
+    ci_passed: false
+
+  complete:
+    status: pending
+    # Whether PROJECT.md, ROADMAP.md, DEPENDENCIES.md updated
+    aggregation_files_updated: false
+    # Timestamp when PR was merged
+    merged_at: null
+
+# Audit trail of all workflow actions
+history:
+  - timestamp: "2024-01-01T00:00:00Z"
+    action: workflow_started
+    phase: design
+    details: "Workflow initialized for CLO-XX"
+
+# History action types:
+#   workflow_started          - Initial workflow creation
+#   workflow_resumed          - Resumed from previous session
+#   workflow_paused           - User paused workflow
+#   workflow_complete         - Full workflow finished
+#   workflow_blocked          - Task blocked by another task
+#   workflow_unblocked        - Blocker resolved, task unblocked
+#   project_sync_start        - Task added to Active Work
+#   project_sync_complete     - Task moved to Recently Completed
+#   discovery_probe_complete  - Multi-model discovery probe finished
+#   design_started            - Design doc creation began
+#   design_draft_ready        - Design doc draft completed
+#   design_review_started     - AI review (Gemini + Ollama) launched
+#   design_review_complete    - Both reviews completed with verdicts
+#   design_review_timeout     - One or both reviews timed out
+#   design_review_failed      - One or both reviews encountered an error
+#   review_applied            - Non-contradicting suggestions auto-applied
+#   review_conflicts_resolved - User resolved contradicting suggestions
+#   design_finalized          - Design doc approved and finalized
+#   spec_approved             - Specification approved for implementation
+#   plan_created              - Implementation plan generated
+#   plan_approved             - Plan approved for implementation
+#   phase_completed           - Implementation phase finished
+#   implementation_complete   - All plan tasks done
+#   codex_validation_complete - Codex + Gemini pre-PR validation finished
+#   commit_created            - Git commit made
+#   pushed_to_remote          - Branch pushed to origin
+#   pre_flight_checks_passed  - All local CI checks passed
+#   pre_flight_fix_applied    - Fixed issue caught by pre-flight checks
+#   pr_created                - Pull request created
+#   ci_passed                 - All CI jobs passed after PR push
+#   ci_fix_applied            - Fixed CI failure, pushed fix
+#   review_addressed          - PR review feedback addressed
+#   pr_approved               - PR approved for merge
+#   pr_merged                 - PR merged to main

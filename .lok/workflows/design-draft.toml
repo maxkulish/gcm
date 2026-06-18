@@ -1,0 +1,104 @@
+name = "design-draft"
+description = "Generate first-draft design document via Claude for gcm tasks"
+
+# Args:
+#   {{ arg.1 }}  task ID uppercase, e.g. "CLO-371"
+#   {{ arg.2 }}  slug, e.g. "stepcontext-migration"
+#   {{ arg.3 }}  task title, e.g. "Migrate Backend::query to StepContext"
+
+# Step 1: Validate required inputs exist
+[[steps]]
+name = "preflight"
+timeout = 10000
+continue_on_error = false
+shell = '''
+TASK_LC=$(printf '%s' "{{ arg.1 }}" | tr '[:upper:]' '[:lower:]')
+
+WORKFLOW="docs/status/${TASK_LC}-workflow.yaml"
+
+if [ ! -f "$WORKFLOW" ]; then
+  echo "ERROR: workflow YAML missing at $WORKFLOW"
+  echo "Run the orchestrator discovery phase first."
+  exit 1
+fi
+
+DISCOVERY="docs/discovery/${TASK_LC}.md"
+DISCOVERY_PRESENT="no"
+if [ -f "$DISCOVERY" ]; then
+  DISCOVERY_PRESENT="yes"
+fi
+
+mkdir -p docs/designs
+
+echo "task_id={{ arg.1 }}"
+echo "task_lc=$TASK_LC"
+echo "slug={{ arg.2 }}"
+echo "workflow=$WORKFLOW"
+echo "discovery=$DISCOVERY"
+echo "discovery_present=$DISCOVERY_PRESENT"
+echo "target=docs/designs/${TASK_LC}-{{ arg.2 }}.md"
+'''
+
+# Step 2: Render the prompt with substitutions
+[[steps]]
+name = "render_prompt"
+timeout = 10000
+continue_on_error = false
+depends_on = ["preflight"]
+shell = '''
+TASK_LC=$(printf '%s' "{{ arg.1 }}" | tr '[:upper:]' '[:lower:]')
+
+sed \
+  -e "s|__TASK_ID__|{{ arg.1 }}|g" \
+  -e "s|__TASK_LC__|$TASK_LC|g" \
+  -e "s|__SLUG__|{{ arg.2 }}|g" \
+  -e "s|__TITLE__|{{ arg.3 }}|g" \
+  .lok/prompts/design-draft-prompt.md
+'''
+
+# Step 3: Claude designer drafts the doc
+[[steps]]
+name = "draft"
+backend = "claude"
+timeout = 900000
+retries = 1
+continue_on_error = false
+depends_on = ["render_prompt"]
+prompt = """
+You are the gcm design drafter. Follow the instructions below verbatim.
+
+---
+
+{{ steps.render_prompt.output }}
+"""
+
+# Step 4: Verify the file was written and report
+[[steps]]
+name = "verify"
+depends_on = ["draft"]
+timeout = 10000
+shell = '''
+TASK_LC=$(printf '%s' "{{ arg.1 }}" | tr '[:upper:]' '[:lower:]')
+TARGET="docs/designs/${TASK_LC}-{{ arg.2 }}.md"
+
+if [ ! -s "$TARGET" ]; then
+  echo "GATE FAIL: $TARGET missing or empty after draft step"
+  exit 1
+fi
+
+LINES=$(wc -l < "$TARGET")
+echo "WROTE: $TARGET ($LINES lines)"
+
+MISSING=0
+for heading in "## Problem" "## Goals" "## Architecture" "## Public API" "## Assumptions" "## Test plan" "## Migration" "## Open questions"; do
+  if ! grep -qi "^$heading" "$TARGET"; then
+    echo "WARN: heading '$heading' not found in $TARGET"
+    MISSING=$((MISSING + 1))
+  fi
+done
+
+if [ "$MISSING" -gt 2 ]; then
+  echo "GATE FAIL: $MISSING required section headings missing"
+  exit 1
+fi
+'''

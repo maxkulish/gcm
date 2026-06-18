@@ -1,0 +1,383 @@
+name = "pre-pr-validation"
+description = "Multi-model pre-PR validation: health-check + Codex + Gemini + Claude fallback + synthesis"
+
+# Args:
+#   {{ arg.1 }}  design doc path, e.g. "docs/designs/clo-371-migrate-backendquery-to-stepcontext.md"
+#   {{ arg.2 }}  plan file path, e.g. "docs/plans/clo-371-migrate-backendquery-to-stepcontext.md"
+#   {{ arg.3 }}  CLO task ID, e.g. "CLO-371"
+#
+# Environment overrides (documented in .pi/orchestrator/phases/implement.md):
+#   CODEX_MODEL              default "gpt-5.5"
+#   GEMINI_MODEL             default "gemini-3.5-flash"
+#   GEMINI_FALLBACK_MODEL    default "gemini-2.5-pro"
+
+# Step 1: Pre-flight health check - probe reviewer binaries
+[[steps]]
+name = "health_check"
+timeout = "30s"
+continue_on_error = true
+shell = '''
+CODEX_OK=false
+GEMINI_OK=false
+
+if command -v codex >/dev/null 2>&1; then
+  CODEX_OK=true
+fi
+
+if timeout 15 opencode run "reply OK" --model "google/${GEMINI_MODEL:-gemini-3.5-flash}" --dangerously-skip-permissions 2>/dev/null | grep -qi "ok"; then
+  GEMINI_OK=true
+fi
+
+echo "codex=$CODEX_OK gemini=$GEMINI_OK"
+
+# Don't fail the gate here - downstream reviewers gate individually via `when`.
+'''
+
+# Step 2: Codex pre-PR review
+[[steps]]
+name = "codex_review"
+timeout = "20m"
+retries = 2
+continue_on_error = true
+depends_on = ["health_check"]
+shell = '''
+PRIMARY_MODEL="${CODEX_MODEL:-gpt-5.5}"
+
+PROMPT=$(sed \
+  -e 's|__DESIGN_DOC__|{{ arg.1 }}|g' \
+  -e 's|__PLAN_FILE__|{{ arg.2 }}|g' \
+  -e 's|__CLO_ID__|{{ arg.3 }}|g' \
+  .lok/prompts/pre-pr-validation-prompt.md)
+
+OUTPUT=$(timeout 900 codex exec -m "$PRIMARY_MODEL" \
+  -c reasoning.effort='"high"' \
+  -s read-only \
+  "$PROMPT" 2>/tmp/lok-codex-prepr-stderr.log)
+
+if [ -z "$OUTPUT" ] || [ $(printf '%s' "$OUTPUT" | wc -c) -lt 100 ]; then
+  STDERR=$(head -10 /tmp/lok-codex-prepr-stderr.log 2>/dev/null || echo "no stderr")
+  echo "REVIEW_FAILED: Empty or trivially short output from Codex model $PRIMARY_MODEL (stderr: $STDERR)"
+  exit 0
+fi
+
+echo "$OUTPUT"
+'''
+
+[steps.validate]
+check = "min_length(200)"
+backend = "claude"
+model = "haiku"
+replace_output = true
+max_input_length = 100000
+timeout_ms = 60000
+on_error = "pass"
+prompt = """
+{{ output }}
+
+---
+
+You are a validation output validator. Determine whether the text ABOVE contains an actual structured code validation report.
+
+VALID report: contains a Verdict line (PASS / PASS_WITH_NOTES / FAIL or approve / approve_with_changes / rework), findings with severity levels, and actionable content.
+
+NOISE: empty content, error messages, timestamps only, partial output without verdict, lines starting with REVIEW_FAILED.
+
+Respond with a JSON object on a single line:
+- If valid: {"status": "pass", "output": "<the cleaned report, with leading/trailing noise stripped>"}
+- If not valid: {"status": "fail", "reason": "<one-line reason>"}
+"""
+
+# Step 3: Gemini pre-PR review with primary + fallback model
+[[steps]]
+name = "gemini_review"
+timeout = "10m"
+retries = 3
+continue_on_error = true
+depends_on = ["health_check"]
+shell = '''
+PRIMARY_MODEL="${GEMINI_MODEL:-gemini-3.5-flash}"
+FALLBACK_MODEL="${GEMINI_FALLBACK_MODEL:-gemini-2.5-pro}"
+
+PROMPT=$(sed \
+  -e 's|__DESIGN_DOC__|{{ arg.1 }}|g' \
+  -e 's|__PLAN_FILE__|{{ arg.2 }}|g' \
+  -e 's|__CLO_ID__|{{ arg.3 }}|g' \
+  .lok/prompts/pre-pr-validation-prompt.md)
+
+OUTPUT=$(timeout 300 opencode run "$PROMPT" \
+  --model "google/$PRIMARY_MODEL" \
+  --dangerously-skip-permissions \
+  --dir "$PWD" 2>/tmp/lok-opencode-prepr-stderr.log)
+
+if [ -z "$OUTPUT" ] || [ $(printf '%s' "$OUTPUT" | wc -c) -lt 100 ]; then
+  OUTPUT=$(timeout 300 opencode run "$PROMPT" \
+    --model "google/$FALLBACK_MODEL" \
+    --dangerously-skip-permissions \
+    --dir "$PWD" 2>/tmp/lok-opencode-prepr-stderr.log)
+
+  if [ -z "$OUTPUT" ] || [ $(printf '%s' "$OUTPUT" | wc -c) -lt 100 ]; then
+    STDERR=$(head -5 /tmp/lok-opencode-prepr-stderr.log 2>/dev/null || echo "no stderr")
+    echo "REVIEW_FAILED: Empty output from both $PRIMARY_MODEL and $FALLBACK_MODEL (stderr: $STDERR)"
+    exit 0
+  fi
+fi
+
+echo "$OUTPUT"
+'''
+
+[steps.validate]
+check = "min_length(200)"
+backend = "claude"
+model = "haiku"
+replace_output = true
+max_input_length = 100000
+timeout_ms = 60000
+on_error = "pass"
+prompt = """
+{{ output }}
+
+---
+
+You are a validation output validator. Determine whether the text ABOVE contains an actual structured code validation report.
+
+VALID report: contains a Verdict line (PASS / PASS_WITH_NOTES / FAIL or approve / approve_with_changes / rework), findings with severity levels, and actionable content.
+
+NOISE: empty content, error messages, timestamps only, MCP noise, partial output without verdict, lines starting with REVIEW_FAILED.
+
+Respond with a JSON object on a single line:
+- If valid: {"status": "pass", "output": "<the cleaned report, with leading/trailing noise stripped>"}
+- If not valid: {"status": "fail", "reason": "<one-line reason>"}
+"""
+
+# Step 4: Claude fallback - runs only when both external reviewers failed
+[[steps]]
+name = "claude_fallback"
+backend = "claude"
+timeout = "10m"
+retries = 2
+continue_on_error = true
+depends_on = ["codex_review", "gemini_review"]
+min_deps_success = 0
+when = "(not steps.codex_review.success or 'REVIEW_FAILED' in steps.codex_review.output) and (not steps.gemini_review.success or 'REVIEW_FAILED' in steps.gemini_review.output)"
+prompt = """
+Both external reviewers (Codex and Gemini) failed. You are the fallback pre-PR validator for **gcm** (a Rust CLI project). [TODO: refine gcm project description]
+
+Read these files:
+1. {{ arg.1 }} - the design doc
+2. {{ arg.2 }} - the implementation plan
+3. The git diff: run `git diff main...HEAD`
+
+PROJECT CONTEXT:
+- Task: {{ arg.3 }}
+- Linear workspace: cloud-ai, Issue prefix: CLO
+- Pre-merge gate: cargo fmt --check && cargo clippy -- -D warnings && cargo test
+
+Check correctness, completeness, regressions, code quality, security, scope creep, test coverage.
+
+OUTPUT FORMAT:
+
+## Verdict: [PASS | PASS_WITH_NOTES | FAIL]
+
+## Findings
+[Each finding with severity: CRITICAL / HIGH / MEDIUM / LOW]
+### F1 [severity] <one-line>
+**Where:** <file>:<line>
+**What:** <2-3 sentences>
+**Suggested fix:** <concrete>
+
+## Missing Items
+[Any acceptance criteria not yet implemented]
+
+## Recommendations
+[Specific actionable improvements]
+"""
+
+# Step 5: Synthesize validation results into the binding verdict
+[[steps]]
+name = "synthesis"
+backend = "claude"
+retries = 3
+depends_on = ["codex_review", "gemini_review", "claude_fallback"]
+min_deps_success = 0
+when = "steps.codex_review.success or steps.gemini_review.success or steps.claude_fallback.success"
+prompt = """
+You are the validation synthesis reviewer for gcm task {{ arg.3 }}.
+
+Combine the Codex and Gemini reports below. The synthesis verdict is binding for the orchestrator's PR transition decision.
+
+CODEX REPORT (success={{ steps.codex_review.success }}):
+{{ steps.codex_review.output }}
+
+GEMINI REPORT (success={{ steps.gemini_review.success }}):
+{{ steps.gemini_review.output }}
+
+CLAUDE FALLBACK:
+{% if steps.claude_fallback is defined %}{{ steps.claude_fallback.output }}{% else %}SKIPPED - at least one external reviewer succeeded{% endif %}
+
+Read these for grounding:
+- {{ arg.1 }} (design doc)
+- {{ arg.2 }} (implementation plan)
+- `git diff main...HEAD`
+
+INSTRUCTIONS:
+
+**First, emit a Reviewer Status section:**
+
+## Reviewer Status
+| Reviewer | Status | Detail |
+|----------|--------|--------|
+
+For each reviewer (Codex, Gemini, Claude fallback), show: OK, REVIEW_FAILED (with reason), or SKIPPED.
+
+**Then classify every finding into exactly one of:**
+
+- **Must Fix Before PR** - in-scope correctness/regression/security issue
+- **Out of Scope / Deferred** - real but should not block this PR
+- **False Positive / Tooling Artifact** - reviewer was wrong or hit a tooling limit
+- **Pivot / Fundamental Scope Issue** - requires user decision before continuing
+
+**Output sections in this order:**
+
+## Reviewer Status
+(table above)
+
+## Verdict
+PASS | PASS_WITH_NOTES | FAIL
+
+The verdict line MUST appear verbatim and be exactly one of the three canonical strings - the orchestrator parses it. Legacy synonyms (`approve` / `approve_with_changes` / `rework` / `pivot`) are accepted but the canonical lexicon is preferred.
+
+Verdict rules:
+- `PASS` - no Must Fix items
+- `PASS_WITH_NOTES` - Must Fix items exist but can be addressed in ONE bounded fix iteration
+- `FAIL` - any Pivot/Fundamental Scope Issue is present, OR the change diverges materially from the design, OR the change cannot be salvaged in one fix iteration
+
+## Must Fix Before PR
+- ...
+
+## Out of Scope / Deferred
+- ...
+
+## False Positives / Tooling Artifacts
+- ...
+
+## Recommendation
+One paragraph: PROCEED, PROCEED_WITH_FIXES (list the bounded fixes), or STOP_FOR_USER (state the decision needed).
+"""
+
+# Step 6: Write review files at the exact paths phases/implement.md Step 4.2 expects
+[[steps]]
+name = "write_reports"
+depends_on = ["codex_review", "gemini_review", "claude_fallback", "synthesis"]
+min_deps_success = 0
+shell = '''
+mkdir -p docs/reviews
+TASK="{{ arg.3 }}"
+TASK_LC=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+cat <<'LOK_WF_CODEX_OUTPUT_EOF' > "$TMP_DIR/codex.md"
+{{ steps.codex_review.output }}
+LOK_WF_CODEX_OUTPUT_EOF
+
+cat <<'LOK_WF_GEMINI_OUTPUT_EOF' > "$TMP_DIR/gemini.md"
+{{ steps.gemini_review.output }}
+LOK_WF_GEMINI_OUTPUT_EOF
+
+cat <<'LOK_WF_SYNTH_OUTPUT_EOF' > "$TMP_DIR/synthesis.md"
+{{ steps.synthesis.output }}
+LOK_WF_SYNTH_OUTPUT_EOF
+
+REVIEW_DATE=$(date +%Y-%m-%d)
+
+write_review() {
+  local input_path="$1"
+  local output_path="$2"
+  local reviewer="$3"
+  local note="$4"
+
+  if [ ! -f "$input_path" ] || [ ! -s "$input_path" ]; then
+    echo "SKIP: $reviewer (no output)"
+    return 0
+  fi
+
+  if [ -z "$(sed '/^[[:space:]]*$/d' "$input_path" | tr -d '[:space:]' | tr -d '\n')" ]; then
+    echo "SKIP: $reviewer (whitespace only)"
+    return 0
+  fi
+
+  if grep -q '^REVIEW_FAILED' "$input_path"; then
+    {
+      printf '# Pre-PR validation: %s\n\n' "$TASK_LC"
+      printf '**Reviewer**: %s\n' "$reviewer"
+      printf '**Status**: FAILED\n'
+      printf '**Validated**: %s\n' "$REVIEW_DATE"
+      printf '**Pipeline**: lok pre-pr-validation\n'
+      printf -- '---\n\n'
+      cat "$input_path"
+      printf '\n\n## Verdict\nFAIL\n'
+    } > "$output_path"
+    echo "WROTE (failed): $output_path"
+    return 0
+  fi
+
+  {
+    printf '# Pre-PR validation: %s\n\n' "$TASK_LC"
+    printf '**Reviewer**: %s\n' "$reviewer"
+    printf '**Validated**: %s\n' "$REVIEW_DATE"
+    printf '**Pipeline**: lok pre-pr-validation\n'
+    if [ -n "$note" ]; then
+      printf '**Note**: %s\n' "$note"
+    fi
+    printf -- '---\n\n'
+    cat "$input_path"
+  } > "$output_path"
+  echo "WROTE: $output_path"
+}
+
+write_review \
+  "$TMP_DIR/codex.md" \
+  "docs/reviews/${TASK_LC}-codex-validation.md" \
+  "Codex (${CODEX_MODEL:-gpt-5.5})"
+
+write_review \
+  "$TMP_DIR/gemini.md" \
+  "docs/reviews/${TASK_LC}-gemini-validation.md" \
+  "Gemini (${GEMINI_MODEL:-gemini-3.5-flash})"
+
+{% if steps.claude_fallback is defined %}
+cat <<'LOK_WF_FALLBACK_OUTPUT_EOF' > "$TMP_DIR/fallback.md"
+{{ steps.claude_fallback.output }}
+LOK_WF_FALLBACK_OUTPUT_EOF
+
+write_review \
+  "$TMP_DIR/fallback.md" \
+  "docs/reviews/${TASK_LC}-claude-fallback-validation.md" \
+  "Claude (fallback)" \
+  "Both external reviewers failed; this is the fallback review"
+{% endif %}
+
+write_review \
+  "$TMP_DIR/synthesis.md" \
+  "docs/reviews/${TASK_LC}-validation-synthesis.md" \
+  "Synthesis (Claude)"
+
+# Final hard check: the three files implement.md Step 4.2 requires
+GATE_FAIL=0
+for f in \
+  docs/reviews/${TASK_LC}-codex-validation.md \
+  docs/reviews/${TASK_LC}-gemini-validation.md \
+  docs/reviews/${TASK_LC}-validation-synthesis.md
+do
+  if [ ! -s "$f" ]; then
+    echo "GATE FAIL: missing or empty $f"
+    GATE_FAIL=1
+  fi
+done
+
+if [ "$GATE_FAIL" -eq 1 ]; then
+  exit 1
+fi
+
+echo "GATE OK: all required validation reports present at docs/reviews/${TASK_LC}-{codex,gemini,validation-synthesis}.md"
+'''

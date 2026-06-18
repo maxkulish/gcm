@@ -1,0 +1,319 @@
+name = "design-review"
+description = "Multi-model design document review with output validation and fallback"
+
+# Step 1: Pre-flight health check - fast-fail if models are unreachable
+[[steps]]
+name = "health_check"
+timeout = "30s"
+continue_on_error = true
+shell = """
+GEMINI_OK=false
+OLLAMA_OK=false
+
+if timeout 15 opencode run "reply OK" --model "google/${GEMINI_MODEL:-gemini-3.5-flash}" --dangerously-skip-permissions 2>/dev/null | grep -qi "ok"; then
+  GEMINI_OK=true
+fi
+
+if timeout 10 ollama list 2>/dev/null | grep -q .; then
+  OLLAMA_OK=true
+fi
+
+echo "gemini=$GEMINI_OK ollama=$OLLAMA_OK"
+"""
+
+# Step 2: Gemini review with fallback model support
+[[steps]]
+name = "gemini_review"
+timeout = "5m"
+retries = 3
+continue_on_error = true
+depends_on = ["health_check"]
+shell = """
+if echo '{{ steps.health_check.output }}' | grep -q 'gemini=false'; then
+  echo "REVIEW_FAILED: Gemini CLI unreachable (pre-flight check failed)"
+  exit 0
+fi
+
+PROMPT=$(sed 's|__DOC_PATH__|{{ arg.1 }}|g' .lok/prompts/design-review-prompt.md)
+PRIMARY_MODEL="${GEMINI_MODEL:-gemini-3.5-flash}"
+FALLBACK_MODEL="${GEMINI_FALLBACK_MODEL:-gemini-2.5-pro}"
+
+OUTPUT=$(timeout 300 opencode run "$PROMPT" \
+  --model "google/$PRIMARY_MODEL" \
+  --dangerously-skip-permissions \
+  --dir "$PWD" 2>/tmp/lok-opencode-stderr.log)
+
+if [ -z "$OUTPUT" ] || [ ${#OUTPUT} -lt 100 ]; then
+  OUTPUT=$(timeout 300 opencode run "$PROMPT" \
+    --model "google/$FALLBACK_MODEL" \
+    --dangerously-skip-permissions \
+    --dir "$PWD" 2>/tmp/lok-opencode-stderr.log)
+
+  if [ -z "$OUTPUT" ] || [ ${#OUTPUT} -lt 100 ]; then
+    STDERR=$(head -5 /tmp/lok-opencode-stderr.log 2>/dev/null || echo "no stderr")
+    echo "REVIEW_FAILED: Empty output from both $PRIMARY_MODEL and $FALLBACK_MODEL (stderr: $STDERR)"
+    exit 0
+  fi
+fi
+
+echo "$OUTPUT"
+"""
+
+[steps.validate]
+check = "min_length(200)"
+backend = "claude"
+model = "haiku"
+replace_output = true
+max_input_length = 100000
+timeout_ms = 60000
+on_error = "pass"
+prompt = """
+{{ output }}
+
+---
+
+You are a review output validator. Determine whether the text ABOVE contains an actual structured code/design review.
+
+VALID review: has numbered sections (## 1., ## 2.), assessment language, a verdict (APPROVE/APPROVE_WITH_SUGGESTIONS/NEEDS_REVISION), actionable feedback.
+
+NOISE (not a review): MCP initialization messages ("Registering notification handlers", "YOLO mode"), timestamps only, stack traces, empty content, greetings without analysis.
+
+Return ONE JSON object as your entire response. No prose. No markdown code fences.
+If valid: {"status": "pass", "output": "<cleaned review without leading/trailing noise>"}
+If noise/garbage: {"status": "fail", "reason": "<one-line reason>"}
+"""
+
+# Step 3: Ollama/Codex review with empty output short-circuit
+[[steps]]
+name = "ollama_review"
+timeout = "5m"
+retries = 3
+continue_on_error = true
+depends_on = ["health_check"]
+shell = """
+if echo '{{ steps.health_check.output }}' | grep -q 'ollama=false'; then
+  echo "REVIEW_FAILED: Ollama CLI unreachable (pre-flight check failed)"
+  exit 0
+fi
+
+PROMPT=$(sed 's|__DOC_PATH__|{{ arg.1 }}|g' .lok/prompts/design-review-prompt.md)
+
+OUTPUT=$(env -u CLAUDECODE timeout 300 ollama launch codex --model "${OLLAMA_MODEL:-glm-5:cloud}" -- \
+  exec "$PROMPT" \
+  --sandbox read-only \
+  --oss --local-provider ollama \
+  --ephemeral 2>/tmp/lok-ollama-stderr.log)
+
+if [ -z "$OUTPUT" ] || [ ${#OUTPUT} -lt 100 ]; then
+  STDERR=$(head -5 /tmp/lok-ollama-stderr.log 2>/dev/null || echo "no stderr")
+  echo "REVIEW_FAILED: Empty or trivially short output from Ollama (stderr: $STDERR)"
+  exit 0
+fi
+
+echo "$OUTPUT"
+"""
+
+[steps.validate]
+check = "min_length(200)"
+backend = "claude"
+model = "haiku"
+replace_output = true
+max_input_length = 100000
+timeout_ms = 60000
+on_error = "pass"
+prompt = """
+{{ output }}
+
+---
+
+You are a review output validator. Determine whether the text ABOVE contains an actual structured code/design review.
+
+VALID review: has numbered sections (## 1., ## 2.), assessment language, a verdict (APPROVE/APPROVE_WITH_SUGGESTIONS/NEEDS_REVISION), actionable feedback.
+
+NOISE: empty content, timestamps only, error messages, partial output with missing sections.
+
+Return ONE JSON object as your entire response. No prose. No markdown code fences.
+If valid: {"status": "pass", "output": "<cleaned review>"}
+If noise/garbage: {"status": "fail", "reason": "<one-line reason>"}
+"""
+
+# Step 4: Claude fallback review - runs only when both external reviewers failed
+[[steps]]
+name = "claude_fallback"
+backend = "claude"
+timeout = "2m"
+retries = 2
+continue_on_error = true
+depends_on = ["gemini_review", "ollama_review"]
+min_deps_success = 0
+when = "(not steps.gemini_review.success or 'REVIEW_FAILED' in steps.gemini_review.output) and (not steps.ollama_review.success or 'REVIEW_FAILED' in steps.ollama_review.output)"
+prompt = """
+Both external reviewers (Gemini and Ollama) failed to produce a review. You are the fallback reviewer.
+
+Read the design document and produce a structured review.
+
+DESIGN DOCUMENT PATH: {{ arg.1 }}
+
+Read these files for context:
+1. {{ arg.1 }} - The design document to review
+2. docs/arch/ - Architecture documents (read all .md files)
+3. docs/adrs/ - Architecture Decision Records. List filenames, then read the 5-10 most relevant to this design
+4. docs/ROADMAP.md - Project phases and task status
+5. docs/DEPENDENCIES.md - Task dependency graph
+6. docs/PROJECT.md - Active work and blockers
+
+PROJECT CONTEXT:
+- Rust CLI tool for multi-LLM orchestration
+- Linear workspace: cloud-ai, issue prefix: CLO
+
+REVIEW CRITERIA:
+1. COMPLETENESS - all sections present and meaningful
+2. ARCHITECTURE QUALITY - design patterns, error handling
+3. ADR COMPLIANCE - alignment with docs/adrs/
+4. CODE QUALITY - clean interfaces, proper abstractions
+5. SECURITY POSTURE - no hardcoded secrets, input validation
+6. OPERATIONAL READINESS - logging, error recovery, timeouts
+7. CONCURRENCY SAFETY - no blocking IO in async, proper timeouts
+8. BLIND SPOTS - missing edge cases, failure modes, unstated assumptions
+
+OUTPUT FORMAT:
+
+## 1. Completeness Check
+[sections present/missing]
+
+## 2. Architecture Assessment
+**Strengths**: [what's done well]
+**Concerns**: [issues to address]
+
+## 3. ADR Compliance
+[alignment with relevant ADRs]
+
+## 4. Security Review
+[assessment]
+
+## 5. Implementation Concerns
+[feedback on plan]
+
+## 6. Blind Spots
+[what the design misses]
+
+## 7. Verdict
+[APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
+
+## 8. Actionable Feedback
+[prioritized list]
+"""
+
+# Step 5: Synthesize validated reviews with failure telemetry
+[[steps]]
+name = "synthesis"
+backend = "claude"
+retries = 3
+depends_on = ["gemini_review", "ollama_review", "claude_fallback"]
+min_deps_success = 0
+prompt = """
+You are synthesizing findings from AI code reviewers. Cross-reference findings and produce a structured synthesis.
+
+## Reviewer Status
+
+Report the status of each reviewer first:
+
+GEMINI REVIEW (success={{ steps.gemini_review.success }}):
+{{ steps.gemini_review.output }}
+
+OLLAMA REVIEW (success={{ steps.ollama_review.success }}):
+{{ steps.ollama_review.output }}
+
+CLAUDE FALLBACK (success={{ steps.claude_fallback.success }}):
+{{ steps.claude_fallback.output }}
+
+INSTRUCTIONS:
+
+**First, emit a Reviewer Status section:**
+
+## Reviewer Status
+| Reviewer | Status | Detail |
+|----------|--------|--------|
+For each reviewer, show: OK, REVIEW_FAILED (with the failure reason), or SKIPPED (if the step did not run).
+
+**Then, apply these synthesis rules:**
+
+- If ALL reviews contain REVIEW_FAILED or are empty, return: NO_REVIEWS_AVAILABLE (after the status table).
+- If exactly ONE review produced valid output (including Claude fallback), use it as the sole source. Use the "Single Review" format below instead of Agreement/Disagreement.
+- If TWO or more reviews produced valid output, cross-reference into the "Multi Review" format.
+
+**Single Review format** (when only 1 reviewer succeeded):
+
+## Source
+[Which reviewer produced this review]
+
+## Key Findings
+| # | Finding | Severity |
+|---|---------|----------|
+
+## Verdict
+[The single reviewer's verdict]
+
+## Priority Actions
+Ordered by severity.
+
+**Multi Review format** (when 2+ reviewers succeeded):
+
+## Agreement (High Confidence)
+Items where 2+ reviewers independently identified the same concern.
+| # | Finding | Severity |
+|---|---------|----------|
+
+## Disagreement (Needs Human Decision)
+Items where reviewers hold divergent positions.
+| # | Topic | Position A (Reviewer) | Position B (Reviewer) |
+|---|-------|----------------------|----------------------|
+
+## Novel Insights (Single Reviewer)
+Items found by only one reviewer.
+| # | Finding | Source | Severity |
+|---|---------|--------|----------|
+
+## Consolidated Verdict
+- If ANY reviewer says NEEDS_REVISION -> Overall: NEEDS_REVISION
+- If all say APPROVE -> Overall: APPROVE
+- Otherwise -> Overall: APPROVE_WITH_SUGGESTIONS
+
+## Priority Actions
+Ordered by severity, agreement items first.
+"""
+
+# Step 6: Write review files
+[[steps]]
+name = "write_reviews"
+depends_on = ["gemini_review", "ollama_review", "claude_fallback", "synthesis"]
+min_deps_success = 0
+shell = """
+mkdir -p docs/reviews
+REVIEW_DATE=$(date +%Y-%m-%d)
+
+printf '%s\n' '# Design Review: {{ arg.2 }}' '' '**Reviewer**: Gemini 3.5 Flash' "**Reviewed**: $REVIEW_DATE" '**Pipeline**: lok design-review' '' '---' '' > docs/reviews/{{ arg.2 }}-review-gemini.md
+cat >> docs/reviews/{{ arg.2 }}-review-gemini.md << 'ENDGEMINI'
+{{ steps.gemini_review.output }}
+ENDGEMINI
+
+printf '%s\n' '# Design Review: {{ arg.2 }}' '' '**Reviewer**: Codex via Ollama (glm-5:cloud)' "**Reviewed**: $REVIEW_DATE" '**Pipeline**: lok design-review' '' '---' '' > docs/reviews/{{ arg.2 }}-review-ollama.md
+cat >> docs/reviews/{{ arg.2 }}-review-ollama.md << 'ENDOLLAMA'
+{{ steps.ollama_review.output }}
+ENDOLLAMA
+
+FALLBACK_OUTPUT='{{ steps.claude_fallback.output }}'
+if [ -n "$FALLBACK_OUTPUT" ] && ! echo "$FALLBACK_OUTPUT" | grep -q 'REVIEW_FAILED'; then
+  printf '%s\n' '# Design Review: {{ arg.2 }}' '' '**Reviewer**: Claude (fallback)' "**Reviewed**: $REVIEW_DATE" '**Pipeline**: lok design-review' '**Note**: External reviewers failed; this is the fallback review' '' '---' '' > docs/reviews/{{ arg.2 }}-review-claude-fallback.md
+  cat >> docs/reviews/{{ arg.2 }}-review-claude-fallback.md << 'ENDFALLBACK'
+{{ steps.claude_fallback.output }}
+ENDFALLBACK
+fi
+
+printf '%s\n' '# Review Synthesis: {{ arg.2 }}' '' "**Synthesized**: $REVIEW_DATE" '**Pipeline**: lok design-review' '**Reviewers**: Gemini 3.5 Flash, Codex/Ollama (glm-5:cloud), Claude (fallback if needed)' '' '---' '' > docs/reviews/{{ arg.2 }}-review-synthesis.md
+cat >> docs/reviews/{{ arg.2 }}-review-synthesis.md << 'ENDSYNTH'
+{{ steps.synthesis.output }}
+ENDSYNTH
+
+echo "Reviews written to docs/reviews/{{ arg.2 }}-review-*.md"
+"""

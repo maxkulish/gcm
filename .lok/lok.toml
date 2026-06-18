@@ -1,0 +1,44 @@
+[defaults]
+parallel = true
+timeout = 300
+max_retries = 2
+retry_delay_ms = 2000
+
+[cache]
+enabled = false
+
+[conductor]
+max_rounds = 5
+max_tokens = 4096
+
+[backends.claude]
+enabled = true
+command = "claude"
+args = []
+
+[backends.codex]
+enabled = true
+command = "codex"
+args = ["exec"]
+timeout = 900
+
+[backends.gemini]
+enabled = true
+command = "opencode"
+model = "google/gemini-2.5-flash"
+args = ["run", "--model", "google/gemini-3.5-flash", "--dangerously-skip-permissions", "--format", "default"]
+timeout = 300
+
+[backends.ollama]
+enabled = true
+command = "http://localhost:11434"
+model = "glm-5:cloud"
+timeout = 300
+
+[roles.code_review]
+backends = ["claude", "codex", "gemini"]
+strategy = { Fallback = {} }
+
+[roles.design_review]
+backends = ["gemini", "codex", "claude"]
+strategy = { Parallel = { min_success = 1, timeout_secs = 300 } }
