@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# macOS
+.DS_Store
+
+# AI dev-tooling migrated from lok (.claude / .lok / .pi command + extension setup)
+# Regenerated locally via `npm install` in each .pi/extensions/* dir:
+node_modules/
+# Per-user lok orchestrator overrides:
+.lok/local/
