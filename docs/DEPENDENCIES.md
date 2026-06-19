@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-19 (CLO-485 ADR landed)
+**Last Updated**: 2026-06-19 (CLO-486 tracer started)
 
 ## Current Blockers
 
@@ -12,4 +12,4 @@
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| CLO-486 | CLO-485 (ADR-001 merged) | 2026-06-19 |
+| - | (CLO-486 now In Progress; downstream tasks unblock when it lands) | - |

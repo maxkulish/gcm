@@ -1,0 +1,130 @@
+# Workflow state for CLO-486
+# Managed by /task:orchestrate
+
+task: CLO-486
+title: "Add single-commit tracer: AI message via Groq with safe diff read"
+linear_url: https://linear.app/cloud-ai/issue/CLO-486/add-single-commit-tracer-ai-message-via-groq-with-safe-diff-read
+branch: feat/clo-486-sceleton
+task_type: specification        # tracer-bullet first code slice; architecture pre-locked by ADR-001 (CLO-485)
+deliverable: src/ (Cargo scaffold + thinnest end-to-end commit path)
+slice: S1
+labels: [AFK]                   # agent may implement and merge without human input
+covers_fr: [4, 5, 6, 9, 10, 18a, 31a, 32, 34, 35, 36, 39, 41, 47, 48, 49, 57]
+
+# Reference material for the spec/implementation
+references:
+  adr: docs/adrs/001-foundational-architecture-decisions.md   # all 13 decisions locked (Accepted)
+  prd: docs/prds/prd-gcm.md
+  bash_tracer: docs/tmp/git-commit-ai.sh   # lines 122-194: single-commit path to mirror (calls mods -> replace with direct Groq REST)
+
+workflow:
+  current_phase: implement
+  status: in_progress
+  classification_rationale: "ADR-001 locked all architecture decisions; explicit acceptance criteria; AFK autonomy. Full discovery/design-doc phases would be near-empty -> specification workflow (spec -> AI review -> implement -> PR). User-confirmed at orchestrate classification checkpoint."
+
+phases:
+  discovery:
+    status: skipped
+    skip_reason: "Specification task - PRD mature, ADR-001 Accepted; no persona discovery needed"
+    approved: true
+  design:
+    status: skipped
+    reason: "Specification task - using /spec instead of a full design doc; architecture is fixed by ADR-001"
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-19-clo-486-single-commit-tracer.md
+    approved: true
+    approved_at: 2026-06-19T15:08:03Z
+    review_completed: true
+    review_gemini: docs/reviews/clo-486-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-486-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-486-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS   # Gemini explicit; Ollama no NEEDS_REVISION; consolidated = APPROVE_WITH_SUGGESTIONS
+    review_applied: true
+    applied_suggestions:
+      - "Non-TTY guard + --yes/--no-input (ADR-001 #10 alignment) -> AC-11, FR-51 into scope"
+      - "Groq 30s timeout + GroqError taxonomy + HTTP/empty-response handling -> AC-12"
+      - "git write-tree/read-tree index restore on commit/signing failure -> AC-13 (full FR-47)"
+      - "Stdio::inherit for $EDITOR + git commit -S; $EDITOR->vim fallback constraint"
+      - "Unborn-branch AC-14 + empty-tree magic SHA documented"
+      - "tempfile crate for $EDITOR temp file cleanup on all exit paths"
+      - "acceptance.sh scoped as sub-task; --yes/--dry-run/PTY drive mechanisms"
+      - "build.rs mandatory (build-stamped --version) + version eval"
+      - "Diff cap = file-count + cumulative-byte in sorted order, name-only fallback; AC-4 cap-based"
+      - "--all reworded to FR-6 single-commit-all (removed no-op framing)"
+      - "CC header regex check in AC-1 (test-only; FR-59 regen deferred)"
+      - "NUL-misclassification test, stable diff ordering, intermediate verification milestone"
+      - "Adaptive Groq reasoning params by model family + <think> backstop"
+    flagged_suggestions: []   # none contradicted ADR-001; no user-conflict prompts needed
+  implement:
+    status: in_progress
+    approach: "Direct implementation from spec decomposition (spec workflow - no separate plan file; decomposition IS the plan). TDD on pure-logic units; acceptance.sh for integration."
+    commits:
+      - { sha: 7e26dfe, summary: "chore(gcm): scaffold Rust project, CI, README" }
+      - { sha: d24c60b, summary: "feat(gcm): single-commit tracer (git/diff/groq/ui/main + tests + acceptance.sh)" }
+    toolchain: "rustc/cargo 1.95.0; deps clap 4.6, ureq 3.3 (rustls), serde 1, serde_json 1, tempfile 3"
+    sub_tasks:
+      - { n: 1, name: "scaffold + CLI + CI", status: complete }
+      - { n: 2, name: "git layer", status: complete }
+      - { n: 3, name: "safe diff gather", status: complete }
+      - { n: 4, name: "groq provider", status: complete }
+      - { n: 5, name: "confirm/edit UI", status: complete }
+      - { n: 6, name: "wire + README + acceptance.sh", status: complete }
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "12 passed (diff binary/NUL detection, elision, cap; groq think-strip + reasoning params)"
+      cargo_build_release: ok
+      acceptance_sh: "24 PASS / 0 FAIL / 1 SKIP (manual TTY abort+edit). Mock-Groq server drives the full commit path: signing (gpgsig header), staging, transactional restore on hook failure, FR-57 cap, gitignore safety, non-TTY guard, exit codes, unborn branch."
+    live_groq_note: "Real ureq->api.groq.com call could NOT be exercised in-sandbox: ureq times out to ALL remote hosts (incl. 1.1.1.1 and plain http) while curl reaches them and ureq->127.0.0.1 mock works -> sandbox egress policy blocks compiled binaries, not a gcm bug. Direct curl to the real Groq chat/completions returned a clean conventional message in 0.37s with reasoning hidden (include_reasoning:false), confirming the request shape. The 30s timeout -> exit 1 -> index untouched is correct AC-12 behavior. Binary will reach Groq in the user's real (unsandboxed) environment."
+    fixes_during_impl:
+      - "Unborn branch: diff via --cached instead of the empty-tree object (4b825...) which does not exist in a fresh repo with no objects -> 'bad object' (caught by acceptance.sh, fixed)."
+      - "ureq 3.x: send serialized body via .send() (send_json is behind the 'json' feature) - avoids an extra feature flag."
+    codex_validated: false
+  pr:
+    status: pending
+    pr_url: null
+    pr_number: null
+  complete:
+    status: pending
+
+# Scope checklist (from the Linear task)
+scope:
+  - "Cargo scaffold + Rust .gitignore (replace Go-flavored one) + --version stamping + distinct exit codes (0 ok/abort, 1 error, 2 usage)"
+  - "Git checks: in-repo, has-changes-else-exit-0"
+  - "Gather diff with binary-file elision + --exclude-standard untracked inclusion, bounded by file-count/byte cap"
+  - "Direct Groq HTTP call for one conventional-commit message (key from GROQ_API_KEY)"
+  - "[Y/n/e] confirm with $EDITOR; restore index to pre-run state on abort"
+  - "git commit -S (signed)"
+  - "--help / README disclose that the diff is sent to the provider"
+
+acceptance_criteria:
+  - "In a dirty repo (incl. a binary file and a unicode-named file) gcm produces one real signed commit with an AI message"
+  - "Aborting at the prompt leaves the index exactly as it was before the run"
+  - "A gitignored .env is never included in the request"
+  - "An un-ignored directory of thousands of files does not freeze the CLI (the cap engages)"
+
+# This slice unblocks four downstream tasks once merged
+unblocks: [CLO-487, CLO-488, CLO-489, CLO-490]
+
+history:
+  - timestamp: 2026-06-19T14:54:16Z
+    action: workflow_started
+    phase: spec
+    details: "New workflow for CLO-486 (S1 tracer bullet). Classified as specification (user-confirmed at orchestrate checkpoint): ADR-001 locked architecture, explicit acceptance criteria, AFK autonomy -> spec -> review -> implement -> PR; discovery + design-doc skipped."
+  - timestamp: 2026-06-19T14:54:16Z
+    action: project_sync_start
+    phase: spec
+    details: "WIP 0/3, no blockers (CLO-485 ADR merged satisfied the only dependency). Adding CLO-486 to Active Work; ROADMAP -> In Progress; remove from Unblocked & Ready."
+  - timestamp: 2026-06-19T15:03:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "lok spec-review ran both external reviewers (Gemini 3.5 Flash via opencode + Codex via Ollama glm-5:cloud). Consolidated verdict APPROVE_WITH_SUGGESTIONS - no NEEDS_REVISION, no redesign. 9 agreement findings + 12 novel insights; reviews in docs/reviews/clo-486-spec-review-*.md."
+  - timestamp: 2026-06-19T15:08:03Z
+    action: spec_review_applied
+    phase: spec
+    details: "All suggestions auto-applied (additive/refinement/ADR-alignment; zero contradicted ADR-001 -> no user-conflict prompts). Spec hardened: non-TTY guard + --yes (ADR #10), full FR-47 write-tree/read-tree restore on commit/signing failure, Groq 30s timeout + error taxonomy, Stdio::inherit, unborn-branch AC, tempfile cleanup, cap algorithm precision, build.rs mandatory. Spec grew 10->14 ACs, 10->14 eval rows; still a tracer (no grouping/cache/trait/retries)."
+  - timestamp: 2026-06-19T15:08:03Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved at the spec checkpoint (chose Approve -> implement). Plan phase skipped (spec decomposition IS the plan). Advancing to implement; will run autonomously through implementation (AFK label) and stop at the PR checkpoint."
