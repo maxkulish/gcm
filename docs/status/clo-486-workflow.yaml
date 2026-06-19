@@ -115,9 +115,15 @@ phases:
       cargo_test: "15 passed (+read_capped bounded-read, +cyrillic-not-elided)"
       acceptance_sh: "35 PASS / 0 FAIL / 1 SKIP (AC-7 edit = manual TTY); +symlink/FIFO safety case"
   pr:
-    status: pending
-    pr_url: null
-    pr_number: null
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/4
+    pr_number: 4
+    pre_flight: "cargo fmt --check / clippy -D warnings / cargo test (15) - all clean before PR"
+    ci_passed: false   # tracks remote CI; run in progress at PR creation
+    base: main
+    head: feat/clo-486-sceleton
+    files_changed: 26
+    diff: "+2719 / -35"
   complete:
     status: pending
 
@@ -169,3 +175,11 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "3 Codex GPT-5.4 read-only passes (Gemini dropped after its YOLO-mode destructive commit, recovered). Round 1: 4 findings (cap unbounded, snapshot timing, unborn diff, build.rs). Round 2: those resolved + 4 new (symlink/FIFO, truncate panic, UTF-8 elision, $EDITOR args). Round 3: all confirmed correct + final $EDITOR-with-spaces fix (sh -c launch). Converged. Findings rejected: bogus 'branch deleted' (= the YOLO commit), and --show-signature (false-negative vs gpgsig check)."
+  - timestamp: 2026-06-19T18:17:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check clean; cargo clippy -D warnings clean; cargo test 15 passed; tree clean. (TypeScript checks N/A - Rust project.)"
+  - timestamp: 2026-06-19T18:17:51Z
+    action: pr_created
+    phase: pr
+    details: "PR #4 opened against main: https://github.com/maxkulish/gcm/pull/4 (26 files, +2719/-35, 6 commits). Linear CLO-486 -> In Review; PR-link comment posted. Remote CI (fmt/clippy/test/build, macOS+Linux) triggered."
