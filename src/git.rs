@@ -89,25 +89,32 @@ impl Repo {
         Ok(status.success())
     }
 
-    /// Diff stat for the prompt header. On an unborn branch (no HEAD) git
-    /// synthesizes the empty tree for `--cached`, so no empty-tree object is
-    /// required (AC-14); otherwise diff the working tree against HEAD.
+    /// Diff stat for the prompt header. With HEAD, `git diff HEAD` covers all
+    /// tracked changes. On an unborn branch (no HEAD) the empty-tree object may
+    /// not exist in a fresh repo (so `git diff <empty-tree>` errors), thus we
+    /// combine unstaged (working vs index) and staged (index vs empty) diffs -
+    /// together they capture every tracked change, incl. a staged-then-modified
+    /// file - and gather untracked files separately (AC-14).
     pub fn diff_stat(&self) -> Result<String, GcmError> {
         if self.has_head() {
             self.capture(&["diff", "--stat", "HEAD"])
         } else {
-            self.capture(&["diff", "--cached", "--stat"])
+            let unstaged = self.capture(&["diff", "--stat"])?;
+            let staged = self.capture(&["diff", "--cached", "--stat"])?;
+            Ok(format!("{unstaged}{staged}"))
         }
     }
 
-    /// Full diff (no color) for the prompt body. HEAD when present, else the
-    /// staged-vs-empty diff on an unborn branch (untracked files are gathered
-    /// separately, so this covers all tracked changes).
+    /// Full diff (no color) for the prompt body. HEAD when present; otherwise
+    /// unstaged + staged on an unborn branch. See [`Self::diff_stat`] for the
+    /// unborn-branch rationale.
     pub fn diff_full(&self) -> Result<String, GcmError> {
         if self.has_head() {
             self.capture(&["diff", "--no-color", "HEAD"])
         } else {
-            self.capture(&["diff", "--no-color", "--cached"])
+            let unstaged = self.capture(&["diff", "--no-color"])?;
+            let staged = self.capture(&["diff", "--no-color", "--cached"])?;
+            Ok(format!("{unstaged}{staged}"))
         }
     }
 

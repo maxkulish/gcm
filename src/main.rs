@@ -43,38 +43,45 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
         return Err(GcmError::NonInteractive);
     }
 
-    let gathered = diff::gather(&repo)?;
-    let message = groq::generate_commit_message(&gathered)?;
-
+    // Dry run never stages, so it needs no index transaction.
     if args.dry_run {
+        let gathered = diff::gather(&repo)?;
+        let message = groq::generate_commit_message(&gathered)?;
         ui_preview(&message);
         return Ok(());
     }
+
+    // Commit path: capture the pre-run index as a tree up front, before gathering
+    // the diff or prompting, so the restore point is the true pre-run state even
+    // if the index changes while the user is at the prompt. Restore it on any
+    // post-snapshot failure (FR-47, AC-13). User abort never mutates the index
+    // (staging happens only just before commit), so it needs no restore.
+    let snapshot = repo.snapshot_index()?;
+    let result = commit_flow(&repo, args);
+    if result.is_err() {
+        let _ = repo.restore_index(&snapshot);
+    }
+    result
+}
+
+/// Gather, generate, confirm, then stage and commit. Any `Err` returned here is
+/// the trigger for the caller to restore the index.
+fn commit_flow(repo: &Repo, args: &Cli) -> Result<(), GcmError> {
+    let gathered = diff::gather(repo)?;
+    let message = groq::generate_commit_message(&gathered)?;
 
     match ui::confirm(&message, args.yes)? {
         Decision::Abort => {
             println!("Aborted. Nothing staged, nothing committed.");
             Ok(())
         }
-        Decision::Commit(final_message) => commit_transactionally(&repo, &final_message),
+        Decision::Commit(final_message) => {
+            repo.stage_all()?;
+            repo.commit_signed(&final_message)?;
+            println!("Committed.");
+            Ok(())
+        }
     }
-}
-
-/// Stage and commit within an index transaction: snapshot the index first, and
-/// restore it if staging or the signed commit fails (FR-47, AC-13).
-fn commit_transactionally(repo: &Repo, message: &str) -> Result<(), GcmError> {
-    let snapshot = repo.snapshot_index()?;
-
-    let result = repo.stage_all().and_then(|()| repo.commit_signed(message));
-
-    if result.is_err() {
-        // Best-effort restore; surface the original error regardless.
-        let _ = repo.restore_index(&snapshot);
-    }
-    result?;
-
-    println!("Committed.");
-    Ok(())
 }
 
 fn ui_preview(message: &str) {

@@ -35,7 +35,14 @@ class H(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(n)
         with open(CAP, "ab") as f:
             f.write(body + b"\n")
-        resp = json.dumps({"choices":[{"message":{"content":"chore(test): mock commit message"}}]}).encode()
+        # Route by path prefix so error paths are testable (AC-12).
+        if "/fail500/" in self.path:
+            self.send_response(500); self.end_headers(); self.wfile.write(b"server error"); return
+        if "/empty/" in self.path:
+            content = "   \n  "   # whitespace-only -> EmptyResponse
+        else:
+            content = "chore(test): mock commit message"
+        resp = json.dumps({"choices":[{"message":{"content":content}}]}).encode()
         self.send_response(200)
         self.send_header("Content-Type","application/json")
         self.send_header("Content-Length", str(len(resp)))
@@ -137,14 +144,22 @@ rm -rf "$d"
 
 note "AC-4: thousands of untracked files -> cap engages, no freeze"
 d="$(new_repo)"; mkdir -p "$d/junk"
-for i in $(seq 1 5000); do printf 'x' > "$d/junk/f$i.txt"; done
+# 2000 files: enough to prove no-freeze and the 50-file cap, while the name-only
+# listing stays under MAX_TOTAL_BYTES so the count is exact (no mid-entry cut).
+for i in $(seq 1 2000); do printf 'x' > "$d/junk/f$i.txt"; done
 : > "$CAPTURE"
 start=$(date +%s)
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run >/tmp/gcm-out 2>&1 )
 elapsed=$(( $(date +%s) - start ))
-filecount=$(grep -c '+++ b/junk/' "$CAPTURE" 2>/dev/null || true); filecount=${filecount:-0}
+# The captured request body is JSON (newlines escaped), so count substring
+# occurrences, not lines. Every junk file appears as a "+++ b/junk/" header;
+# beyond-cap files carry a "untracked cap reached" marker (name-only, no read).
+total=$(grep -o '+++ b/junk/' "$CAPTURE" 2>/dev/null | wc -l | tr -d ' '); total=${total:-0}
+nameonly=$(grep -o 'untracked cap reached' "$CAPTURE" 2>/dev/null | wc -l | tr -d ' '); nameonly=${nameonly:-0}
+content_reads=$(( total - nameonly ))
 [ "$elapsed" -le 5 ] && ok "completed in ${elapsed}s (<=5s)" || bad "too slow (${elapsed}s)"
-[ "$filecount" -le 50 ] && grep -q "cap reached" "$CAPTURE" && ok "content for <=50 files ($filecount) + cap notice" || bad "cap not enforced ($filecount files)"
+[ "$total" -gt 100 ] && [ "$content_reads" -le 50 ] && ok "content read for <=50 of $total files ($content_reads)" || bad "cap not enforced ($content_reads reads of $total)"
+[ "$nameonly" -gt 0 ] && ok "remaining files listed name-only ($nameonly omitted)" || bad "no name-only fallback"
 rm -rf "$d"
 
 note "AC-13: failing pre-commit hook -> index restored, exit 1"
@@ -191,10 +206,54 @@ else
   skip "AC-14 needs working commit signing (not available here)"
 fi
 
-stop_mock
+note "AC-12b: provider HTTP 500 -> exit 1, index untouched"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail500/v1" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && ok "HTTP 500 -> exit 1" || bad "HTTP 500 (rc=$rc)"
+[ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after 500" || bad "index mutated after 500"
+rm -rf "$d"
 
-note "AC-2 / AC-7: abort and edit paths"
-skip "AC-2 (abort) and AC-7 (edit) require a TTY; verify manually (restore path is covered by AC-13)"
+note "AC-12c: empty/whitespace provider response -> exit 1"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/empty/v1" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && grep -qi "empty" /tmp/gcm-out && ok "empty response -> exit 1" || bad "empty response (rc=$rc)"
+rm -rf "$d"
+
+note "AC-14b: unborn branch, staged-then-modified file -> unstaged delta captured"
+d="$(new_repo)"; printf 'one\n' > "$d/s.txt"; git -C "$d" add s.txt; printf 'two\n' >> "$d/s.txt"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run >/tmp/gcm-out 2>&1 )
+grep -q '+two' "$CAPTURE" && ok "unstaged change to staged file is in the diff" || bad "unstaged delta missing on unborn"
+rm -rf "$d"
+
+note "AC-2: abort path leaves the index unchanged (PTY)"
+if command -v expect >/dev/null 2>&1 && [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; echo hi > "$d/a.txt"; git -C "$d" add a.txt; echo more >> "$d/a.txt"
+  before="$(git -C "$d" write-tree)"
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 20
+    spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN)"
+    expect {
+      -re {\[Y/n/e} { send "n\r" }
+      timeout { exit 3 }
+    }
+    expect eof
+    catch wait result
+    exit [lindex $result 3]
+  ' >/tmp/gcm-out 2>&1; rc=$?
+  after="$(git -C "$d" write-tree)"
+  [ $rc -eq 0 ] && ok "abort -> exit 0" || bad "abort exit (rc=$rc)"
+  [ "$before" = "$after" ] && ok "index tree unchanged after abort" || bad "index changed after abort"
+  [ -z "$(git -C "$d" log --oneline 2>/dev/null)" ] && ok "no commit created on abort" || bad "commit created on abort"
+  rm -rf "$d"
+else
+  skip "AC-2 PTY abort needs 'expect' + signing (covered structurally: staging only happens post-confirm; restore path covered by AC-13)"
+fi
+
+note "AC-7: edit path"
+skip "AC-7 (\$EDITOR edit) requires interactive TTY; verify manually"
+
+stop_mock
 
 # --- optional real-network smoke test --------------------------------------
 if [ "${GCM_LIVE:-0}" = "1" ] && [ -n "${GROQ_API_KEY:-}" ]; then

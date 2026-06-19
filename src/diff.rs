@@ -1,3 +1,6 @@
+use std::io::Read;
+use std::path::Path;
+
 use crate::error::GcmError;
 use crate::git::Repo;
 
@@ -27,37 +30,40 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
 
-    let mut files_read = 0usize;
+    // Every untracked path counts toward the file-count cap - binary and
+    // unreadable files included - so a directory of thousands of files (of any
+    // kind) cannot force thousands of reads. Once either cap is reached, every
+    // remaining file is listed by name only, with no read at all (FR-57).
+    let mut files_done = 0usize;
     let mut bytes_used = 0usize;
-    for (i, path) in untracked.iter().enumerate() {
-        if files_read >= MAX_UNTRACKED_FILES || bytes_used >= MAX_UNTRACKED_BYTES {
-            let remaining = untracked.len() - i;
+    for path in &untracked {
+        if files_done >= MAX_UNTRACKED_FILES || bytes_used >= MAX_UNTRACKED_BYTES {
             body.push_str(&format!(
-                "\n[{remaining} more untracked file(s) omitted: cap reached; \
-                 add them to .gitignore if they should not be committed]\n"
+                "\n--- /dev/null\n+++ b/{path}\n[content omitted: untracked cap reached]\n"
             ));
-            break;
+            continue;
         }
         let full = repo.root().join(path);
-        match std::fs::read(&full) {
-            Ok(content) if looks_binary(&content) => {
+        // Read at most a per-file slice bounded by the remaining byte budget, so
+        // a single huge file is never loaded into memory in full.
+        let budget = (MAX_UNTRACKED_BYTES - bytes_used).min(PER_FILE_BYTES);
+        match read_capped(&full, budget) {
+            Ok((content, more)) if looks_binary(&content) => {
                 body.push_str(&format!("\n--- /dev/null\n+++ b/{path}\n+[binary file]\n"));
+                let _ = more;
             }
-            Ok(content) => {
-                let budget = MAX_UNTRACKED_BYTES - bytes_used;
-                let take = content.len().min(PER_FILE_BYTES).min(budget);
-                let text = String::from_utf8_lossy(&content[..take]);
+            Ok((content, more)) => {
+                let text = String::from_utf8_lossy(&content);
                 body.push_str(&format!("\n--- /dev/null\n+++ b/{path}\n"));
                 for line in text.lines() {
                     body.push('+');
                     body.push_str(line);
                     body.push('\n');
                 }
-                if take < content.len() {
+                if more {
                     body.push_str("+[truncated]\n");
                 }
-                bytes_used += take;
-                files_read += 1;
+                bytes_used += content.len();
             }
             Err(_) => {
                 // Unreadable (perm, race, symlink loop) - note by name, never block.
@@ -66,6 +72,7 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
                 ));
             }
         }
+        files_done += 1;
     }
 
     if body.len() > MAX_TOTAL_BYTES {
@@ -74,6 +81,18 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
     }
 
     Ok(GatheredDiff { stat, body })
+}
+
+/// Read at most `cap` bytes from a file without loading it fully into memory.
+/// Returns the bytes and whether the file had more content beyond `cap`.
+fn read_capped(path: &Path, cap: usize) -> std::io::Result<(Vec<u8>, bool)> {
+    let file = std::fs::File::open(path)?;
+    // Read one extra byte so we can tell whether the file exceeded the cap.
+    let mut buf = Vec::new();
+    file.take(cap as u64 + 1).read_to_end(&mut buf)?;
+    let more = buf.len() > cap;
+    buf.truncate(cap);
+    Ok((buf, more))
 }
 
 /// Heuristic: is this byte sample binary? NUL bytes or invalid UTF-8 (beyond a
@@ -202,5 +221,31 @@ mod tests {
         assert!(out.contains("diff --git a/img.png b/img.png"));
         assert!(out.contains("body elided"));
         assert!(!out.contains('\u{0}'));
+    }
+
+    #[test]
+    fn read_capped_bounds_large_files() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(&vec![b'a'; 100_000]).unwrap();
+        f.flush().unwrap();
+        let (buf, more) = read_capped(f.path(), 8192).unwrap();
+        assert_eq!(
+            buf.len(),
+            8192,
+            "read is bounded to the cap, not the file size"
+        );
+        assert!(more, "more flag set when the file exceeds the cap");
+    }
+
+    #[test]
+    fn read_capped_small_file_has_no_more() {
+        use std::io::Write;
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(b"short").unwrap();
+        f.flush().unwrap();
+        let (buf, more) = read_capped(f.path(), 8192).unwrap();
+        assert_eq!(buf, b"short");
+        assert!(!more);
     }
 }

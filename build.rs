@@ -13,7 +13,9 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=GCM_GIT_SHA={sha}");
-    // Rerun if HEAD moves so the stamp stays current.
+    // Rerun when HEAD moves: .git/HEAD changes on branch switch; .git/logs/HEAD
+    // is appended on every commit/checkout/reset, catching new commits on the
+    // same branch too.
     println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs");
+    println!("cargo:rerun-if-changed=.git/logs/HEAD");
 }

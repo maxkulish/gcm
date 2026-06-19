@@ -78,9 +78,28 @@ phases:
       acceptance_sh: "24 PASS / 0 FAIL / 1 SKIP (manual TTY abort+edit). Mock-Groq server drives the full commit path: signing (gpgsig header), staging, transactional restore on hook failure, FR-57 cap, gitignore safety, non-TTY guard, exit codes, unborn branch."
     live_groq_note: "Real ureq->api.groq.com call could NOT be exercised in-sandbox: ureq times out to ALL remote hosts (incl. 1.1.1.1 and plain http) while curl reaches them and ureq->127.0.0.1 mock works -> sandbox egress policy blocks compiled binaries, not a gcm bug. Direct curl to the real Groq chat/completions returned a clean conventional message in 0.37s with reasoning hidden (include_reasoning:false), confirming the request shape. The 30s timeout -> exit 1 -> index untouched is correct AC-12 behavior. Binary will reach Groq in the user's real (unsandboxed) environment."
     fixes_during_impl:
-      - "Unborn branch: diff via --cached instead of the empty-tree object (4b825...) which does not exist in a fresh repo with no objects -> 'bad object' (caught by acceptance.sh, fixed)."
+      - "Unborn branch: empty-tree object (4b825...) does not exist in a fresh repo -> 'bad object'. Final approach: diff unstaged + staged (captures staged-then-modified too)."
       - "ureq 3.x: send serialized body via .send() (send_json is behind the 'json' feature) - avoids an extra feature flag."
-    codex_validated: false
+    codex_validated: true
+    codex_verdict: FAIL   # legitimate findings addressed below; re-validation pending
+    codex_report: docs/reviews/clo-486-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-486-gemini-validation.md
+    gemini_verdict: FAIL
+    validation_incident: "Gemini ran in -y YOLO mode and auto-committed a destructive 'empty' commit (5f1f992) deleting 130 files. NOT pushed (origin had clean ab5294b). Recovered via git reset --hard ab5294b + removed validator junk (print_diff.patch, test_tree/, test_unborn/, src/main.rs.orig). Lesson: run validators read-only without auto-approve, or isolate in a worktree."
+    validation_findings_applied:
+      - "diff.rs: bounded read_capped (no whole-file load); every untracked path counts toward the 50-file cap (binary/unreadable included); per-file name-only fallback instead of break."
+      - "main.rs: snapshot index BEFORE gather/prompt; restore on any post-snapshot failure (true pre-run restore point)."
+      - "git.rs: unborn-branch diff = unstaged + staged (robust; empty-tree object absent in fresh repos)."
+      - "build.rs: added .git/logs/HEAD rerun trigger."
+      - "acceptance.sh: +PTY abort (AC-2), +mock 500/empty (AC-12b/c), +AC-14b staged-then-modified, corrected AC-4 cap count (50 reads of 2000 files)."
+    validation_findings_rejected:
+      - "Codex CRITICAL 'branch tip deletes everything' = the Gemini-YOLO commit, reverted; not a real code issue."
+      - "Codex 'use git log --show-signature for AC-1' = false-negative without allowedSignersFile; gpgsig-header check retained (more reliable)."
+    post_fix_quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "14 passed (+2 read_capped bounded-read tests)"
+      acceptance_sh: "32 PASS / 0 FAIL / 1 SKIP (AC-7 edit = manual TTY)"
   pr:
     status: pending
     pr_url: null
