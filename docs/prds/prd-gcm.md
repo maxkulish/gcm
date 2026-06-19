@@ -106,12 +106,13 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-3 | Stage scoped to the committed group | Must | Tool runs the equivalent of `git reset` then stages only group 1's paths; no unrelated files enter the commit |
 | FR-4 | GPG-sign every commit | Must | All commits are created with signing enabled (`-S` equivalent); a repo without signing configured produces a clear error |
 | FR-5 | Interactive confirmation with edit option | Must | Prompt offers `[Y/n/e]`; `e` opens `$EDITOR` (default `vim`) on the message; `n` aborts with exit 0 |
-| FR-6 | `--all` single-commit mode | Should | Stages all changes, requests one conventional-commit message, commits once, clears the cache |
+| FR-6 | `--all` single-commit mode | Should | Stages all changes, requests one Conventional Commits-formatted message (FR-59), commits once, clears the cache |
 | FR-7 | `--dry-run` preview | Should | Prints the grouping plan, commits nothing, does not advance the cache |
 | FR-8 | `--reset` forces re-analysis | Should | Deletes the cached plan before running and always calls the LLM |
 | FR-9 | Abort is not an error | Must | User declining the prompt exits 0; only genuine failures exit non-zero |
 | FR-45 | Every group has a usable commit message when committed | Must | No group reaches the commit step with a null/empty message. The tool either generates messages for all groups up front or regenerates the next group's message on its commit run (strategy chosen in Open Questions). The bash failure mode, where an advanced cache's first group has `commit_message: null` and silently falls back to single-commit-all, must not recur |
 | FR-58 | Handle commit failure (e.g. rejecting pre-commit hook) | Must | If `git commit` fails (a pre-commit hook rejects it, signing fails, etc.), the tool does not advance the plan cache (FR-26), leaves the group's files staged so the user can fix and retry, and surfaces the underlying error. A hook that reformats and re-stages the committed group is acceptable; remaining groups stay pending |
+| FR-59 | Generate Conventional Commits-formatted messages | Must | Every generated `commit_message` follows the Conventional Commits v1.0.0 shape: a `<type>[optional scope]: <description>` header, optional body, and optional footers (including `BREAKING CHANGE:`). The system prompt directs the model to pick a type/scope; the tool runs a lightweight format check on the header of its own generated output and, on a malformed header, treats it as a recoverable generation issue (regenerate/repair, then fall back per FR-24). This is message *generation* plus a self-check of gcm's own output, not linting of existing commits or pre-commit hook enforcement (out of scope). A correctly-formatted history is what lets downstream tools (e.g. release-please) compute semver bumps and changelogs; gcm produces the format but does not run or configure those tools, and reliable parsing under squash-merge depends on the repo's merge strategy (PR title vs per-commit) |
 
 ### FR Group: Multi-Provider LLM Backend (Direct HTTP)
 
@@ -249,9 +250,10 @@ struct Group {
 ```
 
 Invariants:
-- Every group must have a non-empty `commit_message` available at the moment it is committed (FR-45). Two strategies are valid (decision pending, see Open Questions): (a) the model returns a message for every group up front; (b) only `groups[0]` gets a message and the next group's message is generated on the run that commits it. The bash script implements neither correctly: it requests a message only for `groups[0]`, then after advancing the cache the new first group has `commit_message: null`, which trips the single-commit-all fallback and collapses grouping for groups 2+. The rewrite must close this.
+- Every group must have a non-empty `commit_message` available at the moment it is committed (FR-45). The contract is **regenerate-per-group** ([ADR-001](../adrs/001-foundational-architecture-decisions.md) #6): only `groups[0]` carries a message from the initial plan, and each later group's message is generated on the run that commits it, scoped to that group's diff. The bash script implements neither valid strategy correctly: it requests a message only for `groups[0]`, then after advancing the cache the new first group has `commit_message: null`, which trips the single-commit-all fallback and collapses grouping for groups 2+. The rewrite closes this.
 - The plan must partition the change set: every `files` entry exists in the current change set, every changed file appears in exactly one group, and no group is empty (FR-23). Violations reject the plan to fallback (FR-24).
 - The cache holds only the not-yet-committed groups; committing `groups[0]` rewrites the cache as `groups[1..]` (FR-26), with freshness validated by content fingerprint (FR-27), not file names alone.
+- Every `commit_message` is Conventional Commits v1.0.0-formatted (FR-59): a `<type>(scope): description` header, optional body, optional footers (e.g. `BREAKING CHANGE:`). The field carries the full message verbatim; gcm generates this format and self-checks its own header, but does not lint or enforce CC on existing commits.
 
 ## 5. Non-Functional Requirements
 
@@ -295,7 +297,7 @@ Invariants:
 - **Interactive group reordering / commit-all-groups-in-one-run** - reason: the one-group-per-run model is intentional and matches current muscle memory; batch modes are a future enhancement.
 - **Windows support** - reason: not a current target platform; revisit on demand.
 - **GUI/TUI beyond the confirm prompt** - reason: scope control; the CLI prompt is sufficient for v1.
-- **Conventional-commit linting/enforcement and pre-commit hook integration** - reason: separate concern from message generation.
+- **Conventional-commit *linting/enforcement* of existing commits and pre-commit hook integration** - reason: separate concern from message generation. Note: *generating* Conventional Commits-formatted messages, including a lightweight self-check of gcm's own output, IS in scope (FR-59); what stays out is linting arbitrary/existing commits and wiring CC checks into git hooks.
 - **Preserving partial/hunk-level staging** - reason: v1 groups whole files; a pre-existing curated index is reset (with a warning per FR-46), not preserved. Hunk-level work is deferred with hunk-level grouping to Phase 2.
 
 ### Future Phases
