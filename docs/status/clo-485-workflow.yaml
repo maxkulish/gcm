@@ -10,8 +10,8 @@ deliverable: docs/adrs/   # ADR + filled PRD capability matrix
 labels: [HITL]
 
 workflow:
-  current_phase: pr               # plan + implement skipped (ADR docs-only); design -> pr
-  status: in_progress
+  current_phase: complete         # plan + implement skipped (ADR docs-only); design -> pr -> complete
+  status: complete
   approach: research-driven-adr   # user-selected: discovery (capability research) -> design (decisions + ADR) -> pr
 
 phases:
@@ -45,9 +45,21 @@ phases:
     status: skipped
     reason: "ADR is authored in the design phase; no code to implement"
   pr:
-    status: pending      # commit docs/adrs/ + PRD matrix updates, open PR
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/2
+    pr_number: 2
+    pre_flight: "N/A - docs-only change, no Cargo project yet (cargo fmt/clippy/test not applicable)"
+    ci_passed: true      # no CI configured (.github/workflows absent) - vacuously green
+    ci_note: "No remote CI on the repo; nothing to monitor."
+    approved: true       # owner directed merge
+    merge_commit: 0daa95ef43d550e823cec5d3497ca3ac7d30fef1
+    merged_at: 2026-06-19T12:18:53Z
+    status: complete
   complete:
-    status: pending
+    status: complete
+    merged_at: 2026-06-19T12:18:53Z
+    aggregation_files_updated: true
+    linear_status_updated: true
 
 # The decisions this ADR must lock (PRD section 8 open questions + scope checklist)
 decisions:
@@ -143,3 +155,39 @@ history:
     action: design_finalized
     phase: design
     details: "Owner approved at design checkpoint. ADR-001 status -> Accepted, Approved 2026-06-19; README index updated. plan + implement phases skipped (docs-only ADR); advancing to PR."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "N/A - docs-only change, no Cargo project yet. Em dashes converted to regular dashes per user style rule before commit."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: commit_created
+    phase: pr
+    details: "0a88d84 docs(adr): foundational architecture decisions + capability matrix. 6 files, +550/-33."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: pushed_to_remote
+    phase: pr
+    details: "Pushed feat/clo-485-architecture to origin (maxkulish/gcm) with upstream tracking."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: pr_created
+    phase: pr
+    details: "PR #2 opened against main: https://github.com/maxkulish/gcm/pull/2"
+  - timestamp: 2026-06-19T09:07:45Z
+    action: ci_passed
+    phase: pr
+    details: "No CI configured on the repo (.github/workflows absent) - no remote checks to monitor; vacuously green."
+  - timestamp: 2026-06-19T12:18:53Z
+    action: pr_approved
+    phase: pr
+    details: "Owner directed merge at the PR checkpoint."
+  - timestamp: 2026-06-19T12:18:53Z
+    action: pr_merged
+    phase: complete
+    details: "PR #2 squash-merged to main (merge commit 0daa95e)."
+  - timestamp: 2026-06-19T12:18:53Z
+    action: project_sync_complete
+    phase: complete
+    details: "Post-merge sync on main: CLO-485 -> Recently Completed; CLO-486 unblocked (only blocker satisfied); CLO-485 dependency dropped from CLO-489/491/494/496; ROADMAP CLO-485 Done; DEPENDENCIES CLO-486 ready."
+  - timestamp: 2026-06-19T12:18:53Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-485 ADR workflow complete. Deliverable: docs/adrs/001-foundational-architecture-decisions.md (Accepted) on main. Linear CLO-485 -> Done."

@@ -61,35 +61,34 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| CLO-485 | Foundational decisions + capability matrix (ADR) | In Progress | discovery | none |
+| - | (none started) | - | - | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| - | (none) | Next ready after CLO-485 lands: CLO-486 (tracer) | CLO-485 | — |
+| High | CLO-486 | Single-commit tracer: AI message via Groq with safe diff read | CLO-485 (done) | first code slice; cites ADR-001 |
 
-> Once CLO-485 lands, **CLO-486** (tracer) becomes ready; once CLO-486 lands, **CLO-487**, **CLO-488**, **CLO-489**, **CLO-490** all become ready.
+> CLO-485 landed (ADR-001). **CLO-486** (tracer) is now ready; once CLO-486 lands, **CLO-487**, **CLO-488**, **CLO-489**, **CLO-490** all become ready.
 
 ## Blocked
 
 | Task | Title | Blocked By | Notes |
 |------|-------|------------|-------|
-| CLO-486 | Single-commit tracer | CLO-485 | Needs git-access + runtime decisions |
 | CLO-487 | Semantic grouping | CLO-486 | Extends the tracer |
 | CLO-488 | Errors + retries | CLO-486 | Extends the provider call |
-| CLO-489 | Provider trait + Gemini + OpenAI | CLO-486, CLO-485 | Refactors the hardcoded provider |
+| CLO-489 | Provider trait + Gemini + OpenAI | CLO-486 | ADR-001: provider trait shape (3 structured-output forms) |
 | CLO-490 | Secret scan + `gcmignore` | CLO-486 | Optional |
-| CLO-491 | Plan cache | CLO-487, CLO-485 | Message contract from the ADR |
+| CLO-491 | Plan cache | CLO-487 | ADR-001 #6: regenerate-per-group message contract |
 | CLO-492 | Validation + fallback | CLO-487, CLO-488 | |
 | CLO-493 | Automation flags | CLO-487 | |
-| CLO-494 | Anthropic provider | CLO-489, CLO-485 | Auth model from the ADR |
+| CLO-494 | Anthropic provider | CLO-489 | ADR-001 #3: direct Messages API, forced tool-use |
 | CLO-495 | Ollama provider | CLO-489 | |
-| CLO-496 | Onboarding wizard | CLO-485, CLO-489 | Config format + ≥1 provider |
+| CLO-496 | Onboarding wizard | CLO-489 | ADR-001 #4/#5/#11: config format + Groq default + GPG check |
 | CLO-497 | Release + cutover | CLO-487…CLO-496 | Ships after the v1 feature set |
 
 ## Recently Completed
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
-| - | (none yet) | - | - |
+| CLO-485 | Foundational architecture decisions + capability matrix (ADR) | 2026-06-19 | ADR-001 (Accepted): 13 decisions locked + 6-provider capability matrix verified. Cerebras dropped; default→Groq. PR #2 merged. |
