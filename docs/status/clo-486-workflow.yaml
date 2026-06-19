@@ -18,8 +18,8 @@ references:
   bash_tracer: docs/tmp/git-commit-ai.sh   # lines 122-194: single-commit path to mirror (calls mods -> replace with direct Groq REST)
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   classification_rationale: "ADR-001 locked all architecture decisions; explicit acceptance criteria; AFK autonomy. Full discovery/design-doc phases would be near-empty -> specification workflow (spec -> AI review -> implement -> PR). User-confirmed at orchestrate classification checkpoint."
 
 phases:
@@ -115,17 +115,26 @@ phases:
       cargo_test: "15 passed (+read_capped bounded-read, +cyrillic-not-elided)"
       acceptance_sh: "35 PASS / 0 FAIL / 1 SKIP (AC-7 edit = manual TTY); +symlink/FIFO safety case"
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/4
     pr_number: 4
     pre_flight: "cargo fmt --check / clippy -D warnings / cargo test (15) - all clean before PR"
-    ci_passed: false   # tracks remote CI; run in progress at PR creation
+    ci_passed: true    # GitHub Actions CI green on macOS + Linux (fmt/clippy/test/build)
+    ci_runs: [27841876156, 27841930039]
+    approved: true     # owner directed squash-merge at the PR checkpoint
     base: main
     head: feat/clo-486-sceleton
     files_changed: 26
     diff: "+2719 / -35"
+    merge_commit: b7ff8fc88a2c5b9b70eccc46e5f46f3f4c94b6b9
+    merged_at: 2026-06-19T19:13:40Z
+    merge_strategy: squash
   complete:
-    status: pending
+    status: complete
+    merged_at: 2026-06-19T19:13:40Z
+    aggregation_files_updated: true
+    linear_status_updated: true
+    unblocked: [CLO-487, CLO-488, CLO-489, CLO-490]
 
 # Scope checklist (from the Linear task)
 scope:
@@ -183,3 +192,23 @@ history:
     action: pr_created
     phase: pr
     details: "PR #4 opened against main: https://github.com/maxkulish/gcm/pull/4 (26 files, +2719/-35, 6 commits). Linear CLO-486 -> In Review; PR-link comment posted. Remote CI (fmt/clippy/test/build, macOS+Linux) triggered."
+  - timestamp: 2026-06-19T18:20:30Z
+    action: ci_passed
+    phase: pr
+    details: "GitHub Actions CI green on macos-latest + ubuntu-latest (format check, clippy, test, release build). PR MERGEABLE/CLEAN; no required reviews, no automated reviewers on the repo."
+  - timestamp: 2026-06-19T19:13:40Z
+    action: pr_approved
+    phase: pr
+    details: "Owner directed squash-merge at the PR checkpoint (chose Merge squash -> complete)."
+  - timestamp: 2026-06-19T19:13:40Z
+    action: pr_merged
+    phase: complete
+    details: "PR #4 squash-merged to main (merge commit b7ff8fc). gcm tracer is on main."
+  - timestamp: 2026-06-19T19:14:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Post-merge sync on main: CLO-486 -> Recently Completed + master table Done; ROADMAP Phase 1 2/13 done, CLO-486 Done + 487/488/489/490 Ready; DEPENDENCIES unblocked CLO-487/488/489/490 (CLO-486 satisfied), next-tier blockers (491-497) recorded. WIP back to 0/3."
+  - timestamp: 2026-06-19T19:14:00Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-486 specification workflow complete. Deliverable: gcm Rust tracer on main (scaffold + safe diff read -> Groq -> signed commit). 15 unit + 35 acceptance tests, CI green, 3 Codex validation passes. Linear CLO-486 -> Done. Unblocks CLO-487/488/489/490."
