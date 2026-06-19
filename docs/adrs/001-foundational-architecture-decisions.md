@@ -19,7 +19,7 @@ Two facts frame the whole set:
 
 | # | Question | Decision | FR |
 |---|----------|----------|-----|
-| 1 | Git access | **Shell out to `git`** (thin typed wrapper) | FR-4, FR-31, FR-58 |
+| 1 | Git access | **Shell out to `git`** (thin typed wrapper) | FR-4, FR-31, FR-48, FR-58 |
 | 2 | Runtime | **Blocking HTTP client** (no async runtime) | NFR cold-start |
 | 3 | Anthropic auth | **Direct Messages API only** (`ANTHROPIC_API_KEY`); no `claude` CLI | FR-10, FR-41 |
 | 4 | Config format / location / precedence | **TOML** in OS config dir; **flag > env > config > default** | FR-12, FR-40, FR-55 |
@@ -37,20 +37,25 @@ Two facts frame the whole set:
 
 ## Decision 1 - Git access: shell out to `git`
 
-**Decision:** Implement git operations as a thin typed wrapper that shells out to the `git` binary. Do **not** use `git2`/libgit2.
+**Decision:** Implement git operations as a thin typed wrapper that shells out to the `git` binary. Do **not** use `git2`/libgit2 or `gitoxide`/`gix` for the commit (write) path in v1.
 
-**Drivers:** byte-exact parity with bash behavior (FR-31); native GPG signing (FR-4); native pre-commit hook execution (FR-58); honor the user's full git config (signing key, `includeIf`, aliases, credential helpers); cross-platform install simplicity.
+**Drivers** (load-bearing first; validated against the primary user's live git config on 2026-06-19):
+1. **Commit signing as actually configured (FR-4)** - the primary user signs *every* commit via **SSH** (`commit.gpgsign=true`, `gpg.format=ssh`, `gpg.ssh.program=ssh-keygen`, agent-held key). `git commit -S` resolves the key and orchestrates SSH/GPG/x509 signing (agent, keychain, signature framing) natively; a library re-implements it, and SSH signing has thinner library support than GPG.
+2. **Conditional config resolution (`includeIf`)** - the user's identity and signing key are directory-conditional (`[includeIf "gitdir:~/Work/"]` plus a layered `[include]`). git is the source of truth for resolving these; any deviation attributes a commit to the wrong identity or signs with the wrong key.
+3. **Byte-exact plumbing and ignore parity (FR-31, FR-48)** - `git status --porcelain=v1 -z` (a documented, version-stable machine format), `-c core.quotePath=false` (the user's `core.quotePath` is at git's default `true`, so the flag is required), empty-tree diff on an unborn branch, rename records from porcelain `-z`, and untracked gathering via `--exclude-standard` so gitignored secrets never reach the LLM (a *security* parity requirement, not cosmetic).
+4. **Adopter-facing guarantees (not exercised by the primary user):** native pre-commit hook execution (FR-58) and honoring arbitrary user git config (custom hooks, aliases, credential helpers). The primary user's repo has no custom hooks and zero aliases, so these are portability guarantees for adopters, not local requirements.
 
 **Alternatives considered:**
-- *`git2`/libgit2 (rejected):* typed errors and no subprocess, but historically weaker/divergent GPG-signing and hook support, and it forces us to reimplement git config resolution. The signing + hooks + parity requirements dominate the typed-error benefit.
+- *`git2`/libgit2 (rejected):* typed errors and no subprocess, but weaker/divergent signing + hook support, a C build/link dependency, and it forces reimplementing git config resolution. Signing + `includeIf` + parity dominate the typed-error benefit.
+- *`gitoxide`/`gix` (rejected for v1):* the modern pure-Rust engine - clean build (no C deps) and typed errors - but it constructs commit *objects* without running hooks or orchestrating signing, so the write path would re-implement git's hook engine + SSH/GPG signing + `includeIf` resolution, exactly the surface this user's config exercises most. Worth revisiting for **read-only** status/diff later (typed reads over hand-parsed porcelain), with the caveat that its gitignore engine must match git byte-for-byte to preserve FR-48.
 
-**Rationale:** FR-31 specifies exact plumbing - `git status --porcelain=v1 -z`, `-c core.quotePath=false`, diff against the empty tree on an unborn branch, rename records read from porcelain `-z` NUL fields. Shelling out to the user's real `git` reproduces these and makes signing, hooks, and credential helpers "just work." Subprocess overhead is negligible for a per-invocation CLI, and careful NUL-delimited output parsing is already required regardless of the access method.
+**Rationale:** The headline failure the rewrite fixes is parsing *LLM* output (the bash `sed -> perl -> jq` scrape of reasoning-polluted JSON), closed by structured outputs + typed deserialization (FR-16/19) - **not** parsing git output. git plumbing is a different thing: `--porcelain=v1 -z` is a documented, version-stable, NUL-delimited machine interface, and the write path is invoke-and-check-exit-code, not output parsing. Shelling out to the user's real `git` reproduces signing, `includeIf`, hooks, and ignore semantics for free. Subprocess overhead is negligible for a per-invocation CLI and is dwarfed by the LLM round-trip.
 
 **Consequences:**
-- (+) Signing/hooks/credential-helpers/config behave identically to the user's git.
-- (+) No libgit2 system dependency or build complexity; smaller surface for cross-platform breakage (FR-42).
-- (−) Must parse git porcelain/diff text carefully (NUL fields, binary detection, rename records) - mitigated by FR-31/FR-32/FR-33 ACs.
-- (−) Errors are inferred from exit codes + stderr rather than typed libgit2 errors - wrap them in the typed error taxonomy (FR-21).
+- (+) Signing, `includeIf` identity, hooks, credential helpers, and gitignore semantics behave identically to the user's git, for free.
+- (+) No libgit2/C system dependency or build complexity; smaller cross-platform surface (FR-42).
+- (−) **Architectural cost (acknowledged):** the read layer is stringly-typed - we hand-parse porcelain/diff text (NUL fields, binary detection, rename records) and infer errors from exit codes + stderr rather than a typed API. Wrapping a CLI is an anti-pattern in general; it is accepted here because git plumbing is a *stable* interface (not human-output scraping) and the in-process alternatives lose signing/`includeIf`/ignore fidelity. Mitigated by the FR-31/FR-32/FR-33 parsing ACs and a typed FR-21 error taxonomy wrapped over the subprocess boundary.
+- (→) **Planned evolution:** adopt `gix` for the *read* path (typed status/diff) once its porcelain and gitignore-exclude parity (FR-48) are validated; keep `git commit -S` for the write path. Contained behind the git/provider trait, not a v1 commitment.
 
 ---
 
@@ -336,3 +341,4 @@ Structured-output and reasoning-control capabilities, verified against current v
 - **Author:** Max Kulish
 - **Reviewers:** Owner-approved at the CLO-485 design checkpoint (2026-06-19).
 - **Approved:** 2026-06-19
+- **2026-06-19 clarification (PR #3):** Decision 1 drivers re-ranked and validated against the primary user's live git config (SSH commit signing + an active `includeIf`); `gitoxide`/`gix` added to the rejected alternatives; the stringly-typed read-layer tradeoff and a gix-for-reads evolution path recorded. The decision (shell out) is unchanged.
