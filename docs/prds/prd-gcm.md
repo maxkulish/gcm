@@ -120,7 +120,7 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-10 | Call provider REST APIs directly; no `mods`/`crush`/`claude` CLI in the runtime | Must | Network calls go to provider endpoints; no subprocess LLM CLI is invoked |
 | FR-11 | Provider abstraction behind a trait | Must | Adding a provider requires implementing one trait and registering it; core flow is unchanged |
 | FR-12 | Provider selection via flag, env var, and alias | Must | `--provider=<name>`, `GCM_PROVIDER`, and per-provider aliases all select the backend; precedence is flag > env > default |
-| FR-13 | Support the active provider matrix | Should | Groq, Google (Gemini), Anthropic, and OpenAI are callable via direct HTTP; Ollama is callable via a local endpoint (FR-56); Cerebras is supported in config but disabled by default |
+| FR-13 | Support the active provider matrix | Should | Groq, Google (Gemini), Anthropic, and OpenAI are callable via direct HTTP; Ollama is callable via a local endpoint (FR-56). Cerebras is dropped from v1 (ADR-001 #13: unstable public catalog, thin adoption) |
 | FR-14 | Per-invocation model override | Should | A `--model` flag and a `GCM_GROQ_MODEL`-equivalent select the model; `gcmq20`/`gcmq27` map to their models |
 | FR-15 | Per-provider diff budget with per-file truncation | Should | The diff is fit to the provider's char budget by omitting or truncating the largest files' diffs first, each replaced with an explicit `[diff omitted: N bytes]` placeholder, rather than tail-chopping the concatenated diff. Tail-chopping leaves files at the end of the diff with zero context while the file list still requires them to be grouped (FR-23), forcing the model to fabricate their summaries and messages. Starting budgets: Anthropic/Haiku 80k, Groq 350k, OpenAI per-model, Google 500k |
 | FR-16 | Request JSON via structured outputs / JSON mode where supported | Must | Groq requests `response_format` json_schema; Gemini uses `responseSchema`; Anthropic uses tool-use or JSON instruction; the response deserializes without heuristic extraction |
@@ -129,16 +129,18 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-52 | Verify provider capability before building its integration | Should | A provider capability matrix (structured-output support and its JSON-Schema subset, reasoning controls, and their interaction constraints) is verified against current provider docs and recorded with a verification date before that provider's integration ships. FR-16/FR-17 are implemented per the verified capability, with FR-20 defensive parsing where a capability is absent |
 | FR-56 | Local / self-hosted provider support (Ollama) | Should | A local provider talks to an OpenAI-compatible endpoint (default `http://localhost:11434`, overridable via `OLLAMA_HOST`/config), requires no API key, and uses a user-selected local model. It is the zero-egress option (no diff leaves the machine), reinforcing Privacy (FR-48 to FR-50). The tool surfaces a clear error when the endpoint is unreachable |
 
-#### Provider Capability Matrix (to verify before implementation - FR-52)
+#### Provider Capability Matrix (verified - FR-52)
+
+Verified against live vendor docs on 2026-06-19; full sources and confidence caveats in [ADR-001](../adrs/001-foundational-architecture-decisions.md) Appendix A.
 
 | Provider | Structured output | Reasoning control | Known constraint | Verified |
 |----------|-------------------|-------------------|------------------|----------|
-| Groq | `response_format` json_object / json_schema | `reasoning_effort`, `reasoning_format`, `include_reasoning` | With JSON mode, `reasoning_format` must be `parsed`/`hidden`; `raw` returns HTTP 400. gpt-oss reasoning cannot be fully disabled | Pending |
-| Google Gemini | `responseSchema` / `responseMimeType` | thinking config varies by model | `responseSchema` supports only a subset of JSON Schema | Pending |
-| Anthropic | Forced tool-use (`input_schema` + `tool_choice`) | extended thinking | No generic `response_format`; structured output is via a forced tool call | Pending |
-| OpenAI | Structured Outputs (`response_format` json_schema, `strict`) | reasoning models (o-series) have effort params | Strongest structured-output support; verify which models support strict schema | Pending |
-| Ollama (local) | `format` json / OpenAI-compatible json_schema (newer versions) | model-dependent | Capability varies by pulled model and Ollama version; no key, local endpoint (FR-56) | Pending |
-| Cerebras | OpenAI-compatible (verify) | verify | Confirm json_schema + reasoning support; provider currently paused | Pending |
+| Groq | `response_format` json_object / json_schema; `strict:true` only on `openai/gpt-oss-20b` & `gpt-oss-120b` | `reasoning_effort` (gpt-oss: low/med/high, no `none`), `reasoning_format`, `include_reasoning` | `reasoning_format:raw` + JSON mode = HTTP 400 (use parsed/hidden); gpt-oss reasoning is hide-only (`include_reasoning:false`), only Qwen3 fully disables; streaming + tools unsupported with json_schema | 2026-06-19 |
+| Google Gemini | `responseMimeType:"application/json"` + `responseSchema` (OpenAPI-3.0 subset; `$ref`/`allOf`/`oneOf` ignored) | 3.x `thinkingLevel` (MINIMAL/LOW/MED/HIGH); legacy `thinkingBudget` | No hard "off" on 3.x (floor `minimal`); `gemini-3.1-flash-lite` is current GA; `thinkingLevel`+`thinkingBudget` together = 400; only `gemini-2.5-flash-lite` `thinkingBudget:0` truly disables | 2026-06-19 |
+| Anthropic | Forced tool-use (`tools` + `tool_choice` + `input_schema`, optional `strict`) or `output_config.format` (Opus 4.8 / Sonnet 4.6 / Haiku 4.5) | adaptive thinking; CoT omitted by default | No generic `response_format`; structured output is via a forced tool call | 2026-06-19 |
+| OpenAI | Structured Outputs (`response_format` json_schema, `strict:true`) | reasoning models hide CoT by default; `reasoning_effort` | `gpt-4o-mini` supported & non-reasoning (zero CoT to suppress); `gpt-4.1-mini` NOT reliably supported for strict json_schema | 2026-06-19 |
+| Ollama (local) | native `/api/chat` `format`=JSON-Schema object (or `"json"`); OpenAI-compat `response_format` | `think` bool (gpt-oss: low/med/high, not fully off); thinking separated into `message.thinking` | structured output local-only (not Ollama Cloud); fidelity model-dependent → validate + retry (FR-20); no key, `OLLAMA_HOST` override | 2026-06-19 |
+| Cerebras (dropped) | OpenAI-compat json_schema + `strict` (confirmed `gpt-oss-120b`) | `reasoning_effort` + `reasoning_format` (`raw` incompatible w/ JSON) | DROPPED from v1 (ADR-001 Decision 13): Qwen family removed 2026-05-27 (catalog: `gpt-oss-120b`, `zai-glm-4.7`); free tier 5 RPM; unstable public catalog | 2026-06-19 |
 
 ### FR Group: Robust Parsing & Error Handling
 
@@ -338,19 +340,21 @@ Invariants:
 
 ### Open Questions
 
-- [ ] **Anthropic backend**: direct Messages API with `ANTHROPIC_API_KEY`, or retain an optional `claude` CLI path for subscription users? - owner: Max, deadline: before design doc
-- [ ] **git access**: use `git2`/libgit2 for portability and typed errors, or shell out to `git` for exact parity with the bash behavior? - owner: Max, deadline: before design doc
-- [ ] **Default provider for a bare `gcm`**: with five onboarding providers, what does `gcm` (no flag) default to? The bash default is Anthropic Haiku; options are to keep that, default to whatever the user marks during onboarding, or default to the cheapest/local option. - owner: Max, deadline: before design doc
-- [ ] **OpenAI model and alias**: which default OpenAI model (e.g. `gpt-4o-mini` vs `gpt-4.1-mini`), and is `gcmo` the right alias? - owner: Max, deadline: design
-- [ ] **Ollama in v1 (FR-56)**: firm yes or defer? If yes, confirm the alias (`gcml` collides with no existing alias but the suffix convention is provider-initial, and `o` is taken by OpenAI) and whether onboarding probes for a running daemon. - owner: Max, deadline: before design doc
-- [ ] **Multi-group message contract (FR-45)**: generating all messages up front conflicts with content-aware cache freshness (FR-27) - editing a later group busts the cache and forces regeneration anyway - so **regenerate-per-group on its commit run** is the more robust default. Open sub-question: on those subsequent runs, does the model receive the whole original diff or only the remaining group's diff? - owner: Max, deadline: before design doc
-- [ ] **Partial staging (FR-46)**: reset a pre-existing curated index with a warning (simplest, matches file-level grouping) or invest in preserving it? - owner: Max, deadline: design
-- [ ] **Non-interactive defaults (FR-51)**: do `--yes` and `--plan-only` land in v1, and what is the default behavior in a non-TTY context (error vs `--plan-only`)? - owner: Max, deadline: design
-- [ ] **Onboarding parameters (FR-53/54)**: beyond provider activation, key capture, and default selection, should the wizard also check GPG signing config or set a default model? - owner: Max, deadline: design
-- [ ] **Config file format and location**: TOML/JSON under XDG config dir? What is the precedence chain with env vars and flags? - owner: Max, deadline: design
-- [ ] **Cache location cross-platform**: keep `/tmp`-style temp dir or move to an OS cache dir; does FR-30 (bash cache compat) justify keeping the old path on macOS? - owner: Max, deadline: design
-- [ ] **Cerebras**: include in v1 (currently paused for rate limits) or defer to Phase 3? - owner: Max, deadline: before design doc
-- [ ] **Async vs sync runtime**: is `tokio` warranted for a single-call CLI, or is a blocking HTTP client simpler and faster to start? - owner: Max, deadline: design
+All resolved 2026-06-19 in [ADR-001](../adrs/001-foundational-architecture-decisions.md); decision numbers in brackets.
+
+- [x] **Anthropic backend** [ADR-001 #3]: direct Messages API with `ANTHROPIC_API_KEY` only; no `claude` CLI path (FR-10).
+- [x] **git access** [ADR-001 #1]: shell out to `git` (thin typed wrapper) for FR-31 parity + native signing/hooks; not `git2`.
+- [x] **Default provider for a bare `gcm`** [ADR-001 #5]: **Groq** shipped default (free tier, fast, verified strict json_schema); onboarding sets the user's personal default.
+- [x] **OpenAI model and alias** [ADR-001 #7]: `gpt-4o-mini` (pin `gpt-4o-mini-2024-07-18`), alias `gcmo`. `gpt-4.1-mini` rejected (unreliable strict support).
+- [x] **Ollama in v1 (FR-56)** [ADR-001 #8]: firm yes; alias `gcml`; onboarding probes `localhost:11434`/`OLLAMA_HOST`.
+- [x] **Multi-group message contract (FR-45)** [ADR-001 #6]: regenerate-per-group on its commit run; subsequent runs are message-only calls scoped to **only the remaining group's diff**.
+- [x] **Partial staging (FR-46)** [ADR-001 #9]: reset a pre-existing curated index with a warning; no hunk-level preservation in v1 (documented limitation).
+- [x] **Non-interactive defaults (FR-51)** [ADR-001 #10]: `--yes`/`--no-input` + `--plan-only` both in v1; non-TTY without them errors with exact config/env + non-zero exit.
+- [x] **Onboarding parameters (FR-53/54)** [ADR-001 #11]: minimal wizard + a GPG-signing config check; no forced model selection.
+- [x] **Config file format and location** [ADR-001 #4]: TOML in the OS config dir (`directories` crate); precedence flag > env > config > default; `GCM_CONFIG` override.
+- [x] **Cache location cross-platform** [ADR-001 #12]: OS cache dir (`directories` crate); drop FR-30 bash `/tmp` compat (a one-time cold re-analysis is acceptable).
+- [x] **Cerebras** [ADR-001 #13]: **dropped entirely** from v1 (not deferred) - unstable public catalog (Qwen pulled 2026-05-27) + thin adoption.
+- [x] **Async vs sync runtime** [ADR-001 #2]: blocking HTTP client; no `tokio` (single-call CLI, faster cold start).
 
 ## 9. Rollout & Measurement
 
@@ -364,16 +368,18 @@ Invariants:
 
 Exact mapping from the current shell aliases (`~/.zshrc`, all pointing at `/opt/script/git-commit-ai.sh`) to the Rust invocation. Rollback is repointing each alias back to the bash script.
 
+Resolved per [ADR-001](../adrs/001-foundational-architecture-decisions.md): bare-`gcm` **shipped** default is now **Groq** (#5); the primary user keeps Anthropic Haiku as their personal default via onboarding/config. `gcmc` (Cerebras) dropped (#13); `gcmo`/`gcml` aliases confirmed.
+
 | Alias | Provider | Model | Current (bash) | Target (Rust) | v1 |
 |-------|----------|-------|----------------|---------------|----|
-| `gcm` | Anthropic | haiku | `git-commit-ai.sh` | `gcm` | Yes (direct Messages API; default provider TBD - Open Questions) |
-| `gcmq` | Groq | openai/gpt-oss-120b | `--provider=groq` | `gcm --provider=groq` | Yes |
-| `gcmq20` | Groq | openai/gpt-oss-20b | `GCM_GROQ_MODEL=... --provider=groq` | `gcm --provider=groq --model=openai/gpt-oss-20b` | Yes (FR-14) |
-| `gcmq27` | Groq | qwen/qwen3.6-27b | `GCM_GROQ_MODEL=... --provider=groq` | `gcm --provider=groq --model=qwen/qwen3.6-27b` | Yes (FR-14, FR-17) |
-| `gcmg` | Google | gemini-3.1-flash-lite | `--provider=google` | `gcm --provider=google` | Yes |
-| `gcmo` (new) | OpenAI | gpt-4o-mini (configurable) | n/a (new provider) | `gcm --provider=openai` | Yes (alias name TBD) |
-| `gcml` (new) | Ollama (local) | user-pulled model | n/a (new provider) | `gcm --provider=ollama` | Yes if FR-56 lands (alias name TBD) |
-| `gcmc` | Cerebras | qwen-3-235b-... | `--provider=cerebras` (commented out) | deferred | No (Phase 3) |
+| `gcm` | Anthropic (personal default) | haiku | `git-commit-ai.sh` | `gcm` | Yes (direct Messages API; shipped OSS default is Groq per ADR-001 #5; Max sets Anthropic via onboarding) |
+| `gcmq` | Groq | openai/gpt-oss-120b | `--provider=groq` | `gcm --provider=groq` | Yes (strict json_schema) |
+| `gcmq20` | Groq | openai/gpt-oss-20b | `GCM_GROQ_MODEL=... --provider=groq` | `gcm --provider=groq --model=openai/gpt-oss-20b` | Yes (FR-14; strict json_schema) |
+| `gcmq27` | Groq | qwen/qwen3.6-27b | `GCM_GROQ_MODEL=... --provider=groq` | `gcm --provider=groq --model=qwen/qwen3.6-27b` | Yes (FR-14, FR-17; best-effort json_schema only - strict is gpt-oss-only; reasoning fully disableable via `reasoning_effort:none`) |
+| `gcmg` | Google | gemini-3.1-flash-lite | `--provider=google` | `gcm --provider=google` | Yes (responseSchema; thinking floor `minimal`) |
+| `gcmo` (new) | OpenAI | gpt-4o-mini-2024-07-18 (configurable) | n/a (new provider) | `gcm --provider=openai` | Yes (ADR-001 #7) |
+| `gcml` (new) | Ollama (local) | user-pulled model | n/a (new provider) | `gcm --provider=ollama` | Yes (ADR-001 #8; FR-56) |
+| `gcmc` | ~~Cerebras~~ | n/a | `--provider=cerebras` (commented out) | dropped | No (ADR-001 #13 - dropped entirely) |
 | `gcms` | none | n/a | `git commit -S -m` | unchanged | Not part of gcm |
 
 ### Measurement Plan
