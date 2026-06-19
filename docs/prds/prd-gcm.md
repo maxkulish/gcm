@@ -85,6 +85,16 @@ The person affected is the tool's daily user (and any future adopter), every tim
 - Steps: Tool recognizes the typed error, retries with exponential backoff up to a bounded limit, and surfaces a clear message if it ultimately fails (distinct from a parse failure).
 - Outcome: Rate limits and blips self-heal instead of masquerading as a tool bug or a silent fallback.
 
+**UC-5: First-run onboarding**
+- Trigger: A new user installs the binary and runs `gcm` for the first time with no config and no provider set up.
+- Steps:
+  1. Tool detects no config and no usable provider, and starts an interactive wizard.
+  2. Wizard offers the v1 providers (Groq, Gemini, Anthropic, OpenAI, and local Ollama) and lets the user enable one or more.
+  3. For each enabled cloud provider, the wizard uses the API key from the environment if present, otherwise prompts for it; for Ollama it confirms a reachable local endpoint instead.
+  4. User picks which enabled provider is the default for a bare `gcm`.
+  5. Tool writes the config (secrets with user-only permissions or referenced by env var) and proceeds to the normal commit flow.
+- Outcome: A first-time user reaches a working commit without hand-editing config or guessing env-var names; re-running `gcm config` adjusts choices later.
+
 ## 4. Functional Requirements
 
 ### FR Group: Core Commit Workflow
@@ -92,7 +102,7 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | ID | Requirement | Priority | Acceptance Criteria |
 |----|-------------|----------|---------------------|
 | FR-1 | Generate a grouping plan from working-tree changes in a single LLM call | Must | Given changed files, the tool produces a plan with `groups[]`, each having `files`, `summary`, and (group 1 only) `commit_message` |
-| FR-2 | Commit exactly one group per invocation, advancing through groups on re-run | Must | After confirming, only group 1's files are staged and committed; the next run commits the next group without a new LLM call |
+| FR-2 | Commit exactly one group per invocation, advancing through groups on re-run | Must | After confirming, only group 1's files are staged and committed; the next run commits the next group, which must already carry a usable commit message (FR-45). No new grouping call is required; the message-generation strategy is defined by FR-45 |
 | FR-3 | Stage scoped to the committed group | Must | Tool runs the equivalent of `git reset` then stages only group 1's paths; no unrelated files enter the commit |
 | FR-4 | GPG-sign every commit | Must | All commits are created with signing enabled (`-S` equivalent); a repo without signing configured produces a clear error |
 | FR-5 | Interactive confirmation with edit option | Must | Prompt offers `[Y/n/e]`; `e` opens `$EDITOR` (default `vim`) on the message; `n` aborts with exit 0 |
@@ -100,6 +110,8 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-7 | `--dry-run` preview | Should | Prints the grouping plan, commits nothing, does not advance the cache |
 | FR-8 | `--reset` forces re-analysis | Should | Deletes the cached plan before running and always calls the LLM |
 | FR-9 | Abort is not an error | Must | User declining the prompt exits 0; only genuine failures exit non-zero |
+| FR-45 | Every group has a usable commit message when committed | Must | No group reaches the commit step with a null/empty message. The tool either generates messages for all groups up front or regenerates the next group's message on its commit run (strategy chosen in Open Questions). The bash failure mode, where an advanced cache's first group has `commit_message: null` and silently falls back to single-commit-all, must not recur |
+| FR-58 | Handle commit failure (e.g. rejecting pre-commit hook) | Must | If `git commit` fails (a pre-commit hook rejects it, signing fails, etc.), the tool does not advance the plan cache (FR-26), leaves the group's files staged so the user can fix and retry, and surfaces the underlying error. A hook that reformats and re-stages the committed group is acceptable; remaining groups stay pending |
 
 ### FR Group: Multi-Provider LLM Backend (Direct HTTP)
 
@@ -108,12 +120,25 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-10 | Call provider REST APIs directly; no `mods`/`crush`/`claude` CLI in the runtime | Must | Network calls go to provider endpoints; no subprocess LLM CLI is invoked |
 | FR-11 | Provider abstraction behind a trait | Must | Adding a provider requires implementing one trait and registering it; core flow is unchanged |
 | FR-12 | Provider selection via flag, env var, and alias | Must | `--provider=<name>`, `GCM_PROVIDER`, and per-provider aliases all select the backend; precedence is flag > env > default |
-| FR-13 | Support the active provider matrix | Should | Groq, Google (Gemini), and Anthropic are callable; Cerebras is supported in config but may be disabled by default |
+| FR-13 | Support the active provider matrix | Should | Groq, Google (Gemini), Anthropic, and OpenAI are callable via direct HTTP; Ollama is callable via a local endpoint (FR-56); Cerebras is supported in config but disabled by default |
 | FR-14 | Per-invocation model override | Should | A `--model` flag and a `GCM_GROQ_MODEL`-equivalent select the model; `gcmq20`/`gcmq27` map to their models |
-| FR-15 | Per-provider diff size caps | Should | Diff is truncated to the provider's configured char budget before the call (Anthropic/Haiku 80k, Groq 350k, Cerebras 400k, Google 500k as starting values) |
+| FR-15 | Per-provider diff budget with per-file truncation | Should | The diff is fit to the provider's char budget by omitting or truncating the largest files' diffs first, each replaced with an explicit `[diff omitted: N bytes]` placeholder, rather than tail-chopping the concatenated diff. Tail-chopping leaves files at the end of the diff with zero context while the file list still requires them to be grouped (FR-23), forcing the model to fabricate their summaries and messages. Starting budgets: Anthropic/Haiku 80k, Groq 350k, OpenAI per-model, Google 500k |
 | FR-16 | Request JSON via structured outputs / JSON mode where supported | Must | Groq requests `response_format` json_schema; Gemini uses `responseSchema`; Anthropic uses tool-use or JSON instruction; the response deserializes without heuristic extraction |
 | FR-17 | Control reasoning output per model | Must | For reasoning models the request sets reasoning suppression (`reasoning_effort: none` / `reasoning_format: hidden`/`parsed` as the provider supports), so no chain-of-thought reaches stdout |
-| FR-18 | Resolve API keys from environment | Must | Keys read from `GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `CEREBRAS_API_KEY`; a missing key for the selected provider produces a clear, actionable error |
+| FR-18 | Resolve API keys from environment | Must | Keys read from `GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CEREBRAS_API_KEY`; a missing key for the selected provider produces a clear, actionable error. Local providers (Ollama, FR-56) need no key but a reachable endpoint |
+| FR-52 | Verify provider capability before building its integration | Should | A provider capability matrix (structured-output support and its JSON-Schema subset, reasoning controls, and their interaction constraints) is verified against current provider docs and recorded with a verification date before that provider's integration ships. FR-16/FR-17 are implemented per the verified capability, with FR-20 defensive parsing where a capability is absent |
+| FR-56 | Local / self-hosted provider support (Ollama) | Should | A local provider talks to an OpenAI-compatible endpoint (default `http://localhost:11434`, overridable via `OLLAMA_HOST`/config), requires no API key, and uses a user-selected local model. It is the zero-egress option (no diff leaves the machine), reinforcing Privacy (FR-48 to FR-50). The tool surfaces a clear error when the endpoint is unreachable |
+
+#### Provider Capability Matrix (to verify before implementation - FR-52)
+
+| Provider | Structured output | Reasoning control | Known constraint | Verified |
+|----------|-------------------|-------------------|------------------|----------|
+| Groq | `response_format` json_object / json_schema | `reasoning_effort`, `reasoning_format`, `include_reasoning` | With JSON mode, `reasoning_format` must be `parsed`/`hidden`; `raw` returns HTTP 400. gpt-oss reasoning cannot be fully disabled | Pending |
+| Google Gemini | `responseSchema` / `responseMimeType` | thinking config varies by model | `responseSchema` supports only a subset of JSON Schema | Pending |
+| Anthropic | Forced tool-use (`input_schema` + `tool_choice`) | extended thinking | No generic `response_format`; structured output is via a forced tool call | Pending |
+| OpenAI | Structured Outputs (`response_format` json_schema, `strict`) | reasoning models (o-series) have effort params | Strongest structured-output support; verify which models support strict schema | Pending |
+| Ollama (local) | `format` json / OpenAI-compatible json_schema (newer versions) | model-dependent | Capability varies by pulled model and Ollama version; no key, local endpoint (FR-56) | Pending |
+| Cerebras | OpenAI-compatible (verify) | verify | Confirm json_schema + reasoning support; provider currently paused | Pending |
 
 ### FR Group: Robust Parsing & Error Handling
 
@@ -123,8 +148,8 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-20 | Defensive fallback parsing | Should | If structured output is unavailable, a layered extractor (direct -> wrapper-key unwrap -> generic `groups` key) recovers the plan; a residual `<think>` strip remains only as last-resort defense |
 | FR-21 | Typed error taxonomy | Must | The tool distinguishes rate limit (429), bad request (400), server error (5xx), timeout, auth failure, and parse failure as separate error types |
 | FR-22 | Retry with backoff on transient errors | Must | 429 and 5xx are retried with exponential backoff up to a bounded attempt count; 400 and auth errors are not retried |
-| FR-23 | Validate filenames against the real change set | Must | Any file in the plan not present in `git status` triggers fallback rather than a bad `git add` |
-| FR-24 | Single-commit fallback on grouping failure | Must | Empty response, unparseable plan, hallucinated files, or missing group-1 message all degrade to a single-commit flow that never blocks the user |
+| FR-23 | Validate the plan against the real change set | Must | The plan is rejected to fallback if it (a) names a file absent from `git status` (hallucination), (b) omits any changed file, (c) lists a file in more than one group, or (d) contains an empty group. Commit-message placement is validated per the chosen contract (FR-45). The bash validator only checks (a), so omissions silently drop files from history |
+| FR-24 | Single-commit fallback on grouping failure | Must | After retries are exhausted (FR-22), an empty/unparseable/invalid plan or missing message degrades to a single-commit flow. The fallback warns that grouping failed and why, stages changes only after the user confirms the lumped commit, and on decline restores the pre-run index rather than leaving everything staged. It never silently switches modes mid-stream or blocks the commit workflow |
 
 ### FR Group: Plan Cache
 
@@ -132,7 +157,7 @@ The person affected is the tool's daily user (and any future adopter), every tim
 |----|-------------|----------|---------------------|
 | FR-25 | Per-repo plan cache keyed by repo root | Must | Cache key is `sha256(repo-root-path)`; cache is shared across providers for the same repo |
 | FR-26 | Advance cache on commit | Must | After committing group 1, the cache holds only the remaining groups; the cache is deleted when the last group is committed |
-| FR-27 | Stale-cache detection | Must | Before reuse, the cached file set is compared to the current `git status` set; a mismatch discards the cache and re-calls the LLM |
+| FR-27 | Stale-cache detection by content, re-stamped on advance | Must | The cache stores a fingerprint of (sorted pending-file set + per-file content hash of the not-yet-committed files + provider/model + prompt/schema version). Reuse requires a match; any mismatch re-analyzes. The fingerprint covers only pending files and is recomputed when the cache advances (FR-26), so committing a group does not self-invalidate the remainder. Edits and external commits are caught via the content hashes; the fingerprint must NOT naively pin the analysis-time `HEAD`, or every post-commit run would invalidate and defeat FR-26. Filename-set equality alone (the bash behavior) is insufficient: content can change after a `--dry-run` while names stay identical |
 | FR-28 | Cache invalidation paths | Must | `--reset` deletes the cache up front; `--all` and any fallback clear it |
 | FR-29 | Cross-platform cache location | Should | Cache lives in an OS-appropriate temp/cache directory (not a hardcoded `/tmp` path on all platforms); file permissions restrict it to the current user |
 | FR-30 | Backward-readable bash cache format | Could | During personal cutover, an in-flight bash cache file is still readable by the Rust tool |
@@ -141,10 +166,18 @@ The person affected is the tool's daily user (and any future adopter), every tim
 
 | ID | Requirement | Priority | Acceptance Criteria |
 |----|-------------|----------|---------------------|
-| FR-31 | Gather staged + unstaged diff without staging up front | Must | Context is built from `git status --porcelain` and `git diff HEAD`; nothing is staged during analysis |
+| FR-31 | Gather changes without staging, using NUL-delimited paths | Must | Context is built from `git status --porcelain=v1 -z` (or v2 `-z`) and the diff, all run with `-c core.quotePath=false` so path representation is identical between the file list and the diff. Otherwise C-escaped diff paths (git's default for non-ASCII) mismatch the raw `-z` paths and trip strict validation (FR-23) into silent fallback. Paths with spaces, quotes, newlines, unicode, or literal `->` substrings are parsed from NUL fields, not line/awk heuristics. On an unborn branch / empty repo (no `HEAD`), the diff is taken against the empty tree (or `--cached`) instead of `HEAD`. Nothing is staged during analysis |
 | FR-32 | Binary-file detection and elision | Must | Files detected as binary are replaced with a placeholder; non-UTF-8 bytes never corrupt the prompt or the tool |
-| FR-33 | Rename and delete handling | Must | Renames use the new path; deletes are guarded so staging does not error |
-| FR-34 | Untracked file inclusion | Should | Untracked text files contribute their content (capped per file) to the analysis context; collapsed untracked directories are expanded to individual files |
+| FR-33 | Rename and delete handling | Must | Renames are read from porcelain `-z` rename records (old and new as separate NUL fields, not a greedy ` -> ` split); the new path is used; deletes are guarded so staging does not error |
+| FR-34 | Untracked file inclusion | Should | Untracked text files contribute their content (capped per file) to the analysis context; collapsed untracked directories are expanded to individual files, subject to the bounds in FR-57 |
+| FR-57 | Bound untracked expansion to avoid runaway I/O | Must | Untracked-directory expansion and content reading are capped by file count and total bytes (default e.g. 50 files / a few hundred KB). Beyond the cap, the tool includes names only (no content) or aborts with a warning to update `.gitignore`, rather than expanding, stat-ing, and reading thousands of files (e.g. an un-ignored `node_modules`/`target`), which would freeze the CLI and exhaust the context window before truncation runs |
+
+### FR Group: Index & Repo Safety
+
+| ID | Requirement | Priority | Acceptance Criteria |
+|----|-------------|----------|---------------------|
+| FR-46 | Do not silently destroy a curated index | Should | If files are already staged (especially partial/hunk-level staging via `git add -p`) when the tool runs, it warns before resetting the index. v1 does not preserve partial staging (it groups whole files); this limitation is documented, not silent as in bash |
+| FR-47 | Commit is transactional: generate before mutating, restore on failure or abort | Must | The commit message is generated before any staging. If generation fails, or the user declines the commit, the index is restored to its pre-run state rather than left staged. The bash flows mutate the index before confirmation (`git add -A` in fallback, `reset`+`add` in grouped), so a failure or abort leaves a mutated index; the rewrite captures the original index/worktree state and restores it on any non-commit exit |
 
 ### FR Group: CLI, Configuration & Observability
 
@@ -152,10 +185,21 @@ The person affected is the tool's daily user (and any future adopter), every tim
 |----|-------------|----------|---------------------|
 | FR-35 | Preserve all current flags | Must | `--provider`, `--all`, `--dry-run`, `--reset` behave as in bash |
 | FR-36 | `--version` reporting | Should | `gcm --version` prints a build-stamped version string |
-| FR-37 | `--json` machine-readable output | Should | A global `--json` flag emits structured output suitable for scripting |
+| FR-37 | `--json` machine-readable output (preview-oriented) | Should | `--json` emits the structured plan and outcome; it does not by itself bypass the interactive prompt. Automation combines it with a non-interactive flag (FR-51) to either commit unattended or only preview |
 | FR-38 | Structured logging with level control | Should | `GCM_LOG_LEVEL=debug` (and `DEBUG_GCM=1` as a synonym) emit structured debug logs to stderr; default output stays clean |
 | FR-39 | Distinct usage exit code | Should | Invalid CLI usage exits 2; runtime errors exit 1; success and user-abort exit 0 |
 | FR-40 | Config file for providers and models | Should | Providers, models, endpoints, and diff caps are configurable via a documented config file in an OS-appropriate location, with env/flag overrides; no personal paths are hardcoded |
+| FR-51 | Non-interactive operation for scripts and agents | Should | A `--yes`/`--no-input` flag auto-confirms the commit (for agentic/CI use); a `--plan-only` flag emits the grouping plan and exits without committing. Their interaction with `--json` is defined so a caller can fetch a machine-readable plan and either commit unattended or only preview |
+
+### FR Group: First-Run Onboarding & Configuration
+
+A new user with no configuration must reach a working first commit without hand-editing config files or guessing env-var names. On first run with no config and no usable provider, the tool runs a short interactive setup rather than failing.
+
+| ID | Requirement | Priority | Acceptance Criteria |
+|----|-------------|----------|---------------------|
+| FR-53 | Detect first run and launch interactive onboarding | Must | When no config file exists and no provider is configured, the tool starts a guided setup instead of erroring. In a non-interactive context (no TTY, or `--no-input`), it instead prints the exact config/env needed and exits with a clear, non-zero status |
+| FR-54 | Onboarding activates providers and sets the default | Must | The wizard presents the v1 providers (Groq, Gemini, Anthropic, OpenAI, and local Ollama), lets the user enable one or more, captures or locates each enabled provider's API key (reads the env var if already set, else prompts and stores it; Ollama needs an endpoint, not a key), and records which enabled provider is the default for a bare `gcm` |
+| FR-55 | Onboarding persists config safely and is re-runnable | Should | Choices are written to the config file (FR-40); a `gcm config` / `--reconfigure` entry re-runs the wizard idempotently; secrets are referenced by env var or stored with user-only (0600-equivalent) permissions, never world-readable, never committed |
 
 ### FR Group: Distribution & Cross-Platform
 
@@ -165,6 +209,14 @@ The person affected is the tool's daily user (and any future adopter), every tim
 | FR-42 | macOS and Linux support | Should | Release builds pass on macOS and Linux for x86_64 and arm64 |
 | FR-43 | Documented install path | Should | README documents install via release binary and/or `cargo install`; no assumption of `/opt/script` |
 | FR-44 | Reversible personal cutover | Should | Repointing the shell alias from the bash script to the Rust binary is documented, and rollback is a one-line alias change with the bash script left intact |
+
+### FR Group: Privacy & Data Egress
+
+| ID | Requirement | Priority | Acceptance Criteria |
+|----|-------------|----------|---------------------|
+| FR-48 | Respect gitignore on untracked content | Must | Untracked files are gathered with `--exclude-standard` so gitignored files (e.g. `.env`) are never sent to a provider; this preserves the bash behavior and is the primary secret-leak guard |
+| FR-49 | Disclose third-party data egress | Must | The README and `--help` state plainly that diffs and untracked file content are sent to the selected external LLM provider, and link each provider's data-retention / training policy |
+| FR-50 | Optional secret scanning and path ignore | Should | A user can exclude paths from analysis (a `gcmignore` or config glob) and opt into a pre-send scan that redacts or aborts on detected credentials in the diff |
 
 ### Data Model: Grouping Plan
 
@@ -195,9 +247,9 @@ struct Group {
 ```
 
 Invariants:
-- Only `groups[0]` carries a `commit_message`; later groups get their message on the run that commits them.
-- Every `files` entry must exist in the current change set, or the plan is rejected to fallback (FR-23, FR-24).
-- The cache holds only the not-yet-committed groups; committing `groups[0]` rewrites the cache as `groups[1..]` (FR-26).
+- Every group must have a non-empty `commit_message` available at the moment it is committed (FR-45). Two strategies are valid (decision pending, see Open Questions): (a) the model returns a message for every group up front; (b) only `groups[0]` gets a message and the next group's message is generated on the run that commits it. The bash script implements neither correctly: it requests a message only for `groups[0]`, then after advancing the cache the new first group has `commit_message: null`, which trips the single-commit-all fallback and collapses grouping for groups 2+. The rewrite must close this.
+- The plan must partition the change set: every `files` entry exists in the current change set, every changed file appears in exactly one group, and no group is empty (FR-23). Violations reject the plan to fallback (FR-24).
+- The cache holds only the not-yet-committed groups; committing `groups[0]` rewrites the cache as `groups[1..]` (FR-26), with freshness validated by content fingerprint (FR-27), not file names alone.
 
 ## 5. Non-Functional Requirements
 
@@ -216,19 +268,24 @@ Invariants:
 | Compatibility | Behavioral parity with bash v2.7 | Same aliases, flags, env vars, grouping semantics, signing, exit-code intent |
 | Availability | Uptime / MTTR SLA | Not applicable: local single-process CLI with no long-running service; availability is bounded by the user's machine and provider API |
 | Scalability | Concurrent users / data volume | Not applicable: one invocation per user shell; the only scale axis is diff size, bounded by per-provider caps (FR-15) |
-| Compliance | Regulatory standards | Not applicable: no PII storage or processing; the only sensitive data is API keys, handled under Security above |
+| Privacy | Third-party data egress | The tool transmits source diffs and untracked file content to external LLM providers. Gitignored files are excluded (FR-48), egress is disclosed to the user (FR-49), and path-ignore plus optional secret redaction are available (FR-50). No PII is stored locally beyond the plan cache |
+| Security | Secret handling on egress | A user-configurable pre-send scan can redact or abort on detected credentials (FR-50); API keys themselves are never placed in the prompt |
+| Compliance | Regulatory standards | Not applicable as a local CLI: no regulated-data storage. The relevant exposure is voluntary source-code egress to the chosen provider, addressed under Privacy above |
 
 ## 6. Scope & Phasing
 
 ### In Scope (v1)
 
-- Rust binary that talks to provider HTTP APIs directly for Groq, Google (Gemini), and Anthropic.
-- Full grouped-commit workflow with plan cache, signed commits, and single-commit fallback.
-- Structured outputs / JSON mode and per-model reasoning control.
-- Typed errors with retry/backoff.
+- Rust binary that talks to provider HTTP APIs directly. **v1 onboarding ships with five providers: Groq, Gemini, Anthropic, OpenAI, and local Ollama** (FR-56). Cerebras stays in the abstraction but off the menu (Phase 3).
+- First-run interactive onboarding that activates providers, captures API keys (or a local endpoint for Ollama), and sets the default.
+- Full grouped-commit workflow with plan cache, signed commits, and single-commit fallback - including the multi-group message contract (FR-45) the bash script never implemented correctly.
+- Structured outputs / JSON mode and per-model reasoning control, gated by a verified provider-capability matrix (FR-52).
+- Typed errors with retry/backoff; transactional commit that generates before staging (FR-47).
+- Stronger plan validation (no omissions/duplicates/empty groups) and content-aware cache freshness (FR-23, FR-27).
+- NUL-delimited git parsing for path safety (FR-31).
+- Privacy: gitignore-respecting egress, disclosure, optional redaction (FR-48 to FR-50).
 - Cross-platform builds (macOS + Linux, x86_64 + arm64) and documented install.
-- Configurable providers/models with no hardcoded personal paths.
-- `--version`, `--json`, structured logging, distinct usage exit code.
+- `--version`, `--json`, non-interactive `--yes`/`--plan-only`, structured logging, distinct usage exit code.
 
 ### Out of Scope
 
@@ -237,6 +294,7 @@ Invariants:
 - **Windows support** - reason: not a current target platform; revisit on demand.
 - **GUI/TUI beyond the confirm prompt** - reason: scope control; the CLI prompt is sufficient for v1.
 - **Conventional-commit linting/enforcement and pre-commit hook integration** - reason: separate concern from message generation.
+- **Preserving partial/hunk-level staging** - reason: v1 groups whole files; a pre-existing curated index is reset (with a warning per FR-46), not preserved. Hunk-level work is deferred with hunk-level grouping to Phase 2.
 
 ### Future Phases
 
@@ -251,8 +309,9 @@ Invariants:
 | Dependency | Owner | Status | Risk if Delayed |
 |------------|-------|--------|-----------------|
 | Rust toolchain (1.x, async runtime) | Owner | Available | None |
-| Provider HTTP APIs (Groq, Gemini, Anthropic) | External | Available | API/schema changes break a provider |
-| Provider API keys / accounts | Owner / adopter | Owner has keys | Adopters must supply their own; documented in README |
+| Provider HTTP APIs (Groq, Gemini, Anthropic, OpenAI) | External | Available | API/schema changes break a provider |
+| Ollama runtime (local, optional) | User | Optional | Local provider (FR-56) unavailable if not installed/running; cloud providers unaffected |
+| Provider API keys / accounts | Owner / adopter | Owner has keys | Adopters supply their own (Ollama needs none); documented in README |
 | git with GPG signing configured | User environment | Required | Unsigned commits / errors if missing |
 | git access method (libgit2 via `git2` vs shelling to `git`) | Owner | Decision pending (see Open Questions) | Affects portability and parity |
 | Structured-output / reasoning-control support per provider | External | Varies by provider | Falls back to defensive parsing where unsupported |
@@ -271,12 +330,23 @@ Invariants:
 | GPG signing behaves differently across platforms / CI | M | M | Test signing on macOS and Linux; clear error when unconfigured |
 | Scope creep from "shareable" requirements (config UX, docs, cross-platform) delays v1 | M | M | Keep config additions to Should/Could; ship core parity + fixes first |
 | Provider deprecates a hardcoded model (as Kimi K2 was) | M | L | Models are config-driven, not compiled in |
+| Source diffs / untracked content sent to a provider include sensitive code or secrets | M | H | Gitignore exclusion (FR-48), egress disclosure (FR-49), optional pre-send redaction and path ignore (FR-50) |
+| Multi-group message contract chosen wrong: stale messages, or extra per-group LLM cost | M | M | Decide the strategy in design (Open Questions); content-fingerprint cache (FR-27) bounds staleness either way |
+| Onboarding stores secrets insecurely or in a non-portable location | M | M | Prefer env-var references; 0600 file permissions; never committed (FR-55) |
+| Five providers multiply integration, structured-output, and reasoning-control surface area | M | M | Capability matrix gate (FR-52) before each integration; provider trait isolates differences; Groq/OpenAI share an OpenAI-compatible shape |
+| Ollama capability varies by pulled model / version (may lack JSON-schema support) | M | L | FR-20 defensive parsing; capability matrix records the verified floor; Ollama is optional, not the default |
 
 ### Open Questions
 
 - [ ] **Anthropic backend**: direct Messages API with `ANTHROPIC_API_KEY`, or retain an optional `claude` CLI path for subscription users? - owner: Max, deadline: before design doc
 - [ ] **git access**: use `git2`/libgit2 for portability and typed errors, or shell out to `git` for exact parity with the bash behavior? - owner: Max, deadline: before design doc
-- [ ] **Default provider for adopters**: which provider should a fresh install default to, given Anthropic needs a paid key and Groq/Gemini offer free tiers? - owner: Max, deadline: before design doc
+- [ ] **Default provider for a bare `gcm`**: with five onboarding providers, what does `gcm` (no flag) default to? The bash default is Anthropic Haiku; options are to keep that, default to whatever the user marks during onboarding, or default to the cheapest/local option. - owner: Max, deadline: before design doc
+- [ ] **OpenAI model and alias**: which default OpenAI model (e.g. `gpt-4o-mini` vs `gpt-4.1-mini`), and is `gcmo` the right alias? - owner: Max, deadline: design
+- [ ] **Ollama in v1 (FR-56)**: firm yes or defer? If yes, confirm the alias (`gcml` collides with no existing alias but the suffix convention is provider-initial, and `o` is taken by OpenAI) and whether onboarding probes for a running daemon. - owner: Max, deadline: before design doc
+- [ ] **Multi-group message contract (FR-45)**: generating all messages up front conflicts with content-aware cache freshness (FR-27) - editing a later group busts the cache and forces regeneration anyway - so **regenerate-per-group on its commit run** is the more robust default. Open sub-question: on those subsequent runs, does the model receive the whole original diff or only the remaining group's diff? - owner: Max, deadline: before design doc
+- [ ] **Partial staging (FR-46)**: reset a pre-existing curated index with a warning (simplest, matches file-level grouping) or invest in preserving it? - owner: Max, deadline: design
+- [ ] **Non-interactive defaults (FR-51)**: do `--yes` and `--plan-only` land in v1, and what is the default behavior in a non-TTY context (error vs `--plan-only`)? - owner: Max, deadline: design
+- [ ] **Onboarding parameters (FR-53/54)**: beyond provider activation, key capture, and default selection, should the wizard also check GPG signing config or set a default model? - owner: Max, deadline: design
 - [ ] **Config file format and location**: TOML/JSON under XDG config dir? What is the precedence chain with env vars and flags? - owner: Max, deadline: design
 - [ ] **Cache location cross-platform**: keep `/tmp`-style temp dir or move to an OS cache dir; does FR-30 (bash cache compat) justify keeping the old path on macOS? - owner: Max, deadline: design
 - [ ] **Cerebras**: include in v1 (currently paused for rate limits) or defer to Phase 3? - owner: Max, deadline: before design doc
@@ -290,7 +360,25 @@ Invariants:
 - **Open-source release**: Tag `v0.1.0`, publish cross-platform release binaries (macOS + Linux, x86_64 + arm64), document install and provider setup in the README, and keep models/providers config-driven so adopters can adjust without recompiling.
 - **Migration safety**: Preserve cache semantics so an in-flight session survives the swap; validate grouping parity against the bash version on a scratch repo before cutover (LLM output is non-deterministic, so message text need not be byte-identical, but group structure should match).
 
+### Alias Parity & Migration Matrix
+
+Exact mapping from the current shell aliases (`~/.zshrc`, all pointing at `/opt/script/git-commit-ai.sh`) to the Rust invocation. Rollback is repointing each alias back to the bash script.
+
+| Alias | Provider | Model | Current (bash) | Target (Rust) | v1 |
+|-------|----------|-------|----------------|---------------|----|
+| `gcm` | Anthropic | haiku | `git-commit-ai.sh` | `gcm` | Yes (direct Messages API; default provider TBD - Open Questions) |
+| `gcmq` | Groq | openai/gpt-oss-120b | `--provider=groq` | `gcm --provider=groq` | Yes |
+| `gcmq20` | Groq | openai/gpt-oss-20b | `GCM_GROQ_MODEL=... --provider=groq` | `gcm --provider=groq --model=openai/gpt-oss-20b` | Yes (FR-14) |
+| `gcmq27` | Groq | qwen/qwen3.6-27b | `GCM_GROQ_MODEL=... --provider=groq` | `gcm --provider=groq --model=qwen/qwen3.6-27b` | Yes (FR-14, FR-17) |
+| `gcmg` | Google | gemini-3.1-flash-lite | `--provider=google` | `gcm --provider=google` | Yes |
+| `gcmo` (new) | OpenAI | gpt-4o-mini (configurable) | n/a (new provider) | `gcm --provider=openai` | Yes (alias name TBD) |
+| `gcml` (new) | Ollama (local) | user-pulled model | n/a (new provider) | `gcm --provider=ollama` | Yes if FR-56 lands (alias name TBD) |
+| `gcmc` | Cerebras | qwen-3-235b-... | `--provider=cerebras` (commented out) | deferred | No (Phase 3) |
+| `gcms` | none | n/a | `git commit -S -m` | unchanged | Not part of gcm |
+
 ### Measurement Plan
+
+- **Capture bash baselines first**: add lightweight `DEBUG_GCM` timing and parse-outcome logging to the bash script for a short window before cutover, so the "Current" baselines in Section 2 (parse success, fallback rate, latency) are real numbers and the O1/O2 improvements are provable rather than asserted.
 
 - Instrument debug logs to record: plan parse success/failure, fallback invocations and their cause, error types encountered, and timing (cold start, total overhead).
 - First measurement after the first 100 real commit sessions post-cutover.
