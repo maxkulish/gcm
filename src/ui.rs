@@ -61,11 +61,6 @@ fn edit_in_editor(message: &str) -> Result<String, GcmError> {
         .ok()
         .filter(|e| !e.trim().is_empty())
         .unwrap_or_else(|| "vim".to_string());
-    // Split into program + args so common configs like `code --wait` or
-    // `emacsclient -c` work (Command::new treats its arg as a literal program).
-    let mut parts = editor.split_whitespace();
-    let program = parts.next().unwrap_or("vim");
-    let editor_args: Vec<&str> = parts.collect();
 
     let mut tmp = tempfile::Builder::new()
         .prefix("gcm-commit-")
@@ -76,16 +71,26 @@ fn edit_in_editor(message: &str) -> Result<String, GcmError> {
         .map_err(|e| GcmError::Editor(format!("could not write temp file: {e}")))?;
     tmp.flush().ok();
 
-    let status = Command::new(program)
-        .args(&editor_args)
+    // Launch through the shell, exactly as git does for core.editor, so the
+    // $EDITOR string is parsed by the user's shell - handling arguments
+    // (`code --wait`), quotes, and space-containing executable paths (a macOS
+    // app bundle). The file path is passed as a separate argv ($1) and
+    // referenced as "$1", so it is never word-split or re-expanded. (sh is
+    // always present on the supported platforms, macOS + Linux.)
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{editor} \"$1\""))
+        .arg("gcm")
         .arg(tmp.path())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .map_err(|e| GcmError::Editor(format!("could not launch '{editor}': {e}")))?;
+        .map_err(|e| GcmError::Editor(format!("could not launch editor '{editor}': {e}")))?;
     if !status.success() {
-        return Err(GcmError::Editor(format!("'{editor}' exited with an error")));
+        return Err(GcmError::Editor(format!(
+            "editor '{editor}' exited with an error"
+        )));
     }
 
     std::fs::read_to_string(tmp.path())

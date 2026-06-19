@@ -18,7 +18,7 @@ references:
   bash_tracer: docs/tmp/git-commit-ai.sh   # lines 122-194: single-commit path to mirror (calls mods -> replace with direct Groq REST)
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   classification_rationale: "ADR-001 locked all architecture decisions; explicit acceptance criteria; AFK autonomy. Full discovery/design-doc phases would be near-empty -> specification workflow (spec -> AI review -> implement -> PR). User-confirmed at orchestrate classification checkpoint."
 
@@ -57,7 +57,7 @@ phases:
       - "Adaptive Groq reasoning params by model family + <think> backstop"
     flagged_suggestions: []   # none contradicted ADR-001; no user-conflict prompts needed
   implement:
-    status: in_progress
+    status: complete
     approach: "Direct implementation from spec decomposition (spec workflow - no separate plan file; decomposition IS the plan). TDD on pure-logic units; acceptance.sh for integration."
     commits:
       - { sha: 7e26dfe, summary: "chore(gcm): scaffold Rust project, CI, README" }
@@ -103,7 +103,12 @@ phases:
         - "HIGH: untracked symlink followed (leak) / FIFO blocks (freeze) -> symlink_metadata guard, only read regular files; symlinks/FIFOs/devices are name-only."
         - "HIGH: String::truncate(MAX_TOTAL_BYTES) panics on a multibyte char boundary -> char-boundary-safe truncate."
         - "MEDIUM: elision heuristic misclassified valid non-ASCII text as binary -> count NUL/U+FFFD/control chars only (Cyrillic test added)."
-        - "MEDIUM: $EDITOR with args (code --wait) failed -> split into program + args."
+        - "MEDIUM: $EDITOR with args (code --wait) failed -> split into program + args (refined in round 3)."
+    revalidation_round3:
+      tool: "Codex GPT-5.4 (read-only, safe)"
+      report: docs/reviews/clo-486-codex-final.md
+      verdict: "Converged: all diff.rs fixes confirmed correct; one remaining MEDIUM ($EDITOR exec path with spaces, e.g. macOS app bundle) fixed."
+      final_fix: "Launch $EDITOR via `sh -c \"$EDITOR \\\"$1\\\"\"` (git's own core.editor method) so quotes, args, and space-containing executable paths parse correctly. Verified by direct reproduction with a space-in-path editor."
     post_fix_quality_gate:
       cargo_fmt: clean
       cargo_clippy: "clean (-D warnings)"
@@ -156,3 +161,11 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved at the spec checkpoint (chose Approve -> implement). Plan phase skipped (spec decomposition IS the plan). Advancing to implement; will run autonomously through implementation (AFK label) and stop at the PR checkpoint."
+  - timestamp: 2026-06-19T16:30:00Z
+    action: implementation_complete
+    phase: implement
+    details: "6 sub-tasks done: Cargo scaffold + CI + README, git wrapper (write-tree/read-tree transaction, signed commit), safe diff gather (binary elision, FR-57 cap, gitignore), Groq REST (30s timeout, reasoning suppression), [Y/n/e] + non-TTY guard, wiring. Commits 7e26dfe/d24c60b/ab5294b (+e9c0b80, 72117b5, final fix). 15 unit tests, 35 acceptance checks pass; fmt/clippy clean."
+  - timestamp: 2026-06-19T18:16:01Z
+    action: codex_validation_complete
+    phase: implement
+    details: "3 Codex GPT-5.4 read-only passes (Gemini dropped after its YOLO-mode destructive commit, recovered). Round 1: 4 findings (cap unbounded, snapshot timing, unborn diff, build.rs). Round 2: those resolved + 4 new (symlink/FIFO, truncate panic, UTF-8 elision, $EDITOR args). Round 3: all confirmed correct + final $EDITOR-with-spaces fix (sh -c launch). Converged. Findings rejected: bogus 'branch deleted' (= the YOLO commit), and --show-signature (false-negative vs gpgsig check)."
