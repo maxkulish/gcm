@@ -191,3 +191,7 @@ history:
     action: workflow_complete
     phase: complete
     details: "CLO-485 ADR workflow complete. Deliverable: docs/adrs/001-foundational-architecture-decisions.md (Accepted) on main. Linear CLO-485 -> Done."
+  - timestamp: 2026-06-19T12:18:53Z
+    action: followup_merged
+    phase: complete
+    details: "Post-completion refinement PR #3 merged to main (squash 3175e0e): PRD FR-59 (generate Conventional Commits messages, generation-scoped) + ADR-001 Decision 1 drivers tightened and validated against the primary user's live git config (SSH signing + active includeIf; gitoxide added to rejected alternatives; stringly-typed read-layer cost recorded, gix-for-reads named as the evolution). ADR decision unchanged; CLO-485 remains Done."
