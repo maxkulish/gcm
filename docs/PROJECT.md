@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-19 (synced from Linear CLO)
+**Last Updated**: 2026-06-19 (CLO-486 tracer started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -20,7 +20,7 @@
 | ID | Slice | Title | Label | Priority | Status | Blocked by | Covers (FR) |
 |----|-------|-------|-------|----------|--------|------------|-------------|
 | [CLO-485](https://linear.app/cloud-ai/issue/CLO-485) | S0 | Lock foundational architecture decisions + verify provider capabilities (ADR) | HITL | High | Backlog | — | 52; unblocks 10/27/40/45/54 |
-| [CLO-486](https://linear.app/cloud-ai/issue/CLO-486) | S1 | Single-commit tracer: AI message via Groq with safe diff read | AFK | High | Backlog | CLO-485 | 4,5,6,9,10,18a,31a,32,34,35,36,39,41,47,48,49,57 |
+| [CLO-486](https://linear.app/cloud-ai/issue/CLO-486) | S1 | Single-commit tracer: AI message via Groq with safe diff read | AFK | High | In Progress | CLO-485 | 4,5,6,9,10,18a,31a,32,34,35,36,39,41,47,48,49,57 |
 | [CLO-487](https://linear.app/cloud-ai/issue/CLO-487) | S2 | Semantic grouping → commit first group | AFK | High | Backlog | CLO-486 | 1,2a,3,7,15,16,19,23a,24a,31,33 |
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | S4 | Resilient provider calls: typed errors + retries | AFK | High | Backlog | CLO-486 | 20,21,22 |
 | [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | Backlog | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
@@ -61,15 +61,15 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| - | (none started) | - | - | - |
+| [CLO-486](https://linear.app/cloud-ai/issue/CLO-486) | Single-commit tracer: AI message via Groq with safe diff read | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| High | CLO-486 | Single-commit tracer: AI message via Groq with safe diff read | CLO-485 (done) | first code slice; cites ADR-001 |
+| - | - | (nothing ready until CLO-486 lands) | - | - |
 
-> CLO-485 landed (ADR-001). **CLO-486** (tracer) is now ready; once CLO-486 lands, **CLO-487**, **CLO-488**, **CLO-489**, **CLO-490** all become ready.
+> CLO-485 landed (ADR-001). **CLO-486** (tracer) is now **In Progress** (specification workflow). Once CLO-486 lands, **CLO-487**, **CLO-488**, **CLO-489**, **CLO-490** all become ready.
 
 ## Blocked
 

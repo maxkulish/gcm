@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-19 (CLO-485 ADR landed)
+**Last Updated**: 2026-06-19 (CLO-486 tracer started)
 
 ## Summary
 
@@ -15,4 +15,4 @@ Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions; foundational decisions i
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | CLO-485 | Foundational architecture decisions + capability matrix (ADR) | Done | none |
-| CLO-486 | Single-commit tracer (next) | Ready | CLO-485 |
+| CLO-486 | Single-commit tracer | In Progress | CLO-485 |
