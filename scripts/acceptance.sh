@@ -142,6 +142,18 @@ else
 fi
 rm -rf "$d"
 
+note "AC-safe-files: untracked symlink/FIFO are name-only (no follow, no freeze)"
+outside="$(mktemp -d)"; printf 'SENSITIVE_OUTSIDE_CONTENT_xyz\n' > "$outside/secret"
+d="$(new_repo)"; printf 'real\n' > "$d/real.txt"
+ln -s "$outside/secret" "$d/link"
+mkfifo "$d/pipe" 2>/dev/null
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" timeout 10 "$BIN" --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ "$rc" -ne 124 ] && ok "did not hang on FIFO (rc=$rc)" || bad "hung on FIFO (timeout)"
+grep -q "SENSITIVE_OUTSIDE_CONTENT_xyz" "$CAPTURE" && bad "symlink target content leaked" || ok "symlink target not followed"
+grep -q "not a regular file" "$CAPTURE" && ok "special files listed name-only" || bad "no name-only marker for special files"
+rm -rf "$d" "$outside"
+
 note "AC-4: thousands of untracked files -> cap engages, no freeze"
 d="$(new_repo)"; mkdir -p "$d/junk"
 # 2000 files: enough to prove no-freeze and the 50-file cap, while the name-only

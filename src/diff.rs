@@ -44,6 +44,19 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
             continue;
         }
         let full = repo.root().join(path);
+        // Only read regular files. `symlink_metadata` does not follow symlinks,
+        // so we never read a symlink's target (which could leak content from
+        // outside the repo) and never block on a FIFO/device/socket.
+        let is_regular = std::fs::symlink_metadata(&full)
+            .map(|m| m.file_type().is_file())
+            .unwrap_or(false);
+        if !is_regular {
+            body.push_str(&format!(
+                "\n--- /dev/null\n+++ b/{path}\n[omitted: not a regular file]\n"
+            ));
+            files_done += 1;
+            continue;
+        }
         // Read at most a per-file slice bounded by the remaining byte budget, so
         // a single huge file is never loaded into memory in full.
         let budget = (MAX_UNTRACKED_BYTES - bytes_used).min(PER_FILE_BYTES);
@@ -76,7 +89,13 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
     }
 
     if body.len() > MAX_TOTAL_BYTES {
-        body.truncate(MAX_TOTAL_BYTES);
+        // Truncate on a char boundary so a multibyte char split at the cap does
+        // not panic.
+        let mut end = MAX_TOTAL_BYTES;
+        while end > 0 && !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        body.truncate(end);
         body.push_str("\n... (diff truncated)\n");
     }
 
@@ -152,10 +171,17 @@ fn flush_section(section: &str, out: &mut String) {
             .unwrap_or(line);
         sample.push_str(stripped);
     }
-    let total = sample.len();
+    // Count NUL, the UTF-8 replacement char (U+FFFD, what lossy decoding turns
+    // raw binary bytes into), and control chars as "non-text". Valid non-ASCII
+    // text (Cyrillic, CJK, etc.) is NOT counted, so it is never wrongly elided.
+    let total = sample.chars().count();
     let non_text = sample
-        .bytes()
-        .filter(|&c| c != b'\t' && c != b'\n' && c != b'\r' && !(0x20..=0x7e).contains(&c))
+        .chars()
+        .filter(|&c| {
+            c == '\u{0}'
+                || c == '\u{FFFD}'
+                || (c.is_control() && c != '\t' && c != '\n' && c != '\r')
+        })
         .count();
 
     if total > 200 && (non_text as f64) / (total as f64) > 0.10 {
@@ -207,6 +233,19 @@ mod tests {
         let out = elide_binary_diff(diff);
         assert!(out.contains("+new"));
         assert!(!out.contains("body elided"));
+    }
+
+    #[test]
+    fn cyrillic_text_diff_is_not_elided() {
+        // Valid non-ASCII (UTF-8) text must not be misclassified as binary even
+        // though every Cyrillic byte is > 0x7e.
+        let mut diff = String::from("diff --git a/doc.txt b/doc.txt\n@@ -0,0 +1 @@\n");
+        for _ in 0..50 {
+            diff.push_str("+Добавлен новый раздел документации про настройку\n");
+        }
+        let out = elide_binary_diff(&diff);
+        assert!(out.contains("Добавлен"), "Cyrillic text preserved");
+        assert!(!out.contains("body elided"), "valid UTF-8 not elided");
     }
 
     #[test]

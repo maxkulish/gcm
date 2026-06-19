@@ -95,11 +95,20 @@ phases:
     validation_findings_rejected:
       - "Codex CRITICAL 'branch tip deletes everything' = the Gemini-YOLO commit, reverted; not a real code issue."
       - "Codex 'use git log --show-signature for AC-1' = false-negative without allowedSignersFile; gpgsig-header check retained (more reliable)."
+    revalidation_round2:
+      tool: "Codex GPT-5.4 (read-only, safe)"
+      report: docs/reviews/clo-486-codex-revalidation.md
+      verdict: "FAIL (all 4 prior findings confirmed RESOLVED; 4 new found)"
+      new_findings_applied:
+        - "HIGH: untracked symlink followed (leak) / FIFO blocks (freeze) -> symlink_metadata guard, only read regular files; symlinks/FIFOs/devices are name-only."
+        - "HIGH: String::truncate(MAX_TOTAL_BYTES) panics on a multibyte char boundary -> char-boundary-safe truncate."
+        - "MEDIUM: elision heuristic misclassified valid non-ASCII text as binary -> count NUL/U+FFFD/control chars only (Cyrillic test added)."
+        - "MEDIUM: $EDITOR with args (code --wait) failed -> split into program + args."
     post_fix_quality_gate:
       cargo_fmt: clean
       cargo_clippy: "clean (-D warnings)"
-      cargo_test: "14 passed (+2 read_capped bounded-read tests)"
-      acceptance_sh: "32 PASS / 0 FAIL / 1 SKIP (AC-7 edit = manual TTY)"
+      cargo_test: "15 passed (+read_capped bounded-read, +cyrillic-not-elided)"
+      acceptance_sh: "35 PASS / 0 FAIL / 1 SKIP (AC-7 edit = manual TTY); +symlink/FIFO safety case"
   pr:
     status: pending
     pr_url: null
