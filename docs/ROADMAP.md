@@ -10,8 +10,8 @@
 
 ## Phase 1: Foundations
 
-Source: _link the PRD or design doc that drives this phase._
+Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions.
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
-| - | - | - | - |
+| CLO-485 | Foundational architecture decisions + capability matrix (ADR) | In Progress | none |

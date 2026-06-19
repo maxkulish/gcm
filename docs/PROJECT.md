@@ -61,13 +61,13 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| - | (none started) | - | - | - |
+| CLO-485 | Foundational decisions + capability matrix (ADR) | In Progress | discovery | none |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| High | CLO-485 | Foundational decisions + capability matrix (ADR) | none | unblocks the whole tree |
+| - | (none) | Next ready after CLO-485 lands: CLO-486 (tracer) | CLO-485 | — |
 
 > Once CLO-485 lands, **CLO-486** (tracer) becomes ready; once CLO-486 lands, **CLO-487**, **CLO-488**, **CLO-489**, **CLO-490** all become ready.
 

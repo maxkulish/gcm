@@ -1,0 +1,145 @@
+# Workflow state for CLO-485
+# Managed by /task:orchestrate
+
+task: CLO-485
+title: "Lock foundational architecture decisions and verify provider capabilities (ADR)"
+linear_url: https://linear.app/cloud-ai/issue/CLO-485/lock-foundational-architecture-decisions-and-verify-provider
+branch: feat/clo-485-architecture
+task_type: development          # ADR task; runs as research-driven design (discovery -> design -> pr)
+deliverable: docs/adrs/   # ADR + filled PRD capability matrix
+labels: [HITL]
+
+workflow:
+  current_phase: pr               # plan + implement skipped (ADR docs-only); design -> pr
+  status: in_progress
+  approach: research-driven-adr   # user-selected: discovery (capability research) -> design (decisions + ADR) -> pr
+
+phases:
+  discovery:
+    status: complete
+    approved: true
+    problem_framed: true     # ADR scope is fully defined in the Linear task + PRD section 8
+    prd_exists: true
+    prd_file: docs/prds/prd-gcm.md
+    prd_created: false
+    note: "Discovery reframed for ADR task = capability-matrix verification (FR-52), not PRD persona discovery (PRD already mature)."
+    capability_research: complete   # 6/6 provider rows verified against live docs 2026-06-19
+  design:
+    status: complete
+    design_doc: docs/adrs/001-foundational-architecture-decisions.md
+    draft_ready: true
+    finalized: true      # ADR-001 status -> Accepted; owner-approved 2026-06-19
+    discovery_context_used: true
+    review_gemini: null  # owner-decided ADR; automated AI review skipped (advisory) unless requested
+    review_ollama: null
+    review_verdict: null
+    review_completed: false  # gate is owner checkpoint approval, not AI review
+    review_applied: false
+    applied_suggestions: []
+    flagged_suggestions: []
+  plan:
+    status: skipped
+    reason: "ADR task - no implementation code to plan; decisions are the output"
+    approved: true
+  implement:
+    status: skipped
+    reason: "ADR is authored in the design phase; no code to implement"
+  pr:
+    status: pending      # commit docs/adrs/ + PRD matrix updates, open PR
+  complete:
+    status: pending
+
+# The decisions this ADR must lock (PRD section 8 open questions + scope checklist)
+decisions:
+  - key: git_access
+    decided: true
+    value: "Shell out to git (thin typed wrapper)"
+    rationale: "Byte-exact FR-31 plumbing parity; GPG signing (FR-4), hooks (FR-58), credential helpers, user git config work natively; no libgit2 build dep."
+  - key: runtime
+    decided: true
+    value: "Blocking HTTP client (ureq / reqwest::blocking)"
+    rationale: "Single LLM call per run; no concurrency to exploit. Faster cold start, smaller binary, no async coloring. Trait stays sync fn generate()."
+  - key: anthropic_auth
+    decided: true
+    value: "Direct Messages API only (ANTHROPIC_API_KEY); no claude CLI"
+    rationale: "FR-10 forbids LLM CLI in runtime; single-binary (FR-41); uniform errors/retries + forced-tool-use structured output. Paid-key friction mitigated by Groq default."
+  - key: config_format_location
+    decided: true
+    value: "TOML at OS config dir (directories crate); precedence flag > env > config > default; GCM_CONFIG override; secrets by env-var name not plaintext"
+    rationale: "Rust-ecosystem standard, human-editable; XDG-correct (FR-40 no hardcoded paths); conventional precedence; FR-55 secret handling."
+  - key: default_provider
+    decided: true
+    value: "Groq (shipped default); onboarding sets the user's personal default"
+    rationale: "Free tier + fast + verified strict json_schema = best zero-friction default vs paid-key Anthropic or local-setup Ollama. FR-54 lets the user override (Max keeps Anthropic locally)."
+  - key: multi_group_message_contract
+    decided: true
+    value: "Regenerate-per-group on its commit run; subsequent runs are message-only calls scoped to the remaining group's diff"
+    rationale: "PRD/FR-45/FR-27 aligned; fixes bash null-message bug; avoids stale messages from upfront generation; scoped diff keeps prompt cheap and prevents re-grouping (FR-2)."
+  - key: openai_model_alias
+    decided: true
+    value: "gpt-4o-mini (pin gpt-4o-mini-2024-07-18); alias gcmo"
+    rationale: "Verified: only cheap model with strict json_schema AND non-reasoning (zero CoT). gpt-4.1-mini rejected (unreliable strict support). Config-driven (FR-14)."
+  - key: ollama_in_v1
+    decided: true
+    value: "Firm yes; alias gcml; onboarding probes localhost:11434 / OLLAMA_HOST"
+    rationale: "Zero-egress privacy story (FR-48-50), only no-key option. Native /api/chat format=schema verified (model-dependent -> validate+retry via FR-20)."
+  - key: partial_staging
+    decided: true
+    value: "Reset pre-existing curated index with a warning; do not preserve hunk-level staging in v1"
+    rationale: "Matches whole-file grouping (FR-46); transactional restore on abort (FR-47); hunk preservation out of scope, documented not silent."
+  - key: non_interactive_defaults
+    decided: true
+    value: "--yes/--no-input + --plan-only both in v1; non-TTY without them errors with exact config/env + non-zero exit"
+    rationale: "FR-51/FR-37/FR-53 aligned; loud actionable failure beats silent preview or hang."
+  - key: onboarding_parameters
+    decided: true
+    value: "Minimal wizard (activate providers + capture key + select default) PLUS a GPG-signing config check; no forced model selection"
+    rationale: "GPG check prevents the most likely first-commit failure (FR-4 signing); model selection adds friction for little gain (config defaults exist)."
+  - key: cache_location
+    decided: true
+    value: "OS cache dir (directories crate); drop FR-30 bash /tmp compat; user-only perms; key sha256(repo-root)"
+    rationale: "FR-29 OS-appropriate cache; FR-30 is a 'Could' and the personal one-time cutover doesn't justify a hardcoded /tmp path."
+  - key: cerebras_in_v1       # include vs defer to Phase 3
+    decided: true
+    value: "DROPPED entirely (not deferred)"
+    rationale: "Cerebras removed the Qwen model the PRD named from public access mid-stream (deprecated 2026-05-27); unstable public catalog + thin adoption. Verified snapshot retained in ADR for the record. Removes gcmc alias."
+
+# Provider capability matrix to verify against live docs (FR-52)
+capability_matrix:
+  providers: [groq, gemini, anthropic, openai, ollama, cerebras]
+  verified: true            # all 6 rows verified against live docs
+  verification_date: 2026-06-19
+  rows:
+    groq: "json_schema+strict (gpt-oss-20b/120b only); reasoning_format raw+JSON=400; gpt-oss reasoning hide-only (include_reasoning:false), Qwen3 can fully disable (reasoning_effort:none); streaming+tools unsupported with json_schema"
+    gemini: "responseMimeType+responseSchema (OpenAPI subset; $ref/allOf/oneOf ignored); 3.x thinkingLevel (minimal floor, no hard off); gemini-3.1-flash-lite GA; thinkingLevel+thinkingBudget mutually exclusive=400; 2.5-flash-lite thinkingBudget:0 = only true off"
+    anthropic: "forced tool-use (tools+tool_choice+input_schema, optional strict) or output_config.format (Opus4.8/Sonnet4.6/Haiku4.5); NO generic response_format; adaptive thinking, CoT omitted by default"
+    openai: "response_format json_schema+strict (gpt-4o-mini supported & non-reasoning=no CoT; gpt-4.1-mini NOT reliably supported); reasoning models hide CoT by default; recommend gpt-4o-mini(-2024-07-18)"
+    ollama: "native /api/chat format=JSON-schema (or 'json'); think bool (gpt-oss low/med/high, not fully off); thinking separate from content; Cloud unsupported (local only); model-dependent; OpenAI-compat reasoning_effort:none"
+    cerebras: "OpenAI-compat json_schema+strict (gpt-oss-120b confirmed); reasoning_effort + reasoning_format(raw incompatible w/ JSON); Qwen family REMOVED 2026-05-27 (catalog: gpt-oss-120b, zai-glm-4.7); free tier 5 RPM = defer driver"
+  sources_captured: true    # each row carries official doc URLs + per-claim confidence (in design phase synthesis)
+
+history:
+  - timestamp: 2026-06-19T09:07:45Z
+    action: workflow_started
+    phase: discovery
+    details: "New workflow created for CLO-485 (ADR). Classified as development run as research-driven ADR (discovery -> design -> pr); plan/implement skipped (docs-only deliverable). User-selected approach via orchestrate classification prompt."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: project_sync_start
+    phase: discovery
+    details: "WIP 0/3, no blockers (CLO-485 is tree root). PROJECT.md Active Work + ROADMAP Phase 1 set to In Progress (discovery)."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: discovery_report_complete
+    phase: discovery
+    details: "6-provider capability matrix verified against live docs (5 parallel research agents + Anthropic from authoritative API ref). All rows carry official URLs + per-claim confidence."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: discovery_approved
+    phase: discovery
+    details: "User approved discovery and decided open-question 'cerebras_in_v1' = DROPPED entirely (unstable public catalog, thin adoption). v1 provider set: Groq, Gemini, Anthropic, OpenAI, Ollama."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: design_draft_ready
+    phase: design
+    details: "All 12 remaining open questions decided (4 keystones via HITL prompt as recommended; ⑤-⑫ accepted as recommended). ADR-001 written to docs/adrs/ + README index. PRD updated: capability matrix dated 2026-06-19, §8 open questions resolved, §9 alias matrix (gcmc dropped, gcmo/gcml confirmed, default->Groq), FR-13 Cerebras drop."
+  - timestamp: 2026-06-19T09:07:45Z
+    action: design_finalized
+    phase: design
+    details: "Owner approved at design checkpoint. ADR-001 status -> Accepted, Approved 2026-06-19; README index updated. plan + implement phases skipped (docs-only ADR); advancing to PR."
