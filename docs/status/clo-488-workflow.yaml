@@ -29,7 +29,7 @@ depends_on:
   blocks: [CLO-492, CLO-497]     # CLO-492 (validation+fallback) needs typed errors; CLO-497 (release) needs the full feature set
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   classification_rationale: "Same profile as CLO-486/487 (both user-confirmed specifications): ADR-001 locks every architecture decision relevant here (Decision 2 = blocking ureq client, no async runtime for retries; Decision 3 explicitly names 'typed errors (FR-21) and retries (FR-22)' as a driver; capability matrix records Groq's 429/400/json_schema semantics). FR-20/21/22 are fully specified Must-level requirements with explicit/testable acceptance criteria in the Linear task. AFK autonomy. Extends an existing module (src/groq.rs, whose GroqError doc comment literally says 'the full typed-error/retry surface (FR-21/22) lands in CLO-488') - no new architecture decisions, so a full discovery/design-doc would be near-empty. Auto-classified specification (no flag); AFK label authorizes proceeding without a classification prompt."
 
@@ -105,6 +105,40 @@ phases:
       cargo_build_release: ok
       acceptance_sh: "89 PASS / 0 FAIL / 1 SKIP (manual $EDITOR). New CLO-488 cases: AC-488-1 429-retry-then-success (3 reqs), AC-488-2 400 fast-fail (1 req), AC-488-3 401 fast-fail names key (1 req), AC-488-4 5xx exhausts (4 reqs) + index untouched, AC-488-8 GCM_DEBUG variant visible / silent when unset."
     egress_note: "Real Groq HTTP not exercised in-sandbox (same egress limit as CLO-486/487); retry+taxonomy proven by unit tests (injected sleeper, no network) + the stateful mock-Groq acceptance harness. Binary reaches Groq in the user's real environment."
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-488-gemini-validation.md
+        verdict: PASS
+        notes: "No new findings. One optional future-hardening note: parse_defensive's balanced-object scan only extracts {..}; an UNFENCED bare [..] array after prose would not be captured - 'incredibly unlikely' under Groq strict json_schema + markdown fences; deferred (the fix strictly meets the finding criteria). Initial run failed on a trusted-directory gate; re-run with GEMINI_CLI_TRUST_WORKSPACE=true."
+        mode: "--sandbox -y read-only; no working-tree mutation"
+      codex:
+        report: docs/reviews/clo-488-codex-validation.md
+        verdict: FAIL
+        mode: "-s read-only (GPT-5.4 high effort); HEAD unchanged"
+        findings_applied:
+          - "HIGH: parse_defensive could not recover a bare top-level groups array [{..},..] (no {groups:..} wrapper) -> recover_groups now treats a top-level Value::Array as the groups payload + re-wraps; the Plan deserialize still validates element shape. Commit 188db85 + plan unit test parse_defensive_bare_top_level_array."
+          - "MEDIUM: bounded body read used ureq limit().read_to_string(), which ERRORS once the cap is hit (VERIFIED in ureq 3.3.0 src: LimitReader returns BodyExceedsLimit; ureq's own limit_below_size test confirms), so BadRequest.detail dropped to None for bodies >=4096B. Fix: std Take reader (as_reader().take(4096).read_to_end) + from_utf8_lossy. Commit 188db85 + acceptance AC-488-9 (>4096 body)."
+          - "LOW: GCM_RETRY_MAX parsed u64 then `as u32` (wraps out-of-range to a surprising count) -> u32::try_from(..).ok() so invalid -> default. Commit 188db85."
+        missing_coverage_added:
+          - "AC-488-3b: 403 auth fast-fail (the same Auth arm as 401, now exercised)."
+          - "AC-488-8b: retry attempts logged under GCM_DEBUG (transient RateLimit variant visible during retries)."
+          - "AC-488-9: >4096-byte error body stays bounded yet still yields a (truncated) detail."
+        findings_declined: []   # all 3 findings were valid (each verified) and applied; nothing declined
+      post_fix_quality_gate:
+        cargo_test: "69 passed (+parse_defensive_bare_top_level_array)"
+        cargo_clippy: "clean (-D warnings)"
+        cargo_fmt: clean
+        acceptance_sh: "96 PASS / 0 FAIL / 1 SKIP (+AC-488-3b, +AC-488-8b, +AC-488-9)"
+      fix_commit: 188db85
+      codex_revalidation:
+        report: docs/reviews/clo-488-codex-revalidation.md
+        verdict: "PASS_WITH_NOTES (all 3 findings RESOLVED; no new findings; only note = read-only sandbox could not run tests, which we did: 69 unit + 96 acceptance green)"
+      converged: true   # Gemini PASS; Codex FAIL -> fixed -> PASS_WITH_NOTES
+    codex_validated: true
+    codex_verdict: "FAIL -> PASS_WITH_NOTES (converged)"
+    codex_report: docs/reviews/clo-488-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-488-gemini-validation.md
+    status: complete
   pr:
     status: pending
   complete:
@@ -147,3 +181,11 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved at the spec checkpoint ('continue with updated plan, approved') after the round-2 implementation fixes were applied. Consensus APPROVE_WITH_SUGGESTIONS (Gemini substantive + Ollama structural); all 9 lok suggestions + all 5 user round-2 points applied. Plan phase skipped (spec decomposition IS the plan). Advancing to implement; will run autonomously through implementation + the dual-model validation gate (AFK) and stop at the PR checkpoint."
+  - timestamp: 2026-06-20T19:30:00Z
+    action: implementation_complete
+    phase: implement
+    details: "6 sub-tasks done TDD-first (stub todo!() -> watched RED via cargo test -> implemented -> watched GREEN) for every pure-logic unit: debug.rs (GCM_DEBUG gate), groq.rs taxonomy (classify_status/parse_retry_after/bad_request_detail/Display + send_chat_once with http_status_as_error(false), capped body, Retry-After), groq.rs retry (RetryConfig/is_retryable/retry_after_hint/backoff_delay/retry_with with injected FnMut sleeper), plan.rs defensive parse (parse_defensive candidate-and-recover + recover_groups + Parse), main.rs routing (Auth|MissingKey->Fatal) + GCM_DEBUG {e:?}, acceptance.sh stateful mock + docs. Commits 5d72be1 (feat) + bd997d5 (docs). 68 unit + 89 acceptance green; no new deps; no async."
+  - timestamp: 2026-06-20T19:55:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Validation gate (both read-only - Codex -s read-only, Gemini --sandbox; HEAD unchanged, no CLO-486-style YOLO incident). Gemini PASS (no new findings; one optional unfenced-bare-array note, deferred). Codex round 1 FAIL: HIGH (bare top-level groups array unrecoverable), MEDIUM (ureq limit().read_to_string() ERRORS at the cap -> BadRequest.detail dropped for >=4096B bodies; VERIFIED against ureq 3.3.0 source), LOW (GCM_RETRY_MAX `as u32` wraps). All 3 verified valid and fixed (commit 188db85) with regression tests + AC-488-3b/8b/9 coverage; nothing declined. Codex re-validation: PASS_WITH_NOTES, all RESOLVED, no new findings. Converged. Post-fix: 69 unit + 96 acceptance green, fmt + clippy clean."
