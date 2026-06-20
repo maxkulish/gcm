@@ -25,7 +25,7 @@ depends_on:
   blocks: [CLO-491, CLO-492, CLO-493, CLO-497]
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   classification_rationale: "Identical shape to CLO-486 (user-confirmed specification): ADR-001 locks every architecture decision (grouping contract = Decision 1, Groq strict json_schema = Decision 5, regenerate-per-group = Decision 6), explicit/testable acceptance criteria, AFK autonomy, extends an existing module with the grouping algorithm already specified in the bash reference (lines 305-466). No new architecture decisions -> full discovery/design-doc would be near-empty. Auto-classified specification (no flag); AFK label authorizes proceeding without a classification prompt."
 
@@ -74,15 +74,54 @@ phases:
       pushback: "P2 reviewer offered 'abort OR fall back to single-commit'; pushed back - fallback is unsafe (single-commit stages the same marker-laden tree), so abort is the only correct response. Adopted abort + clean-merge bypass."
       spec_changes: "status -uall; unmerged-abort Must + AC-12 + eval 21; NUL-stdin literal-pathspec staging Must + AC-13 + eval 22; rename both-paths reaffirmed (eval 23); -uall path-agreement eval 20; hunk-staging disclosure Prefer; sub-tasks 2/5/6 updated."
   implement:
-    status: in_progress
-    approach: "Direct implementation from spec decomposition (spec workflow - no separate plan file; decomposition IS the plan). TDD on pure-logic units (plan parse/validate, status parse, per-file truncation); scripts/acceptance.sh for integration via the mock-Groq harness. Sub-task order 1->2->3->4->5->6."
+    status: complete
+    approach: "Direct implementation from spec decomposition (spec workflow - no separate plan file; decomposition IS the plan). TDD on pure-logic units (plan validate, status parse, per-file truncation, plan payload), with stub->RED->impl->GREEN and mutation checks proving tests load-bearing; scripts/acceptance.sh for integration via the mock-Groq harness. Sub-task order 1->2->3->4->5->6."
     sub_tasks:
-      - { n: 1, name: "plan.rs: Plan/Group + JSON schema + validate_basic", status: pending }
-      - { n: 2, name: "git.rs: -uall status parse, ChangedFile, has_unmerged, NUL-stdin literal staging, clear_staged", status: pending }
-      - { n: 3, name: "diff.rs: gather_for_grouping + per-file [diff omitted] truncation", status: pending }
-      - { n: 4, name: "groq.rs: generate_plan (response_format strict json_schema)", status: pending }
-      - { n: 5, name: "main.rs/ui.rs/cli.rs: orchestration, merge guard, display, dry-run, stage group 1, fallback, --all", status: pending }
-      - { n: 6, name: "tests + scripts/acceptance.sh extension + --help/README disclosure", status: pending }
+      - { n: 1, name: "plan.rs: Plan/Group + JSON schema + validate_basic", status: complete }
+      - { n: 2, name: "git.rs: -uall status parse, ChangedFile, has_unmerged, NUL-stdin literal staging, clear_staged", status: complete }
+      - { n: 3, name: "diff.rs: gather_for_grouping + per-file [diff omitted] truncation", status: complete }
+      - { n: 4, name: "groq.rs: generate_plan (response_format strict json_schema)", status: complete }
+      - { n: 5, name: "main.rs/ui.rs/cli.rs: orchestration, merge guard, display, dry-run, stage group 1, fallback, --all", status: complete }
+      - { n: 6, name: "tests + scripts/acceptance.sh extension + --help/README disclosure", status: complete }
+    commits:
+      - { sha: 3540548, summary: "feat(CLO-487): semantic grouping - structured-output plan, commit the first group" }
+      - { sha: c2a07f3, summary: "docs(CLO-487): spec, AI reviews, workflow trail, project sync" }
+    new_files: [src/plan.rs]
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "38 passed (8 plan, 11 git incl. 6 real-git integration, 12 diff incl. per-file truncation, 7 groq incl. strict-payload)"
+      cargo_build_release: ok
+      acceptance_sh: "68 PASS / 0 FAIL / 1 SKIP (manual $EDITOR edit). New grouping cases: AC-G1 split+commit group 1, AC-G2 progression, AC-G4 rename+delete+arrow+unicode no-fallback, AC-G13 glob-literal staging, AC-G6 unknown-file fallback, AC-G7 malformed-JSON fallback, AC-G8 dry-run preview, AC-G9 --all bypass, AC-G12 unmerged abort, AC-uall path agreement."
+    git_facts_verified: "Pre-implementation, against real git 2.54 in temp repos: rename porcelain -z order (new in XY record, orig follows), read-tree-HEAD-during-conflict bakes markers, pathspec glob leak vs GIT_LITERAL_PATHSPECS, --pathspec-from-file=- --pathspec-file-nul support."
+    live_groq_note: "Real ureq->api.groq.com call not exercised in-sandbox (same egress limitation as CLO-486); request shape is covered by the strict-payload unit test + the mock-Groq acceptance harness. Binary reaches Groq in the user's real environment."
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-487-gemini-validation.md
+        verdict: PASS
+        notes: "All ACs verified implemented. 2 LOW (memory-double near 350KB cap; parse_status_z malformed-record skip - practically unreachable). 2 future-opt recs (merge elide+truncate passes; C-entry both-path no-op). No blockers."
+        mode: "--approval-mode plan (read-only); HEAD unchanged"
+      codex:
+        report: docs/reviews/clo-487-codex-validation.md
+        verdict: FAIL
+        mode: "-s read-only (GPT-5.4 high effort); HEAD unchanged"
+        findings_applied:
+          - "HIGH: --all returned before the unmerged-conflict guard -> gcm --all in a conflicted repo baked <<<<<<< markers. Fix: merge guard now runs before the --all/merge bypass. Commit 88480a3 + AC-G12b regression test (--all aborts on conflict)."
+          - "MEDIUM: grouping prompt newline-joined paths, re-splitting newline-containing paths. Fix: file_list_json/status_json JSON-encode the prompt arrays. Commit 88480a3 + diff.rs unit test."
+        findings_declined:
+          - "Missing 'strict json_schema unsupported' runtime escalation: the spec's escalation is implementation-time capability-drift (already satisfied vs ADR-001 capability matrix); a runtime HTTP 400 -> single-commit fallback is exactly AC-7. No behavior change. (Pushed back with reasoning.)"
+        missing_coverage_added:
+          - "AC-G12b: gcm --all during an unresolved conflict -> abort (the gap that hid the HIGH bug)."
+          - "AC-G12c: clean MERGE_HEAD (--no-commit) -> single two-parent merge commit."
+      post_fix_quality_gate:
+        cargo_test: "39 passed (+newline-path file_list element)"
+        cargo_clippy: "clean (-D warnings)"
+        acceptance_sh: "73 PASS / 0 FAIL / 1 SKIP (+AC-G12b --all-conflict abort, +AC-G12c clean-merge two-parent commit)"
+      fix_commit: 88480a3
+      codex_revalidation:
+        report: docs/reviews/clo-487-codex-revalidation.md
+        verdict: "PASS_WITH_NOTES (both findings RESOLVED; no new issues; only note = read-only sandbox could not run tests, which we did: 39 unit + 73 acceptance green)"
+      converged: true   # Gemini PASS; Codex FAIL -> fixed -> PASS_WITH_NOTES
   pr:
     status: pending
     pr_url: null
@@ -130,3 +169,11 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved at the spec checkpoint ('apply valid fixes and continue, spec approved'). All 5 round-2 fixes were valid and already applied. Plan phase skipped (spec decomposition IS the plan). Advancing to implement; will run autonomously through implementation (AFK) and stop at the PR checkpoint."
+  - timestamp: 2026-06-20T09:30:00Z
+    action: implementation_complete
+    phase: implement
+    details: "6 sub-tasks done TDD-first (stub->RED->impl->GREEN, mutation checks proving tests load-bearing): plan.rs (typed plan + strict schema + validate_basic), git.rs (-uall NUL status parse, ChangedFile, unmerged, literal NUL-stdin staging w/ both rename paths, clear_staged), diff.rs (gather_for_grouping + per-file [diff omitted] truncation), groq.rs (generate_plan strict structured output), main.rs orchestration (merge guard, display, dry-run, classified fallback, --all), acceptance.sh grouping suite + README/--help disclosure. Pre-implementation: every git hazard the user raised verified against real git 2.54. Commits 3540548 (feat) + c2a07f3 (docs). 38 unit + 68 acceptance green."
+  - timestamp: 2026-06-20T10:55:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Validation gate (both read-only - Codex -s read-only, Gemini --approval-mode plan; HEAD unchanged throughout, avoiding the CLO-486 YOLO incident). Gemini PASS (2 LOW, no blockers). Codex round 1 FAIL: HIGH (--all bypassed the merge guard -> conflict-marker baking) + MEDIUM (newline-path re-split in prompt). Both fixed (commit 88480a3) with regression tests (AC-G12b --all-conflict abort, newline unit test); declined the 'strict-schema runtime escalation' (dev-time concern; runtime is AC-7 fallback). Codex re-validation: PASS_WITH_NOTES, both RESOLVED, no new issues. Converged. Post-fix: 39 unit + 73 acceptance green, clippy clean."
