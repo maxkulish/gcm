@@ -16,11 +16,16 @@ fn debug_flag(value: Option<&str>) -> bool {
     matches!(value, Some(v) if !v.is_empty() && v != "0")
 }
 
-/// Print a `gcm: [debug] ...` line to stderr when [`enabled`].
-pub fn log(msg: &str) {
-    if enabled() {
-        eprintln!("gcm: [debug] {msg}");
-    }
+/// Emit a `gcm: [debug] ...` line to stderr, but only when [`enabled`]. The
+/// message is formatted with `format_args!` *inside* the `enabled()` guard, so
+/// nothing is formatted or allocated when `GCM_DEBUG` is unset.
+#[macro_export]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if $crate::debug::enabled() {
+            eprintln!("gcm: [debug] {}", format_args!($($arg)*));
+        }
+    };
 }
 
 #[cfg(test)]

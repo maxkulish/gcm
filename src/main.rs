@@ -30,9 +30,7 @@ fn run(args: &Cli) -> i32 {
         Err(e) => {
             // Surface the typed variant (e.g. Groq(RateLimit { .. })) in debug
             // logs so the error type is visible (CLO-488 acceptance).
-            if debug::enabled() {
-                eprintln!("gcm: [debug] {e:?}");
-            }
+            crate::debug_log!("{e:?}");
             eprintln!("gcm: {e}");
             e.exit_code()
         }

@@ -5,7 +5,6 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::debug;
 use crate::diff::{GatheredDiff, GroupingContext};
 use crate::plan::Plan;
 
@@ -275,10 +274,10 @@ fn retry_with<T>(
                     return Err(e);
                 }
                 let delay = backoff_delay(attempt, retry_after_hint(&e), cfg);
-                debug::log(&format!(
+                crate::debug_log!(
                     "groq attempt {} failed: {e:?}; retrying in {delay:?}",
                     attempt + 1
-                ));
+                );
                 sleep(delay);
                 attempt += 1;
             }
@@ -341,7 +340,7 @@ fn send_chat_once(key: &str, base_url: &str, payload: &Value) -> Result<String, 
         .read_to_end(&mut buf);
     let err_body = String::from_utf8_lossy(&buf);
     let err = classify_status(status, retry_after, bad_request_detail(&err_body));
-    debug::log(&format!("groq response error: {err:?}"));
+    crate::debug_log!("groq response error: {err:?}");
     Err(err)
 }
 
