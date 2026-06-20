@@ -25,8 +25,8 @@ depends_on:
   blocks: [CLO-491, CLO-492, CLO-493, CLO-497]
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   classification_rationale: "Identical shape to CLO-486 (user-confirmed specification): ADR-001 locks every architecture decision (grouping contract = Decision 1, Groq strict json_schema = Decision 5, regenerate-per-group = Decision 6), explicit/testable acceptance criteria, AFK autonomy, extends an existing module with the grouping algorithm already specified in the bash reference (lines 305-466). No new architecture decisions -> full discovery/design-doc would be near-empty. Auto-classified specification (no flag); AFK label authorizes proceeding without a classification prompt."
 
 phases:
@@ -123,11 +123,28 @@ phases:
         verdict: "PASS_WITH_NOTES (both findings RESOLVED; no new issues; only note = read-only sandbox could not run tests, which we did: 39 unit + 73 acceptance green)"
       converged: true   # Gemini PASS; Codex FAIL -> fixed -> PASS_WITH_NOTES
   pr:
-    status: pending
-    pr_url: null
-    pr_number: null
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/5
+    pr_number: 5
+    base: main
+    head: feat/clo-487-groq
+    files_changed: 21
+    diff: "+1910 / -78"
+    pre_flight: "cargo fmt --check / clippy -D warnings / cargo test (39) - all clean before PR"
+    ci_passed: true    # GitHub Actions green on macOS + Linux
+    ci_runs: [27866567129]
+    merge_state: "CLEAN / MERGEABLE; no required reviews, no automated reviewers"
+    approved: true     # owner directed squash-merge at the PR checkpoint
+    merge_commit: 243c4654a62ab3f8e394f9e4f6de7f7ead77250f
+    merged_at: 2026-06-20T16:21:59Z
+    merge_strategy: squash
+    merge_note: "gh pr merge --squash succeeded on GitHub; its local checkout/delete step errored (main is checked out in the sibling worktree /Users/mk/Code/gcm). Remote branch deleted via git push origin --delete."
   complete:
-    status: pending
+    status: complete
+    merged_at: 2026-06-20T16:21:59Z
+    aggregation_files_updated: true
+    linear_status_updated: true
+    unblocked: [CLO-491, CLO-493]   # CLO-492 still needs CLO-488; CLO-497 still waits on the rest
 
 # Scope checklist (from the Linear task)
 scope:
@@ -177,3 +194,31 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Validation gate (both read-only - Codex -s read-only, Gemini --approval-mode plan; HEAD unchanged throughout, avoiding the CLO-486 YOLO incident). Gemini PASS (2 LOW, no blockers). Codex round 1 FAIL: HIGH (--all bypassed the merge guard -> conflict-marker baking) + MEDIUM (newline-path re-split in prompt). Both fixed (commit 88480a3) with regression tests (AC-G12b --all-conflict abort, newline unit test); declined the 'strict-schema runtime escalation' (dev-time concern; runtime is AC-7 fallback). Codex re-validation: PASS_WITH_NOTES, both RESOLVED, no new issues. Converged. Post-fix: 39 unit + 73 acceptance green, clippy clean."
+  - timestamp: 2026-06-20T11:05:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check clean; cargo clippy --all-targets -D warnings clean; cargo test 39 passed; tree clean. (TypeScript checks N/A - Rust project.)"
+  - timestamp: 2026-06-20T11:06:00Z
+    action: pr_created
+    phase: pr
+    details: "Branch feat/clo-487-groq pushed; PR #5 opened against main: https://github.com/maxkulish/gcm/pull/5 (21 files, +1910/-78, 4 commits). Body covers grouping design, git-plumbing safety, testing, and the validation gate."
+  - timestamp: 2026-06-20T11:09:00Z
+    action: ci_passed
+    phase: pr
+    details: "GitHub Actions CI green on macos-latest + ubuntu-latest (run 27866567129, build/test). PR MERGEABLE / CLEAN; no required reviews, no automated reviewers on the repo."
+  - timestamp: 2026-06-20T16:21:59Z
+    action: pr_approved
+    phase: pr
+    details: "Owner directed squash-merge at the PR checkpoint (chose 'Squash-merge now')."
+  - timestamp: 2026-06-20T16:21:59Z
+    action: pr_merged
+    phase: complete
+    details: "PR #5 squash-merged to main (merge commit 243c465). gcm semantic grouping is on main. gh pr merge succeeded on GitHub; its local checkout/delete step errored (main is checked out in the sibling worktree), so the remote branch was deleted via git push origin --delete and main was fast-forwarded in its own worktree."
+  - timestamp: 2026-06-20T16:25:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Post-merge sync on main (worktree /Users/mk/Code/gcm, ff to 243c465): CLO-487 -> Recently Completed + master table Done; ROADMAP Phase 1 3/13 done, CLO-487 Done + CLO-491/493 added Ready; DEPENDENCIES unblocked CLO-491 (CLO-487+CLO-485) and CLO-493 (CLO-487), CLO-492 remains blocked on CLO-488, CLO-497 blocker list trimmed to CLO-488..496. WIP back to 0/3."
+  - timestamp: 2026-06-20T16:25:00Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-487 specification workflow complete. Deliverable: gcm semantic grouping on main (typed structured-output plan -> stage+commit group 1; re-run advances). 39 unit + 73 acceptance tests, CI green, dual-model validation converged (Gemini PASS; Codex FAIL->fixed->PASS). Linear CLO-487 -> Done. Unblocks CLO-491 + CLO-493."
