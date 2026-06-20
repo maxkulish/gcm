@@ -63,6 +63,12 @@ class H(http.server.BaseHTTPRequestHandler):
             _send_json(self, 400, '{"error":{"message":"mock bad request: unsupported parameter"}}'); return
         if "/fail401/" in self.path:
             _send_json(self, 401, '{"error":{"message":"invalid api key"}}'); return
+        if "/fail403/" in self.path:
+            _send_json(self, 403, '{"error":{"message":"forbidden"}}'); return
+        if "/fail400big/" in self.path:
+            # >4096-byte error body: the read must stay bounded yet still surface a
+            # (truncated) detail, not drop the body (CLO-488 validation MEDIUM).
+            _send_json(self, 400, '{"error":{"message":"' + "X" * 6000 + '"}}'); return
         if "/retry429/" in self.path:
             # Rate-limit the first 2 calls (Retry-After: 0), then succeed -> the
             # retry path must self-heal (CLO-488 AC-1).
@@ -545,6 +551,14 @@ grep -qi "server error" /tmp/gcm-out && ok "message is 5xx-specific" || bad "no 
 [ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after exhausted retries" || bad "index mutated"
 rm -rf "$d"
 
+note "AC-488-3b: HTTP 403 also fails fast (auth class) without retry"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail403/v1" "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+reqs=$(grep -c '"model"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
+[ $rc -eq 1 ] && [ "$reqs" -eq 1 ] && ok "403 -> exit 1, not retried (1 request)" || bad "403 (rc=$rc, reqs=$reqs)"
+grep -qi "GROQ_API_KEY\|api key" /tmp/gcm-out && ok "403 names the API key" || bad "no key guidance on 403"
+rm -rf "$d"
+
 note "AC-488-8: GCM_DEBUG surfaces the typed error variant; unset -> silent"
 d="$(new_repo)"; echo hi > "$d/a.txt"
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail400/v1" GCM_DEBUG=1 "$BIN" --all --yes >/tmp/gcm-out 2>&1 )
@@ -552,6 +566,21 @@ grep -q "BadRequest" /tmp/gcm-out && ok "debug log shows the BadRequest variant"
 grep -q "\[debug\]" /tmp/gcm-out && ok "[debug] lines emitted under GCM_DEBUG" || bad "no [debug] lines under GCM_DEBUG"
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail400/v1" "$BIN" --all --yes >/tmp/gcm-out2 2>&1 )
 grep -q "\[debug\]" /tmp/gcm-out2 && bad "debug lines emitted without GCM_DEBUG" || ok "no [debug] lines when GCM_DEBUG unset"
+rm -rf "$d"
+
+note "AC-488-8b: retry attempts are logged under GCM_DEBUG (transient variant visible)"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$COUNTER"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/retry429/v1" GCM_DEBUG=1 "$BIN" --all --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "429 recovered (exit 0)" || bad "429 retry (rc=$rc)"
+grep -qi "RateLimit" /tmp/gcm-out && ok "transient RateLimit variant visible during retries" || bad "RateLimit not logged"
+grep -qi "attempt" /tmp/gcm-out && ok "retry attempts logged" || bad "no retry-attempt log line"
+rm -rf "$d"
+
+note "AC-488-9: >4096-byte error body stays bounded yet still yields a detail"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail400big/v1" timeout 10 "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && ok "huge 400 body -> exit 1 (no hang)" || bad "big-body 400 (rc=$rc)"
+grep -q "XXXX" /tmp/gcm-out && ok "detail extracted from the capped body (not dropped)" || bad "detail lost on >4096 body"
 rm -rf "$d"
 
 stop_mock

@@ -172,6 +172,12 @@ fn balanced_end(bytes: &[u8], start: usize) -> Option<usize> {
 /// `groups` -> a `groups` array under a known wrapper key (in order) -> a
 /// depth-first search for the first `groups` array anywhere.
 fn recover_groups(v: &Value) -> Option<Value> {
+    // A bare top-level array is treated as the groups array itself (a model that
+    // dropped the {"groups": ..} wrapper). The re-wrap + Plan deserialize still
+    // validates the element shape, so a non-group array simply fails downstream.
+    if v.is_array() {
+        return Some(v.clone());
+    }
     if let Some(arr) = v.get("groups").filter(|g| g.is_array()) {
         return Some(arr.clone());
     }
@@ -390,6 +396,16 @@ mod tests {
         // Review point 2: the recovered `groups` is a bare array, re-wrapped before from_value.
         let s = r#"garbage {"data":{"groups":[{"files":["a"],"summary":"s","commit_message":"feat: a"}]}} trailer"#;
         assert_eq!(parse_defensive(s).unwrap().groups.len(), 1);
+    }
+
+    #[test]
+    fn parse_defensive_bare_top_level_array() {
+        // Codex validation HIGH: a model may emit the plan as a bare array of groups
+        // (no {"groups": ..} wrapper); recover it by treating the array AS the groups.
+        let s = r#"[{"files":["a"],"summary":"s","commit_message":"feat: a"},{"files":["b"],"summary":"s2","commit_message":null}]"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 2);
+        assert_eq!(p.groups[0].files, vec!["a"]);
     }
 
     #[test]

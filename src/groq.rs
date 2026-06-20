@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io::Read;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -214,7 +215,7 @@ impl RetryConfig {
     fn from_env() -> Self {
         RetryConfig {
             max_retries: env_u64("GCM_RETRY_MAX")
-                .map(|v| v as u32)
+                .and_then(|v| u32::try_from(v).ok())
                 .unwrap_or(DEFAULT_MAX_RETRIES),
             base: env_u64("GCM_RETRY_BASE_MS")
                 .map(Duration::from_millis)
@@ -329,12 +330,16 @@ fn send_chat_once(key: &str, base_url: &str, payload: &Value) -> Result<String, 
             .get("retry-after")
             .and_then(|v| v.to_str().ok()),
     );
-    let err_body = response
+    // Bounded best-effort read: ureq's `limit().read_to_string()` ERRORS once the
+    // cap is hit (dropping the whole body), so use a std `Take` reader, which
+    // truncates cleanly, then lossy-decode (a cut mid-UTF-8 must not fail).
+    let mut buf = Vec::new();
+    let _ = response
         .body_mut()
-        .with_config()
-        .limit(MAX_ERROR_BODY_BYTES)
-        .read_to_string()
-        .unwrap_or_default();
+        .as_reader()
+        .take(MAX_ERROR_BODY_BYTES)
+        .read_to_end(&mut buf);
+    let err_body = String::from_utf8_lossy(&buf);
     let err = classify_status(status, retry_after, bad_request_detail(&err_body));
     debug::log(&format!("groq response error: {err:?}"));
     Err(err)
