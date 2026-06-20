@@ -98,6 +98,7 @@ history:
 | Action | Description |
 |--------|-------------|
 | `workflow_started` | Initial workflow creation |
+| `task_classified` | Task type recommended and chosen (records recommended, chosen, confidence) |
 | `project_sync_start` | Task added to Active Work via `/project:sync --start` |
 | `problem_framed` | Problem statement validated by user |
 | `discovery_report_complete` | PRD discovery report produced |
@@ -191,6 +192,7 @@ history:
 4. **Maintain visibility**: Clear status at all times
 5. **Coordinate skills**: Chain existing skills intelligently
 6. **Track history**: Full audit trail of actions
+7. **Recommend, not just ask**: Classify each task with evidence (ticket + bounded codebase probe) and present a confidence-rated recommendation, not a blind menu
 
 **This orchestrator does NOT**:
 
