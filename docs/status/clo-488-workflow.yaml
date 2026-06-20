@@ -151,7 +151,14 @@ phases:
     pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / cargo test (69) - all clean before PR"
     ci_passed: true    # GitHub Actions green on macOS + Linux
     ci_runs: [27881768339]
-    merge_state: "CLEAN / MERGEABLE; no required reviews, no automated reviewers"
+    merge_state: "CLEAN / MERGEABLE; no required reviews"
+    reviews_addressed: 1
+    review_rounds:
+      - reviewer: copilot-pull-request-reviewer
+        verdict: COMMENTED
+        comments: 2
+        finding: "Both comments: debug::log(&format!(..)) eagerly allocates the formatted String even when GCM_DEBUG is off (format! runs before log() checks enabled()). Valid (low impact - error paths only)."
+        fix: "Replaced with a debug_log! macro that gates format_args! behind enabled() (no allocation when off); main.rs uses it too. Commit c3f7a71. Both comments replied (2/2)."
   complete:
     status: pending
 
@@ -211,4 +218,8 @@ history:
   - timestamp: 2026-06-20T20:10:00Z
     action: ci_passed
     phase: pr
-    details: "GitHub Actions CI green on macos-latest + ubuntu-latest (run 27881768339, build/test - 33s/45s). PR #6 MERGEABLE / CLEAN; no required reviews, no automated reviewers on the repo. Awaiting owner merge decision at the PR checkpoint."
+    details: "GitHub Actions CI green on macos-latest + ubuntu-latest (run 27881768339, build/test - 33s/45s). PR #6 MERGEABLE / CLEAN; no required reviews. Awaiting owner merge decision at the PR checkpoint."
+  - timestamp: 2026-06-20T20:20:00Z
+    action: review_addressed
+    phase: pr
+    details: "Copilot PR reviewer (copilot-pull-request-reviewer) left 2 inline comments, both the same valid point: debug::log(&format!(..)) eagerly formats/allocates even when GCM_DEBUG is off (format! runs before log() checks enabled()). Low impact (error paths only) but a real inefficiency. Fixed by replacing debug::log with a debug_log! macro that gates format_args! behind enabled() - zero formatting/allocation when disabled; main.rs converted too. Commit c3f7a71, pushed. Both comments replied (2/2). 69 unit + 96 acceptance green; fmt + clippy clean."
