@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-19 (CLO-486 tracer merged)
+**Last Updated**: 2026-06-20 (CLO-487 grouping started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -21,7 +21,7 @@
 |----|-------|-------|-------|----------|--------|------------|-------------|
 | [CLO-485](https://linear.app/cloud-ai/issue/CLO-485) | S0 | Lock foundational architecture decisions + verify provider capabilities (ADR) | HITL | High | Backlog | — | 52; unblocks 10/27/40/45/54 |
 | [CLO-486](https://linear.app/cloud-ai/issue/CLO-486) | S1 | Single-commit tracer: AI message via Groq with safe diff read | AFK | High | Done | CLO-485 | 4,5,6,9,10,18a,31a,32,34,35,36,39,41,47,48,49,57 |
-| [CLO-487](https://linear.app/cloud-ai/issue/CLO-487) | S2 | Semantic grouping → commit first group | AFK | High | Backlog | CLO-486 | 1,2a,3,7,15,16,19,23a,24a,31,33 |
+| [CLO-487](https://linear.app/cloud-ai/issue/CLO-487) | S2 | Semantic grouping → commit first group | AFK | High | In Progress | CLO-486 | 1,2a,3,7,15,16,19,23a,24a,31,33 |
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | S4 | Resilient provider calls: typed errors + retries | AFK | High | Backlog | CLO-486 | 20,21,22 |
 | [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | Backlog | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
 | [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
@@ -61,18 +61,17 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| - | (none active) | - | - | - |
+| [CLO-487](https://linear.app/cloud-ai/issue/CLO-487) | Semantic grouping → commit first group | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| High | CLO-487 | Semantic grouping → commit first group | CLO-486 (done) | next on the critical path; builds on the tracer |
 | High | CLO-488 | Resilient provider calls: typed errors + retries | CLO-486 (done) | extends the Groq call |
 | High | CLO-489 | Provider trait + Gemini + OpenAI backends | CLO-486, CLO-485 (done) | provider abstraction (ADR-001) |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> CLO-486 landed (tracer, PR #4). **CLO-487**, **CLO-488**, **CLO-489**, **CLO-490** are now ready. Two parallel fronts: the workflow chain (CLO-487) and the provider chain (CLO-489).
+> CLO-486 landed (tracer, PR #4). **CLO-487** is now in progress (workflow chain). **CLO-488**, **CLO-489**, **CLO-490** are ready; the provider chain (CLO-489) can run in parallel.
 
 ## Blocked
 
