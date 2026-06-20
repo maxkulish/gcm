@@ -1,0 +1,169 @@
+# Workflow state for CLO-491
+# Managed by /task:orchestrate
+
+task: CLO-491
+title: "Add per-repo plan cache with commit-safe advancement"
+linear_url: https://linear.app/cloud-ai/issue/CLO-491/add-per-repo-plan-cache-with-commit-safe-advancement
+branch: feat/clo-491-plan-cache
+task_type: development           # user-selected at the classification checkpoint (no flag)
+slice: S3
+labels: [AFK]                    # agent may implement and merge without human input
+covers_fr: [2, 8, 25, 26, 27, 28, 29, 30, 45, 58]   # FR-2 now full (multi-group message contract); cache + advancement family
+partial_fr: []
+
+# Reference material for discovery/design/plan/implementation
+references:
+  adr: docs/adrs/001-foundational-architecture-decisions.md   # message contract (CLO-485 ADR); cache decisions
+  prd: docs/prds/prd-gcm.md
+  bash_cache: docs/tmp/git-commit-ai.sh   # lines 65-67 (cache path), 283-297 (load/stale check), 470-478 (advance/clear) - mirror but fix name-only staleness + null-message advancement bug
+  prior_spec_487: docs/specs/2026-06-20-clo-487-semantic-grouping.md   # the grouping slice this extends
+  prior_spec_486: docs/specs/2026-06-19-clo-486-single-commit-tracer.md
+  prior_workflow_487: docs/status/clo-487-workflow.yaml
+
+depends_on:
+  blocked_by: []                 # CLO-485 (PR #2) + CLO-487 (PR #5) both merged -> satisfied
+  blocks: [CLO-497]              # cross-platform releases + alias cutover
+
+workflow:
+  current_phase: plan
+  status: in_progress
+  classification_rationale: "User selected Development at the classification checkpoint despite the specification precedent (CLO-486/CLO-487 both spec under ADR-001 lock). Development path chosen: discovery -> design -> plan -> implement -> pr -> complete. Rationale for the choice rests with the owner; orchestrator honors it. The task does carry genuine design surface beyond the prior slices: cache key scheme (sha256(repo-root)), OS-appropriate location + 0600 perms, a content-fingerprint freshness model over pending files (fixing the bash name-only staleness bug), commit-safe advancement state machine (fixing the bash null-message advancement bug), and failure handling on rejecting pre-commit hooks."
+
+phases:
+  discovery:
+    status: complete
+    skip_reason: null
+    problem_framed: true
+    prd_exists: true              # project-level PRD docs/prds/prd-gcm.md covers FR-2/8/25-30/45/58
+    prd_file: docs/prds/prd-gcm.md
+    prd_created: false
+    discovery_report: null        # focused discovery (user-chosen) - full prd-discovery skill not run; PRD is ADR-mature
+    discovery_debt: null          # n/a - no prd-discovery run; ADR-001 already resolved the killer assumptions
+    baseline_score: null          # n/a
+    approaches_identified: 1       # single ADR-locked approach: mirror bash cache structure, fix its 2 bugs
+    approach_chosen: "Mirror the bash plan-cache structure but fix its two defects, using the ADR-001-locked decisions: per-repo file keyed by sha256(repo-root) in the OS cache dir (directories crate) at 0600; content-fingerprint freshness over pending files (sorted path set + per-file content hash + provider/model + prompt/schema version), recomputed on advance, never pinning HEAD, unborn-safe; regenerate-per-group messages (cache hit skips grouping, makes a message-only call for the now-first group); advance only on commit success, else leave staged + surface error. A new src/cache.rs module wired into the existing CLO-487 commit flow."
+    approved: true
+    residual_design_questions:
+      - "Q1 on-disk cache schema: the fingerprint-wrapper struct around the Plan; prompt/schema version field; serde shape (new format - FR-30 bash compat dropped by ADR-001 #12)."
+      - "Q2 content-hash inputs: exactly which bytes per pending file (working-tree content), how untracked/deleted/renamed entries fold into the fingerprint, the unborn-branch path."
+      - "Q3 message-on-cache-hit: reuse CLO-486's single-message generator scoped to the now-first group's diff vs a new groq.rs entry; reconcile with the Linear AC wording 'no new analysis call' (grouping call skipped; message-only call allowed per FR-2/FR-45/ADR-001 #6)."
+      - "Q4 failure semantics: distinguish commit success from hook-rejection/sign-failure; the 'leave staged, do not advance, surface error' path (FR-58), incl. the hook-reformats-and-restages acceptable case."
+    locked_constraints:
+      - "Cache key sha256(repo-root) (FR-25); shared across providers for the same repo"
+      - "Location = OS cache dir via the directories crate, not hardcoded /tmp (ADR-001 #12, FR-29); 0600 perms (FR-29 + Security NFR)"
+      - "Freshness fingerprint over pending files only, recomputed on advance, must NOT pin HEAD, unborn-safe (FR-27)"
+      - "Regenerate-per-group message contract (ADR-001 #6, FR-45) - only groups[0] carries a message initially"
+      - "FR-30 bash-cache backward compat dropped (ADR-001 #12) - one-time cold re-analysis on cutover acceptable"
+      - "Advance on commit success only; commit failure leaves files staged + plan un-advanced + error surfaced (FR-58)"
+      - "--reset deletes cache up front; --all and any fallback clear it (FR-8, FR-28)"
+  design:
+    status: complete
+    design_doc: docs/design-docs/2026-06-20-clo-491-plan-cache.md
+    draft_ready: true
+    finalized: true
+    finalized_at: 2026-06-20T19:04:00Z
+    approved_by: "Max Kulish (owner)"
+    review_completed: true
+    discovery_context_used: true   # focused-discovery output (4 residual questions + 7 locked constraints) feeds design
+    spec_subcheck: "skipped - user chose Development at classification; design-doc + plan phases own decomposition (declining the in-design /spec sub-step would contradict that choice)"
+    branch_note: "branch feat/clo-491-plan-cache already existed and is checked out - create-skill Step 8 (git checkout -b) satisfied, not re-run"
+    design_decisions:
+      - "Q1 cache schema: CacheFile { version, fingerprint, plan } JSON wrapper; FR-30 bash compat dropped (ADR-001 #12)"
+      - "Q2 fingerprint: sha256(version || provider_model || per pending path: path||content_hash); content_hash = sha256(working-tree bytes) or \\0DELETED; pending set read from LIVE git status; HEAD never pinned; unborn-safe"
+      - "Q3 message on hit: reuse groq::generate_commit_message scoped to group0 diff ONLY when its cached message is null (advanced group); full-plan hit (e.g. after dry-run) needs zero LLM calls; never a grouping call on a hit"
+      - "Q4 failure semantics: narrow restore-on-error - restore index only for pre-commit-step failures (FR-47); on commit_signed failure leave group staged + cache un-advanced + surface error (FR-58) via new GcmError::CommitFailed + leaves_staged()"
+    flagged_for_checkpoint: "Open Question: 'no new analysis call' read as no GROUPING call (message-only call allowed per ADR-001 #6). Zero-LLM-calls reading would require pre-caching all messages = an ADR-001 change. Needs explicit sign-off."
+    review_gemini: null            # external Gemini not invoked by the review skill this run
+    review_ollama: null            # external Ollama not invoked
+    review_claude_fallback: docs/reviews/clo-491-review-claude-fallback.md   # source-validated Claude review (every interface claim checked against branch code)
+    review_synthesis: docs/reviews/clo-491-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "MUST (blocks AC-3): commit_signed currently returns GcmError::Git('...index restored'); for FR-58 it must return the new GcmError::CommitFailed (else leaves_staged()=false -> wrapper restores -> group unstaged -> AC-3 fails). Added src/git.rs + src/error.rs to the affected-components table; documented commit_signed edit, the dropped 'index restored' wording, and that clear_staged/stage_group keep GcmError::Git so the discriminator is variant-only. VERIFIED against git.rs:161-175 + error.rs before applying."
+      - "SHOULD: pinned the message-on-cache-hit diff source to group 0's WORKING-TREE diff taken BEFORE staging (message call runs before commit_group_flow stages)."
+      - "SHOULD: expanded gather_for_files scope - path-scoped tracked diff + gitignore-respecting untracked content + unborn case; called out as the largest new surface, its own plan sub-task."
+      - "SHOULD: create the cache temp file 0600 BEFORE writing the plan, then rename (no world-readable window)."
+      - "NICE: added eval rows 17 (deletion-only group 0) + 18 (untracked-only group 0); noted the fingerprint 'groq:' token must follow the active provider once CLO-489 lands; clarified FR-30 is explicitly covered=dropped (ADR-001 #12)."
+    flagged_suggestions: []        # none contradicted ADR-001 or a prior decision -> zero user-conflict prompts
+    review_note: "design-doc:review forked; external Gemini/Ollama not invoked this run -> a single source-validated Claude review instead (it checked every reused primitive against the branch: Repo::root/has_head/changed_files/commit_signed/snapshot_index/restore_index/clear_staged/stage_group, groq::generate_commit_message, Plan/Group Deserialize-only, no existing --reset). Verdict APPROVE_WITH_SUGGESTIONS, no ADR violations."
+    review_round2_user_code_review:
+      source: "user (deep code-level review at the design checkpoint - 5 blind spots)"
+      verified: "all 5 reproduced against the real branch code (diff.rs read in full; main.rs/git.rs re-checked) before applying - receiving-code-review discipline"
+      applied:
+        - "P1 cache-advance-on-abort: commit_group_flow returns Ok(()) for BOTH commit success AND Decision::Abort (main.rs:140-153); --dry-run also Ok. Gating advance on a bare Ok would drop group 0 on abort -> permanent skip. Fix: CommitOutcome { Committed, Aborted }; advance gated on Committed. VERIFIED. -> Detailed design flow + Must-not + AC-7 + eval 19 + main.rs row."
+        - "P2 content_hash OOM: naive fs::read loads whole pending files -> OOM on a large binary still in git status. Fix: stream via BufReader + io::copy into Sha256 (constant memory). Matches diff.rs read_capped invariant ('never load a huge file fully'). Fingerprint hashes FULL content (streaming, not capping - a change past 8KB must flip it). VERIFIED. -> fingerprint note + Must-not + eval 20."
+        - "P3 untracked hallucination in gather_for_files: append_untracked (diff.rs:100-101) appends EVERY repo untracked file, unfiltered; reused for one group it pollutes group 0's message prompt. Fix: refactor append_untracked to take an allow-list; gather_for_files passes the group's paths. VERIFIED. -> Phase 2 + diff.rs row + Must-not + eval 21."
+        - "P4 unborn message-gen: on unborn, tracked diff is empty so group 0 content is 100% untracked -> reinforces P3's filter. REFINED the reviewer's framing: the message-only call never fires while STILL unborn (committing group 0 creates HEAD before any advanced-group cache hit), so the concern lands on gather_for_files correctness (eval 18), not the live message path. VERIFIED + scoped. -> Phase 2 unborn note."
+        - "P5 partial-staging loss on commit failure: clear_staged (read-tree HEAD) wipes the user's manual index selection before staging group 0; skipping restore (FR-58) leaves only group 0 staged. VERIFIED. Resolution = acknowledge as accepted tradeoff (loses INDEX SELECTION only, never working-tree changes; main already does this on success; already disclosed in cli.rs EGRESS_DISCLOSURE for git add -p). Not a code fix. -> failure-semantics 'Accepted tradeoff' note."
+      pushback: "P4 framing softened - the unborn 'message must come 100% from untracked' scenario does not occur on the live message-only path (HEAD exists post-first-commit); kept the gather_for_files untracked-filter correctness requirement which is the real, provable need. No suggestion was rejected outright; all 5 led to a doc change."
+      doc_changes: "CommitOutcome gate (flow + Must-not + AC-7 + eval 19); streaming content_hash (fingerprint note + Must-not + eval 20); append_untracked allow-list filter (Phase 2 + diff.rs row + Must-not + eval 21 + gather_for_files API); unborn scoping note; partial-staging accepted-tradeoff note; eval table now 21 rows, ACs now 7."
+  plan:
+    status: pending
+    plan_file: null
+    approved: false
+  implement:
+    status: pending
+  pr:
+    status: pending
+    pr_url: null
+    pr_number: null
+  complete:
+    status: pending
+
+# Scope checklist (from the Linear task)
+scope:
+  - "Per-repo cache keyed by sha256(repo-root), OS-appropriate location, 0600 perms"
+  - "Content-fingerprint freshness over pending files only, re-stamped on advance; unborn-branch safe; no naive HEAD pin"
+  - "Advance on commit success (drop the committed group); supply the next group's message per the contract"
+  - "On git commit failure (e.g. rejecting pre-commit hook): do not advance, leave files staged, surface the error"
+  - "--reset clears the cache; --all / fallback clear it"
+
+acceptance_criteria:
+  - "Commit group 1, re-run, group 2 commits from cache with no new analysis call and a valid message"
+  - "Editing a pending file before the next run invalidates the cache and re-analyzes"
+  - "A failing pre-commit hook leaves the plan un-advanced and the group still staged"
+  - "The first commit in a brand-new repo (no HEAD) works"
+
+history:
+  - timestamp: 2026-06-20T18:12:50Z
+    action: workflow_started
+    phase: discovery
+    details: "New workflow for CLO-491 (per-repo plan cache with commit-safe advancement). Blockers CLO-485 (PR #2) and CLO-487 (PR #5) both merged -> unblocked. Classified Development at the user checkpoint (no flag); diverges from the CLO-486/CLO-487 specification precedent by owner choice. Starting at discovery."
+  - timestamp: 2026-06-20T18:12:50Z
+    action: project_sync_start
+    phase: discovery
+    details: "WIP 0/3, CLO-491 unblocked (CLO-485 PR #2 + CLO-487 PR #5 both merged). PROJECT.md: master table -> In Progress, added to Active Work (Phase: Discovery), removed from Up Next, Up Next note rewritten. ROADMAP.md: Ready -> In Progress. DEPENDENCIES.md: removed from Unblocked & Ready. Last-Updated bumped to 2026-06-20 (CLO-491 plan cache started) across all three."
+  - timestamp: 2026-06-20T18:20:00Z
+    action: problem_framed
+    phase: discovery
+    details: "Problem framed from the project PRD (FR-2/8/25-30/45/58) + ADR-001 + the bash reference (git-commit-ai.sh:65-67/283-297/470-478) + current Rust state (no cache.rs; CLO-487 re-groups every run). User confirmed the framing accurate. Current state: bash cache has 2 defects (name-only staleness, null-message advancement) this task fixes; ADR-001 already locks key/location/freshness-model/message-contract."
+  - timestamp: 2026-06-20T18:20:00Z
+    action: discovery_approved
+    phase: discovery
+    details: "User chose focused discovery (no full prd-discovery run) given ADR-001 maturity -> straight to design. Solution space is effectively singular (1 ADR-locked approach: mirror bash cache, fix 2 bugs). Discovery output = 4 residual DESIGN-level questions (cache schema, content-hash inputs, message-on-cache-hit, failure semantics) + 7 locked constraints, recorded in the YAML. Advancing to design."
+  - timestamp: 2026-06-20T18:25:00Z
+    action: design_started
+    phase: design
+    details: "No existing design doc (docs/design-docs/clo-491-*.md). Spec-engineering sub-check skipped: user chose Development at classification, so design-doc + plan phases own decomposition. Invoking /design-doc:create with the focused-discovery context (4 residual questions + 7 locked constraints) to draft the design."
+  - timestamp: 2026-06-20T18:40:00Z
+    action: design_draft_ready
+    phase: design
+    details: "Draft design doc written (docs/design-docs/2026-06-20-clo-491-plan-cache.md), grounded in the real code (plan.rs typed Plan/Group, main.rs commit flow + restore-on-error wrapper, groq.rs message/plan calls + resolve_config, git.rs Repo API, cli.rs flags). Resolved all 4 residual questions; 6 ACs + 16-row eval table. Two code-level findings drove the design: (1) the existing restore-on-error wrapper (main.rs:127) would unstage on commit failure - narrowed to honor FR-58; (2) message-on-cache-hit needs a scoped message-only call (ADR-001 #6), flagged as an Open Question for sign-off vs the 'no new analysis call' AC wording. Branch already exists. Proceeding to AI review. Design-doc comment posted to Linear CLO-491."
+  - timestamp: 2026-06-20T18:50:00Z
+    action: design_review_complete
+    phase: design
+    details: "design-doc:review (forked): external Gemini/Ollama not invoked -> single source-validated Claude review (docs/reviews/clo-491-review-claude-fallback.md + synthesis). Verdict APPROVE_WITH_SUGGESTIONS, no ADR violations. 1 MUST + 3 SHOULD + 1 NICE. The MUST (commit_signed must return GcmError::CommitFailed not GcmError::Git, else AC-3 fails) was independently VERIFIED against git.rs:161-175 + error.rs before applying (receiving-code-review discipline) - the review was correct and my affected-components table had omitted the git.rs/error.rs edits."
+  - timestamp: 2026-06-20T18:52:00Z
+    action: review_applied
+    phase: design
+    details: "All 5 findings auto-applied (additive/refinement; none contradicted ADR-001 -> zero user-conflict prompts). (1) added git.rs commit_signed -> CommitFailed + error.rs CommitFailed/leaves_staged to the affected-components table and failure-semantics section; (2) message-on-hit diff pinned to pre-staging working-tree diff; (3) gather_for_files scope expanded (tracked pathspec diff + untracked content + unborn) as its own sub-task; (4) temp file 0600-before-write; (5) eval rows 17-18 + provider-token + FR-30-drop notes. Advancing to design checkpoint."
+  - timestamp: 2026-06-20T19:05:00Z
+    action: review_applied
+    phase: design
+    details: "Round 2: user delivered a deep code-level review at the design checkpoint (5 blind spots). Each VERIFIED against the real branch (diff.rs read in full; main.rs/git.rs re-checked) before applying. P1 cache-advance-on-abort (commit_group_flow returns Ok for abort too -> CommitOutcome gate). P2 content_hash OOM (-> streaming BufReader+io::copy). P3 untracked hallucination (append_untracked appends ALL untracked -> allow-list filter). P4 unborn message-gen (refined: message-only call never fires while unborn; kept gather_for_files untracked-filter correctness). P5 partial-staging-loss (accepted tradeoff: index selection only, never work-tree; already disclosed). Pushed back only on P4's framing; all 5 produced doc changes. Design now 7 ACs + 21 eval rows. Still APPROVE_WITH_SUGGESTIONS class; no redesign, no ADR change."
+  - timestamp: 2026-06-20T19:04:00Z
+    action: design_finalized
+    phase: design
+    details: "Owner approved at the design checkpoint ('approved, continue') - signed off on the AC-1 no-grouping-call reading AND the design overall. Both Open Questions resolved in-doc (AC-1 interpretation; full-sha256 key). Design status Draft->Finalized; finalize comment posted to Linear CLO-491. Plan phase next (the design's 4-phase Implementation Plan + 7 ACs + 21-row eval feed /plan:create). Advancing to plan."
