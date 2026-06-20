@@ -688,7 +688,9 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   [ $rc -eq 0 ] && ok "hook reformat+restage -> commit succeeds" || bad "reformatting hook run (rc=$rc; $(tail -1 /tmp/gcm-out))"
   git -C "$d" show HEAD:src.txt | grep -q 'reformatted' && ok "committed the hook's reformatted content" || bad "reformatted content not committed"
   cf="$(cache_file)"
-  [ -n "$cf" ] && grep -q '"docs.md"' "$cf" && ok "cache advanced to group 2 after the hook-fixed commit" || bad "cache did not advance after a successful commit"
+  # Prove advancement: group 1 (src.txt) dropped, group 2 (docs.md) remains -
+  # a stale un-advanced full plan would still mention both.
+  { [ -n "$cf" ] && grep -q '"docs.md"' "$cf" && ! grep -q '"src.txt"' "$cf"; } && ok "cache advanced (group 1 dropped, group 2 remains)" || bad "cache did not advance after a successful commit"
   reset_cache; rm -rf "$d"
 else
   skip "AC-C-hookfix needs signing"
@@ -723,6 +725,8 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   : > "$CAPTURE"; : > "$PLAN_FILE"
   ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
   [ $rc -eq 0 ] && ok "deletion cached group commit exit 0" || bad "deletion cached group (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  # Prove it was a cache REPLAY, not a fallback: no grouping call this run.
+  grep -q '"response_format"' "$CAPTURE" && bad "made a grouping call (cache missed, not a replay)" || ok "no grouping call (deletion group replayed from cache)"
   git -C "$d" ls-files | grep -qx 'b.txt' && bad "b.txt still tracked (deletion not committed)" || ok "b.txt deletion committed from cache"
   reset_cache; rm -rf "$d"
 else
