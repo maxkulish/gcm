@@ -78,13 +78,13 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
     // an announced reason (never silent); a fatal error (missing key, git
     // failure) is returned as-is.
     let model = groq::resolved_model();
-    let plan = match cache::load(&repo, &model) {
+    let plan = match cache::load(&repo, &changed, &model) {
         Some(plan) => plan,
         None => match build_plan(&repo, &changed) {
             Ok(plan) => {
                 // Save the full plan even on a `--dry-run` (FR-7: dry-run
                 // uses/saves but does not advance); advancement is gated later.
-                cache::save(&repo, &plan, &model);
+                cache::save(&repo, &plan, &changed, &model);
                 plan
             }
             Err(BuildError::Fatal(e)) => return Err(e),

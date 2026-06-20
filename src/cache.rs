@@ -42,21 +42,24 @@ struct CacheFile {
 /// `None` on any miss: no file, wrong format version, corrupt JSON, or a
 /// fingerprint mismatch (an edit/rename/added-or-removed file, or a
 /// provider/model/prompt change).
-pub fn load(repo: &Repo, model: &str) -> Option<Plan> {
+///
+/// `pending` is the live change set the caller already computed (nothing has
+/// mutated the tree since), so this does not re-run `git status`.
+pub fn load(repo: &Repo, pending: &[ChangedFile], model: &str) -> Option<Plan> {
     let path = cache_path(repo.root())?;
     let data = fs::read(&path).ok()?;
     let cf = read_cache_file(&data)?;
-    let pending = repo.changed_files().ok()?;
-    if fingerprint(repo, &pending, model) != cf.fingerprint {
+    if fingerprint(repo, pending, model) != cf.fingerprint {
         return None;
     }
     Some(cf.plan)
 }
 
-/// Persist the full plan with a fresh fingerprint over the current pending set.
-/// Best-effort: a failure warns and returns (the caller's commit still proceeds).
-pub fn save(repo: &Repo, plan: &Plan, model: &str) {
-    if let Err(e) = persist(repo, plan, model) {
+/// Persist the full plan with a fresh fingerprint over the current pending set
+/// (the caller's already-computed `pending`). Best-effort: a failure warns and
+/// returns (the caller's commit still proceeds).
+pub fn save(repo: &Repo, plan: &Plan, pending: &[ChangedFile], model: &str) {
+    if let Err(e) = persist(repo, plan, pending, model) {
         eprintln!("gcm: warning: could not write plan cache: {e}");
     }
 }
@@ -82,12 +85,11 @@ pub fn clear(repo: &Repo) {
 
 // ── internals ────────────────────────────────────────────────────────────
 
-fn persist(repo: &Repo, plan: &Plan, model: &str) -> io::Result<()> {
+fn persist(repo: &Repo, plan: &Plan, pending: &[ChangedFile], model: &str) -> io::Result<()> {
     let path = cache_path(repo.root()).ok_or_else(no_cache_dir)?;
-    let pending = repo.changed_files().map_err(to_io)?;
     let cf = CacheFile {
         version: CACHE_FORMAT_VERSION,
-        fingerprint: fingerprint(repo, &pending, model),
+        fingerprint: fingerprint(repo, pending, model),
         plan: plan.clone(),
     };
     write_atomic(&path, &serialize(&cf)?)
@@ -233,7 +235,10 @@ fn hash_path(full: &Path) -> String {
     }
     let f = match fs::File::open(full) {
         Ok(f) => f,
-        Err(_) => return "\0DELETED".to_string(),
+        // The file existed at symlink_metadata, so an open failure here is a
+        // permission/IO error, NOT a deletion - mark it unreadable (a deletion
+        // is only the symlink_metadata-absent case above).
+        Err(_) => return "\0UNREADABLE".to_string(),
     };
     let mut hasher = Sha256::new();
     let mut reader = BufReader::new(f);
