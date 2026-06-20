@@ -1,0 +1,179 @@
+# Workflow state for CLO-487
+# Managed by /task:orchestrate
+
+task: CLO-487
+title: "Add semantic grouping and commit the first group"
+linear_url: https://linear.app/cloud-ai/issue/CLO-487/add-semantic-grouping-and-commit-the-first-group
+branch: feat/clo-487-groq
+task_type: specification        # S2 slice; extends CLO-486 tracer; architecture pre-locked by ADR-001
+deliverable: src/ (structured-output grouping plan -> stage+commit group 1; re-run advances)
+slice: S2
+labels: [AFK]                   # agent may implement and merge without human input
+covers_fr: [1, 2, 3, 7, 15, 16, 19, 23, 24, 31, 33]   # FR-2/23/24 partial/basic; FR-31 full
+partial_fr: [2, 23, 24]          # 2=multi-group message contract partial, 23=basic plan validation, 24=partial
+
+# Reference material for the spec/implementation
+references:
+  adr: docs/adrs/001-foundational-architecture-decisions.md   # Decisions 1 (grouping=central LLM contract), 5 (Groq gpt-oss-120b strict json_schema), 6 (regenerate-per-group)
+  prd: docs/prds/prd-gcm.md
+  bash_grouping: docs/tmp/git-commit-ai.sh   # lines 305-466: grouping path to mirror (request JSON, parse into Plan/Group)
+  prior_spec: docs/specs/2026-06-19-clo-486-single-commit-tracer.md   # the tracer this extends (single-commit fallback path)
+  prior_workflow: docs/status/clo-486-workflow.yaml
+
+depends_on:
+  blocked_by: []                 # CLO-486 merged (b7ff8fc) -> satisfied
+  blocks: [CLO-491, CLO-492, CLO-493, CLO-497]
+
+workflow:
+  current_phase: pr
+  status: in_progress
+  classification_rationale: "Identical shape to CLO-486 (user-confirmed specification): ADR-001 locks every architecture decision (grouping contract = Decision 1, Groq strict json_schema = Decision 5, regenerate-per-group = Decision 6), explicit/testable acceptance criteria, AFK autonomy, extends an existing module with the grouping algorithm already specified in the bash reference (lines 305-466). No new architecture decisions -> full discovery/design-doc would be near-empty. Auto-classified specification (no flag); AFK label authorizes proceeding without a classification prompt."
+
+phases:
+  discovery:
+    status: skipped
+    skip_reason: "Specification task - PRD mature, ADR-001 Accepted; grouping contract pre-decided (ADR Decision 1)"
+    approved: true
+  design:
+    status: skipped
+    reason: "Specification task - using /spec instead of a full design doc; architecture fixed by ADR-001"
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-20-clo-487-semantic-grouping.md
+    approved: true
+    approved_at: 2026-06-20T08:10:00Z
+    review_completed: true
+    review_gemini: docs/reviews/clo-487-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-487-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-487-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS   # Gemini + Ollama both APPROVE_WITH_SUGGESTIONS; no NEEDS_REVISION
+    review_pipeline_note: "lok spec-review: both reviewers succeeded; synthesis+write_reviews steps FAILED with 'nul byte found in provided data' (a NUL in a reviewer's output broke the Claude synthesis subprocess - the exact bug class this spec hardens against). Reviews + synthesis reconstructed by the orchestrator from /tmp/clo-487-spec-review.log."
+    review_applied: true
+    applied_suggestions:
+      - "CRITICAL: rename staging - stage both new+orig path for R/C (single-new-path commit splits the rename); build group-1 pathspec from typed ChangedFile entries -> Constraints + sub-task 2 + AC-4 + eval row 16"
+      - "HIGH: clear-index on unborn branch - read-tree HEAD (has HEAD) / read-tree --empty (unborn, no HEAD); clear-to-HEAD not empty so tracked group-2 files are not recorded as deletions -> Constraints + sub-task 2/5 + eval row 18"
+      - "P1: embedded concrete JSON Schema (strict-compatible: required props, additionalProperties:false, nullable commit_message) -> new section 3b"
+      - "P1: defined the grouping system prompt (rules from bash 305-322) + user-message inputs (file list/status/stat/per-file diff) -> section 3b"
+      - "MED: tracked-diff per-file truncation - split on 'diff --git ' boundaries, cap each section, [diff omitted: N bytes]; per-file during assembly, MAX_TOTAL_BYTES as final safeguard -> Constraints + sub-task 3"
+      - "Resolved clear-index approach explicitly (read-tree, consistent with restore_index); GroupingContext as a new struct (not extending GatheredDiff)"
+      - "Strengthened NUL-rename-order note: reviewers contradicted each other -> empirical git mv test is the single source of truth"
+      - "Clarified --all (single-commit path) and --all --dry-run (print message, no commit); interactive 'e' edits only group 1's message this run"
+      - "Concrete fallback error message examples; concurrency note (change set captured once, stale paths -> fallback)"
+      - "Added eval rows 13-19: single-group, groups:[] empty, null-message group 1, delete-only group, strict:true in payload, unborn-branch grouping, --all --dry-run"
+      - "Confirmed acceptance harness path scripts/acceptance.sh; HTTP-timeout test noted as low-priority follow-up (AC-7 covers the fallback)"
+    flagged_suggestions: []   # none contradicted ADR-001 or prior decisions; no user-conflict prompts
+    review_round2_user_git_plumbing:
+      source: "user (deep git-plumbing review at the spec checkpoint)"
+      verified: "all 5 points empirically reproduced with real git 2.54 in temp repos before applying"
+      applied:
+        - "P1 untracked-dir mismatch: status now uses -uall (default collapses 'dir/'; ls-files lists 'dir/file' -> path disagreement -> spurious fallback). VERIFIED."
+        - "P2 conflict-marker hazard: read-tree HEAD during a UU conflict drops the unmerged state, then git add -A stages the working blob WITH <<<<<<< markers (VERIFIED markers-in-staged=1). Fix = ABORT on unmerged entries (NOT fall back: single-commit path bakes markers too). Clean MERGE_HEAD -> single-commit completes the merge. -> AC-12."
+        - "P3 internal pathspec globbing: git add -- 'a*.txt' staged ab.txt+ac.txt (VERIFIED leak); GIT_LITERAL_PATHSPECS=1 staged only the literal file. -> staging Must + AC-13."
+        - "P4 ARG_MAX: stage via git add -A --pathspec-from-file=- --pathspec-file-nul on stdin (VERIFIED works on git 2.54); subsumes arg-quoting too. -> staging Must + AC-13."
+        - "P5 hunk-staging override (git add -p lost on group-1 whole-file staging): by-design; disclose in --help/README. -> Prefer + sub-task 6."
+      pushback: "P2 reviewer offered 'abort OR fall back to single-commit'; pushed back - fallback is unsafe (single-commit stages the same marker-laden tree), so abort is the only correct response. Adopted abort + clean-merge bypass."
+      spec_changes: "status -uall; unmerged-abort Must + AC-12 + eval 21; NUL-stdin literal-pathspec staging Must + AC-13 + eval 22; rename both-paths reaffirmed (eval 23); -uall path-agreement eval 20; hunk-staging disclosure Prefer; sub-tasks 2/5/6 updated."
+  implement:
+    status: complete
+    approach: "Direct implementation from spec decomposition (spec workflow - no separate plan file; decomposition IS the plan). TDD on pure-logic units (plan validate, status parse, per-file truncation, plan payload), with stub->RED->impl->GREEN and mutation checks proving tests load-bearing; scripts/acceptance.sh for integration via the mock-Groq harness. Sub-task order 1->2->3->4->5->6."
+    sub_tasks:
+      - { n: 1, name: "plan.rs: Plan/Group + JSON schema + validate_basic", status: complete }
+      - { n: 2, name: "git.rs: -uall status parse, ChangedFile, has_unmerged, NUL-stdin literal staging, clear_staged", status: complete }
+      - { n: 3, name: "diff.rs: gather_for_grouping + per-file [diff omitted] truncation", status: complete }
+      - { n: 4, name: "groq.rs: generate_plan (response_format strict json_schema)", status: complete }
+      - { n: 5, name: "main.rs/ui.rs/cli.rs: orchestration, merge guard, display, dry-run, stage group 1, fallback, --all", status: complete }
+      - { n: 6, name: "tests + scripts/acceptance.sh extension + --help/README disclosure", status: complete }
+    commits:
+      - { sha: 3540548, summary: "feat(CLO-487): semantic grouping - structured-output plan, commit the first group" }
+      - { sha: c2a07f3, summary: "docs(CLO-487): spec, AI reviews, workflow trail, project sync" }
+    new_files: [src/plan.rs]
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "38 passed (8 plan, 11 git incl. 6 real-git integration, 12 diff incl. per-file truncation, 7 groq incl. strict-payload)"
+      cargo_build_release: ok
+      acceptance_sh: "68 PASS / 0 FAIL / 1 SKIP (manual $EDITOR edit). New grouping cases: AC-G1 split+commit group 1, AC-G2 progression, AC-G4 rename+delete+arrow+unicode no-fallback, AC-G13 glob-literal staging, AC-G6 unknown-file fallback, AC-G7 malformed-JSON fallback, AC-G8 dry-run preview, AC-G9 --all bypass, AC-G12 unmerged abort, AC-uall path agreement."
+    git_facts_verified: "Pre-implementation, against real git 2.54 in temp repos: rename porcelain -z order (new in XY record, orig follows), read-tree-HEAD-during-conflict bakes markers, pathspec glob leak vs GIT_LITERAL_PATHSPECS, --pathspec-from-file=- --pathspec-file-nul support."
+    live_groq_note: "Real ureq->api.groq.com call not exercised in-sandbox (same egress limitation as CLO-486); request shape is covered by the strict-payload unit test + the mock-Groq acceptance harness. Binary reaches Groq in the user's real environment."
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-487-gemini-validation.md
+        verdict: PASS
+        notes: "All ACs verified implemented. 2 LOW (memory-double near 350KB cap; parse_status_z malformed-record skip - practically unreachable). 2 future-opt recs (merge elide+truncate passes; C-entry both-path no-op). No blockers."
+        mode: "--approval-mode plan (read-only); HEAD unchanged"
+      codex:
+        report: docs/reviews/clo-487-codex-validation.md
+        verdict: FAIL
+        mode: "-s read-only (GPT-5.4 high effort); HEAD unchanged"
+        findings_applied:
+          - "HIGH: --all returned before the unmerged-conflict guard -> gcm --all in a conflicted repo baked <<<<<<< markers. Fix: merge guard now runs before the --all/merge bypass. Commit 88480a3 + AC-G12b regression test (--all aborts on conflict)."
+          - "MEDIUM: grouping prompt newline-joined paths, re-splitting newline-containing paths. Fix: file_list_json/status_json JSON-encode the prompt arrays. Commit 88480a3 + diff.rs unit test."
+        findings_declined:
+          - "Missing 'strict json_schema unsupported' runtime escalation: the spec's escalation is implementation-time capability-drift (already satisfied vs ADR-001 capability matrix); a runtime HTTP 400 -> single-commit fallback is exactly AC-7. No behavior change. (Pushed back with reasoning.)"
+        missing_coverage_added:
+          - "AC-G12b: gcm --all during an unresolved conflict -> abort (the gap that hid the HIGH bug)."
+          - "AC-G12c: clean MERGE_HEAD (--no-commit) -> single two-parent merge commit."
+      post_fix_quality_gate:
+        cargo_test: "39 passed (+newline-path file_list element)"
+        cargo_clippy: "clean (-D warnings)"
+        acceptance_sh: "73 PASS / 0 FAIL / 1 SKIP (+AC-G12b --all-conflict abort, +AC-G12c clean-merge two-parent commit)"
+      fix_commit: 88480a3
+      codex_revalidation:
+        report: docs/reviews/clo-487-codex-revalidation.md
+        verdict: "PASS_WITH_NOTES (both findings RESOLVED; no new issues; only note = read-only sandbox could not run tests, which we did: 39 unit + 73 acceptance green)"
+      converged: true   # Gemini PASS; Codex FAIL -> fixed -> PASS_WITH_NOTES
+  pr:
+    status: pending
+    pr_url: null
+    pr_number: null
+  complete:
+    status: pending
+
+# Scope checklist (from the Linear task)
+scope:
+  - "Request a grouping plan via structured outputs; deserialize into typed Plan/Group"
+  - "NUL-delimited status + -c core.quotePath=false so file-list and diff paths match; handle renames/deletes"
+  - "Per-file diff truncation with [diff omitted: N bytes] placeholders (not tail-chop)"
+  - "Validate plan files against the real change set (basic)"
+  - "Display groups; stage only group 1; signed commit; fall back to single-commit (CLO-486 path) on parse failure"
+  - "--dry-run previews the plan and commits nothing"
+
+acceptance_criteria:
+  - "A mixed change set is split into logical groups; group 1 commits with its own message"
+  - "Re-running commits the next logical group (multi-group progression without a cache)"
+  - "A repo with a unicode/space/-> filename groups without tripping into silent single-commit fallback"
+  - "--dry-run shows the groups and leaves the repo untouched"
+
+history:
+  - timestamp: 2026-06-20T07:26:27Z
+    action: workflow_started
+    phase: spec
+    details: "New workflow for CLO-487 (S2 semantic grouping). Auto-classified specification: same profile as CLO-486 (ADR-001 locks architecture, explicit ACs, AFK autonomy, grouping algorithm pre-specified in bash reference lines 305-466). No flags; AFK label authorizes autonomous proceed. Discovery + design-doc skipped."
+  - timestamp: 2026-06-20T07:26:27Z
+    action: project_sync_start
+    phase: spec
+    details: "WIP 0/3, CLO-487 unblocked (CLO-486 merged b7ff8fc satisfied the only blocker). PROJECT.md: added to Active Work (Phase: Spec), master table -> In Progress, removed from Up Next. ROADMAP.md: Ready -> In Progress. DEPENDENCIES.md: removed from Unblocked & Ready. Last-Updated bumped to 2026-06-20."
+  - timestamp: 2026-06-20T07:40:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "lok spec-review ran both reviewers (Gemini 3.5 Flash via opencode + Codex via Ollama glm-5:cloud). Both verdicts APPROVE_WITH_SUGGESTIONS -> consolidated APPROVE_WITH_SUGGESTIONS (no NEEDS_REVISION). Automated synthesis + write_reviews steps FAILED ('nul byte found in provided data' - a NUL in a reviewer's output broke the Claude synthesis subprocess). Reviews + synthesis reconstructed by the orchestrator from the run log into docs/reviews/clo-487-spec-review-*.md."
+  - timestamp: 2026-06-20T07:42:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "All suggestions auto-applied (additive/refinement/risk; none contradicted ADR-001 -> zero user-conflict prompts). Key fixes: rename staging both new+orig (Critical), unborn-branch clear-index (read-tree HEAD/--empty), embedded JSON Schema + grouping prompt (P1 x2, new section 3b), tracked-diff section-split truncation, +7 eval rows. NUL-rename-order: reviewers contradicted each other -> empirical git mv test is authoritative. Spec advanced to checkpoint."
+  - timestamp: 2026-06-20T08:05:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "Round 2: user delivered a deep git-plumbing review at the checkpoint (5 points). Each VERIFIED with real git 2.54 in temp repos (receiving-code-review discipline) before applying: (1) -uall untracked-dir expansion [confirmed mismatch], (2) unmerged-index conflict-marker hazard -> ABORT [confirmed markers baked after read-tree HEAD + add], (3) GIT_LITERAL_PATHSPECS=1 [confirmed glob leak], (4) --pathspec-from-file=- --pathspec-file-nul stdin [confirmed works, avoids ARG_MAX], (5) hunk-staging override disclosure [by-design]. Pushed back on P2's 'or fall back to single-commit' (unsafe - same marker hazard) -> abort + clean-merge bypass. Spec gained AC-12/AC-13, eval rows 20-23, and updated Constraints + sub-tasks 2/5/6. Still APPROVE_WITH_SUGGESTIONS class; no redesign."
+  - timestamp: 2026-06-20T08:10:00Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved at the spec checkpoint ('apply valid fixes and continue, spec approved'). All 5 round-2 fixes were valid and already applied. Plan phase skipped (spec decomposition IS the plan). Advancing to implement; will run autonomously through implementation (AFK) and stop at the PR checkpoint."
+  - timestamp: 2026-06-20T09:30:00Z
+    action: implementation_complete
+    phase: implement
+    details: "6 sub-tasks done TDD-first (stub->RED->impl->GREEN, mutation checks proving tests load-bearing): plan.rs (typed plan + strict schema + validate_basic), git.rs (-uall NUL status parse, ChangedFile, unmerged, literal NUL-stdin staging w/ both rename paths, clear_staged), diff.rs (gather_for_grouping + per-file [diff omitted] truncation), groq.rs (generate_plan strict structured output), main.rs orchestration (merge guard, display, dry-run, classified fallback, --all), acceptance.sh grouping suite + README/--help disclosure. Pre-implementation: every git hazard the user raised verified against real git 2.54. Commits 3540548 (feat) + c2a07f3 (docs). 38 unit + 68 acceptance green."
+  - timestamp: 2026-06-20T10:55:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Validation gate (both read-only - Codex -s read-only, Gemini --approval-mode plan; HEAD unchanged throughout, avoiding the CLO-486 YOLO incident). Gemini PASS (2 LOW, no blockers). Codex round 1 FAIL: HIGH (--all bypassed the merge guard -> conflict-marker baking) + MEDIUM (newline-path re-split in prompt). Both fixed (commit 88480a3) with regression tests (AC-G12b --all-conflict abort, newline unit test); declined the 'strict-schema runtime escalation' (dev-time concern; runtime is AC-7 fallback). Codex re-validation: PASS_WITH_NOTES, both RESOLVED, no new issues. Converged. Post-fix: 39 unit + 73 acceptance green, clippy clean."
