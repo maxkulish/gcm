@@ -25,7 +25,7 @@ depends_on:
   blocks: [CLO-497]              # cross-platform releases + alias cutover
 
 workflow:
-  current_phase: plan
+  current_phase: pr
   status: in_progress
   classification_rationale: "User selected Development at the classification checkpoint despite the specification precedent (CLO-486/CLO-487 both spec under ADR-001 lock). Development path chosen: discovery -> design -> plan -> implement -> pr -> complete. Rationale for the choice rests with the owner; orchestrator honors it. The task does carry genuine design surface beyond the prior slices: cache key scheme (sha256(repo-root)), OS-appropriate location + 0600 perms, a content-fingerprint freshness model over pending files (fixing the bash name-only staleness bug), commit-safe advancement state machine (fixing the bash null-message advancement bug), and failure handling on rejecting pre-commit hooks."
 
@@ -100,11 +100,74 @@ phases:
       pushback: "P4 framing softened - the unborn 'message must come 100% from untracked' scenario does not occur on the live message-only path (HEAD exists post-first-commit); kept the gather_for_files untracked-filter correctness requirement which is the real, provable need. No suggestion was rejected outright; all 5 led to a doc change."
       doc_changes: "CommitOutcome gate (flow + Must-not + AC-7 + eval 19); streaming content_hash (fingerprint note + Must-not + eval 20); append_untracked allow-list filter (Phase 2 + diff.rs row + Must-not + eval 21 + gather_for_files API); unborn scoping note; partial-staging accepted-tradeoff note; eval table now 21 rows, ACs now 7."
   plan:
-    status: pending
-    plan_file: null
-    approved: false
+    status: complete
+    plan_file: docs/plans/clo-491-plan-cache.md
+    approved: true
+    approved_at: 2026-06-20T19:18:00Z
+    total_tasks: 41               # 17 top-level + 24 subtasks (counting subtasks); 17 parent tasks across 5 phases
+    phases: 5                     # 1 deps+cache, 2 provider/diff, 3 failure+cli+main wiring, 4 test+validate, 5 PR
+    mode: "design-doc (parsed from docs/design-docs/2026-06-20-clo-491-plan-cache.md)"
   implement:
-    status: pending
+    status: complete
+    codex_validated: true
+    codex_verdict: "FAIL -> fixed -> PASS_WITH_NOTES (converged)"
+    gemini_verdict: PASS
+    approach: "Direct TDD implementation from the plan decomposition (clo-491-plan-cache.md). Order: deps + Plan:Serialize -> cache.rs -> provider/diff helpers -> error/cli/git -> main.rs wiring -> tests. stub->RED->impl->GREEN on pure-logic units; scripts/acceptance.sh for integration via the mock-Groq harness."
+    commits:
+      - { sha: f021691, summary: "feat(CLO-491): per-repo plan cache with commit-safe advancement" }
+    new_files: [src/cache.rs]
+    sub_tasks:
+      - { phase: 1, name: "Cargo deps (directories v6, sha2 v0.11) + Plan/Group Clone+Serialize", status: complete }
+      - { phase: 1, name: "cache.rs: path/key (+GCM_CACHE_DIR), streaming fingerprint, CacheFile load/save/advance/clear, atomic 0600 write", status: complete }
+      - { phase: 2, name: "groq::resolved_model (no key) + diff append_untracked allow-list + gather_for_files (scoped, unborn-safe) + git diff_*_for", status: complete }
+      - { phase: 3, name: "error CommitFailed/leaves_staged + git commit_signed->CommitFailed + cli --reset", status: complete }
+      - { phase: 3, name: "main.rs: CommitOutcome, cache load/save/advance wiring, message-on-hit, narrowed restore, advance-on-Committed, single_commit clears", status: complete }
+      - { phase: 4, name: "15 cache + 2 error unit tests + scripts/acceptance.sh AC-C1..C7/C11/C21 + quality gate", status: complete }
+      - { phase: 4, name: "dual-model validation gate (Gemini + Codex, read-only)", status: complete }
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-491-gemini-validation.md
+        verdict: PASS
+        mode: "--model gemini-3.1-pro-preview --sandbox (read-only); HEAD unchanged"
+        notes: "No defects. 4 LOW positive notes (deletion/unreadable markers; 0600-before-write atomic rename; append_untracked filter; leaves_staged clean boundary). Only rec: make the PROVIDER 'groq' token dynamic once CLO-489 lands (already a documented in-code TODO)."
+      codex:
+        report: docs/reviews/clo-491-codex-validation.md
+        verdict: FAIL
+        mode: "-m gpt-5.4 reasoning.effort=high -s read-only; HEAD unchanged"
+        findings_applied:
+          - "HIGH: content_hash followed symlinks (fs::File::open) - a symlink to a FIFO/device could block forever and a symlink read leaked target bytes / mismatched git's blob. VERIFIED against the code + the existing diff.rs symlink guard. Fixed: hash_path uses symlink_metadata (no follow), hashes a symlink by its target path, marks special files without opening. Commit 31563d7 + 3 unit tests (hash_path regular/missing/symlink-not-followed)."
+        findings_documented_pushback:
+          - "MEDIUM: --all --dry-run / dry-run fallback do not clear the cache. VERIFIED, but kept by design: a --dry-run must mutate nothing (FR-7); the real --all/fallback paths still clear (FR-28); a stale cache left by a dry-run self-heals on the next real run via the fingerprint. Documented in single_commit + locked by AC-C-drynoclear. (Codex's 'move clear before the dry-run return' would make a preview delete state - rejected with reasoning.)"
+        missing_coverage_added:
+          - "eval 4 rename-invalidates (AC-C-rename), eval 6 hook-reformat+restage advances (AC-C-hookfix), eval 18 untracked-only cached group (AC-C-untracked), eval 17 deletion-only cached group (AC-C-delete), eval 10 fallback clears cache (AC-C-fallback); AC-C3 strengthened to byte-identical-across-rejected-retries."
+      fix_commit: 31563d7
+      post_fix_quality_gate:
+        cargo_test: "58 passed (+3 hash_path symlink-safety)"
+        cargo_clippy: "clean (-D warnings)"
+        acceptance_sh: "116 PASS / 0 FAIL / 1 SKIP (+6 cache eval cases + strengthened AC-C3)"
+      codex_revalidation:
+        report: docs/reviews/clo-491-codex-revalidation.md
+        verdict: PASS_WITH_NOTES   # HIGH + MEDIUM both RESOLVED/accepted; 2 LOW test-rigor notes
+        low_notes_applied:
+          - "AC-C-hookfix now proves advancement (group 1 dropped, group 2 remains), not just 'mentions docs.md'"
+          - "AC-C-delete now asserts no grouping call on the replay run (proves cache replay, not a spurious fallback)"
+        low_notes_acknowledged:
+          - "special-file (\\0SPECIAL) branch not directly unit-tested (FIFO-in-git is exotic; the branch is a 1-line guard, and the pre-existing AC-safe-files acceptance test exercises symlink/FIFO handling). Accepted."
+        revalidation_commit: a5c4684
+      converged: true   # Gemini PASS; Codex FAIL -> fixed (31563d7) -> PASS_WITH_NOTES -> LOWs fixed (a5c4684)
+    design_addition_GCM_CACHE_DIR: "Added a GCM_CACHE_DIR env override to cache_dir() (beyond the design): needed for hermetic acceptance tests (directories crate ignores XDG on macOS, so the cache would land in ~/Library/Caches and be non-deterministic) and a reasonable user feature. Default path unchanged (ProjectDirs). Documented in code."
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "55 passed (15 cache: hex/key/fingerprint stability+sensitivity/deletion-marker/remaining-groups/read_cache_file version+corrupt+empty/cache_file_name; 2 error: leaves_staged + CommitFailed display; 38 pre-existing)"
+      cargo_build_release: ok
+      acceptance_sh: "102 PASS / 0 FAIL / 1 SKIP (pre-existing manual $EDITOR skip). New: AC-C1 hit-no-grouping-call, AC-C2 edit-invalidates, AC-C3 hook-reject staged+un-advanced+retry, AC-C4 unborn first commit, AC-C5 location+0600, AC-C6 --reset/--all clear, AC-C7 abort-un-advanced (expect PTY), AC-C11 single-group deletes cache, AC-C21 untracked-filter excludes other groups."
+    blind_spots_addressed:
+      - "P1 abort-advance: CommitOutcome::{Committed,Aborted}; advance gated on Committed (AC-C7 + main.rs)"
+      - "P2 OOM: content_hash streams via BufReader 64KB chunks (constant memory)"
+      - "P3 untracked hallucination: append_untracked allow-list; gather_for_files passes group paths (AC-C21)"
+      - "P4 unborn: gather_for_files unborn-safe; message-only call never fires while unborn (HEAD exists post first commit)"
+      - "P5 partial-staging: documented accepted tradeoff (index selection only, never work-tree); commit-failure leaves group staged"
   pr:
     status: pending
     pr_url: null
@@ -166,4 +229,20 @@ history:
   - timestamp: 2026-06-20T19:04:00Z
     action: design_finalized
     phase: design
-    details: "Owner approved at the design checkpoint ('approved, continue') - signed off on the AC-1 no-grouping-call reading AND the design overall. Both Open Questions resolved in-doc (AC-1 interpretation; full-sha256 key). Design status Draft->Finalized; finalize comment posted to Linear CLO-491. Plan phase next (the design's 4-phase Implementation Plan + 7 ACs + 21-row eval feed /plan:create). Advancing to plan."
+    details: "Owner approved at the design checkpoint ('approved, continue') - signed off on the AC-1 no-grouping-call reading AND the design overall. Both Open Questions resolved in-doc (AC-1 interpretation; full-sha256 key). Design status Draft->Finalized; finalize comment posted to Linear CLO-491. Design doc + reviews + workflow + project-sync committed (11032f9 docs(CLO-491)). Plan phase next. Advancing to plan."
+  - timestamp: 2026-06-20T19:15:00Z
+    action: plan_created
+    phase: plan
+    details: "Implementation plan written (docs/plans/clo-491-plan-cache.md) from the finalized design - 17 parent tasks / 41 checkboxes across 5 phases, dependency-ordered (deps + Plan:Serialize -> cache.rs -> provider/diff helpers -> error/cli/git -> main.rs wiring -> tests -> PR). TDD discipline noted; ACs AC-1..AC-7 + the 21 eval rows mapped to Task 14.x. Branch feat/clo-491-plan-cache already exists. At plan checkpoint. Plan summary posted to Linear CLO-491."
+  - timestamp: 2026-06-20T19:18:00Z
+    action: plan_approved
+    phase: plan
+    details: "Owner approved the plan ('approved'). Plan -> complete; advancing to implement. Will run autonomously through implementation under the AFK label (TDD-first on pure-logic units, stub->RED->impl->GREEN with mutation checks; scripts/acceptance.sh for integration) and stop at the PR checkpoint."
+  - timestamp: 2026-06-20T19:45:00Z
+    action: implementation_complete
+    phase: implement
+    details: "src/cache.rs (new) + wiring across main/diff/git/error/cli/plan/groq. Streaming content fingerprint (no HEAD pin, unborn-safe), 0600-before-write atomic cache, regenerate-per-group message-only call on hit, CommitFailed/leaves_staged + CommitOutcome gate, --reset/--all/fallback clear. All 5 user blind spots pinned to tests. Commit f021691. 55 unit + 102 acceptance green at feat time."
+  - timestamp: 2026-06-20T20:05:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Dual-model gate (both read-only, HEAD unchanged). Gemini PASS (no defects; only a CLO-489 PROVIDER-token note already TODO'd in code). Codex round 1 FAIL: HIGH (content_hash followed symlinks -> FIFO hang / target-bytes leak; fixed via symlink_metadata + hash-by-target-path + special-file marker, mirroring diff.rs) + MEDIUM (--all --dry-run didn't clear cache - kept by design per FR-7, documented + locked by AC-C-drynoclear; pushed back on the 'fix') + 6 coverage gaps (filled). Commit 31563d7 (+3 hash_path unit tests, +6 eval acceptance cases, strengthened AC-C3). Codex re-validation: PASS_WITH_NOTES (HIGH+MEDIUM RESOLVED) + 2 LOW test-rigor notes -> fixed (a5c4684: AC-C-hookfix proves advancement, AC-C-delete proves replay). Converged. Post-fix: 58 unit + 117 acceptance green, clippy clean."
