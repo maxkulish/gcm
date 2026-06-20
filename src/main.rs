@@ -207,7 +207,11 @@ fn single_commit(repo: &Repo, args: &Cli) -> Result<(), GcmError> {
         return Ok(());
     }
     // `--all`, a clean merge, and the grouping fallback all clear the cached
-    // plan (FR-28); reached only on the real (non-dry-run) path.
+    // plan (FR-28) - but only on the REAL (non-dry-run) path. A `--dry-run`
+    // (incl. `--all --dry-run` and a dry-run fallback) returns above and clears
+    // nothing: a preview must mutate no state (FR-7). A stale cache left behind
+    // by a dry-run is harmless - the next real run re-validates the fingerprint
+    // and re-analyzes on a mismatch.
     cache::clear(repo);
     let snapshot = repo.snapshot_index()?;
     let result = single_commit_flow(repo, args);

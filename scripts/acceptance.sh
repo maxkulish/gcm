@@ -537,9 +537,12 @@ printf '#!/bin/sh\nexit 1\n' > "$d/.git/hooks/pre-commit"; chmod +x "$d/.git/hoo
 [ $rc -ne 0 ] && ok "rejecting hook -> exit $rc" || bad "expected non-zero on hook rejection"
 grep -qi "left staged" /tmp/gcm-out && ok "error explains the group is left staged" || bad "FR-58 message missing"
 git -C "$d" diff --cached --name-only | grep -qx 'src.txt' && ok "group 1 left staged for retry" || bad "group 1 not staged after hook reject"
-cf="$(cache_file)"
-[ -n "$cf" ] && grep -q '"src.txt"' "$cf" && ok "cache un-advanced (still holds group 1)" || bad "cache advanced despite the commit failure"
+cf="$(cache_file)"; before="$(cat "$cf" 2>/dev/null)"
+{ [ -n "$before" ] && printf '%s' "$before" | grep -q '"src.txt"' && printf '%s' "$before" | grep -q '"docs.md"'; } && ok "cache un-advanced (still the full plan: both groups)" || bad "cache not the full un-advanced plan"
 [ "$(git -C "$d" log --oneline | wc -l | tr -d ' ')" = "1" ] && ok "no commit created" || bad "a commit slipped through the rejecting hook"
+# A second rejected run must not mutate the cache (idempotent; never advances).
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+[ "$before" = "$(cat "$cf" 2>/dev/null)" ] && ok "cache byte-identical after a repeated rejected commit" || bad "cache changed across rejected retries"
 # Removing the hook and re-running retries the same group from the cache.
 rm -f "$d/.git/hooks/pre-commit"; : > "$CAPTURE"; : > "$PLAN_FILE"
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
@@ -659,6 +662,99 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   reset_cache; rm -rf "$d"
 else
   skip "AC-C21 needs signing"
+fi
+
+note "AC-C-rename: renaming a pending file invalidates the cache (eval 4)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  ( cd "$d" && git mv docs.md docs2.md )   # rename the still-pending group-2 file
+  printf '%s' '{"groups":[{"files":["docs2.md"],"summary":"docs","commit_message":"docs: renamed"}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  grep -q '"response_format"' "$CAPTURE" && ok "rename invalidated the cache -> grouping call" || bad "stale cache reused after a rename"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C-rename needs signing"
+fi
+
+note "AC-C-hookfix: a hook that reformats+restages lets the commit succeed and the cache advance (eval 6)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  mkdir -p "$d/.git/hooks"
+  printf '#!/bin/sh\nprintf "reformatted\\n" > src.txt\ngit add src.txt\nexit 0\n' > "$d/.git/hooks/pre-commit"
+  chmod +x "$d/.git/hooks/pre-commit"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "hook reformat+restage -> commit succeeds" || bad "reformatting hook run (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  git -C "$d" show HEAD:src.txt | grep -q 'reformatted' && ok "committed the hook's reformatted content" || bad "reformatted content not committed"
+  cf="$(cache_file)"
+  [ -n "$cf" ] && grep -q '"docs.md"' "$cf" && ok "cache advanced to group 2 after the hook-fixed commit" || bad "cache did not advance after a successful commit"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C-hookfix needs signing"
+fi
+
+note "AC-C-untracked: an untracked-only cached group commits on the next run (eval 18)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"
+  printf 'seed\n' > "$d/seed.txt"; git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'A\n' > "$d/g1.txt"; printf 'B\n' > "$d/g2.txt"   # both untracked
+  printf '%s' '{"groups":[{"files":["g1.txt"],"summary":"g1","commit_message":"feat: g1"},{"files":["g2.txt"],"summary":"g2","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  : > "$CAPTURE"; : > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "untracked cached group commit exit 0" || bad "untracked cached group (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  grep -q '"response_format"' "$CAPTURE" && bad "made a grouping call (cache missed)" || ok "no grouping call (cache hit on the untracked group)"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'g2.txt' && ok "untracked group 2 committed from cache" || bad "g2.txt not committed"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C-untracked needs signing"
+fi
+
+note "AC-C-delete: a deletion-only cached group commits the removal (eval 17)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"
+  printf 'a\n' > "$d/a.txt"; printf 'b\n' > "$d/b.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null; git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'a2\n' > "$d/a.txt"; rm "$d/b.txt"   # group 1 modifies a.txt, group 2 deletes b.txt
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"},{"files":["b.txt"],"summary":"rm b","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  : > "$CAPTURE"; : > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "deletion cached group commit exit 0" || bad "deletion cached group (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  git -C "$d" ls-files | grep -qx 'b.txt' && bad "b.txt still tracked (deletion not committed)" || ok "b.txt deletion committed from cache"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C-delete needs signing"
+fi
+
+note "AC-C-fallback: a grouping fallback clears the cache (eval 10 fallback half)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  [ -n "$(cache_file)" ] && ok "cache warmed before fallback" || bad "no cache to clear"
+  printf 'edited\n' > "$d/docs.md"               # invalidate -> next run is a miss
+  printf '%s' '{ not valid json' > "$PLAN_FILE"   # grouping returns malformed -> fallback
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  grep -qi "Falling back" /tmp/gcm-out && ok "malformed plan -> fallback" || bad "no fallback on malformed plan"
+  [ -z "$(cache_file)" ] && ok "fallback cleared the cache" || bad "fallback left the cache in place"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C-fallback needs signing"
+fi
+
+note "AC-C-drynoclear: --all --dry-run previews without clearing the cache (FR-7 no-mutation)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  before="$(cat "$(cache_file)" 2>/dev/null)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run >/tmp/gcm-out 2>&1 )
+  after="$(cat "$(cache_file)" 2>/dev/null)"
+  { [ -n "$before" ] && [ "$before" = "$after" ]; } && ok "--all --dry-run left the cache untouched" || bad "--all --dry-run mutated the cache"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C-drynoclear needs signing"
 fi
 
 stop_mock

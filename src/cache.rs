@@ -194,12 +194,44 @@ fn digest_fingerprint(model: &str, entries: &[(String, String)]) -> String {
 }
 
 /// SHA-256 of a pending file's working-tree bytes, **streamed** in fixed-size
-/// chunks so a large binary still in `git status` cannot OOM the process. A
-/// pending deletion (file absent) is a distinct marker so a delete is detected;
-/// an unreadable file is its own marker (never silently equal to a real hash).
+/// chunks so a large binary still in `git status` cannot OOM the process.
+///
+/// Symlinks and special files are handled WITHOUT following them (mirrors
+/// `diff::append_untracked`): `symlink_metadata` does not traverse the link, so
+/// we never read into a FIFO/device/socket (which could block forever) or a
+/// symlink target outside the repo (a content leak). A symlink is hashed by its
+/// **target path** - exactly the blob git records for it - not the pointed-to
+/// bytes. Each non-regular kind and the deleted/unreadable cases get a distinct
+/// `\0`-prefixed marker (a real content hash is hex, so they never collide).
 fn content_hash(repo: &Repo, file: &ChangedFile) -> String {
-    let full = repo.root().join(&file.path);
-    let f = match fs::File::open(&full) {
+    hash_path(&repo.root().join(&file.path))
+}
+
+/// Kind-aware content hash of a single path (the body of [`content_hash`],
+/// split out so the symlink/special-file safety is unit-testable without a git
+/// repo).
+fn hash_path(full: &Path) -> String {
+    let meta = match fs::symlink_metadata(full) {
+        Ok(m) => m,
+        Err(_) => return "\0DELETED".to_string(),
+    };
+    let ft = meta.file_type();
+    if ft.is_symlink() {
+        return match fs::read_link(full) {
+            Ok(target) => {
+                let mut h = Sha256::new();
+                h.update(b"\0SYMLINK\0");
+                h.update(target.to_string_lossy().as_bytes());
+                hex(&h.finalize())
+            }
+            Err(_) => "\0UNREADABLE".to_string(),
+        };
+    }
+    if !ft.is_file() {
+        // FIFO/device/socket: never opened/read (would block); a stable marker.
+        return "\0SPECIAL".to_string();
+    }
+    let f = match fs::File::open(full) {
         Ok(f) => f,
         Err(_) => return "\0DELETED".to_string(),
     };
@@ -363,6 +395,52 @@ mod tests {
         assert_ne!(
             digest_fingerprint("m", &present),
             digest_fingerprint("m", &deleted)
+        );
+    }
+
+    #[test]
+    fn hash_path_hashes_regular_file_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("f.txt");
+        std::fs::write(&p, b"hello").unwrap();
+        let h = hash_path(&p);
+        assert_eq!(h.len(), 64, "regular file -> hex sha256");
+        let p2 = dir.path().join("g.txt");
+        std::fs::write(&p2, b"hello").unwrap();
+        assert_eq!(h, hash_path(&p2), "same content -> same hash");
+        std::fs::write(&p2, b"world").unwrap();
+        assert_ne!(h, hash_path(&p2), "different content -> different hash");
+    }
+
+    #[test]
+    fn hash_path_missing_file_is_deleted_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(hash_path(&dir.path().join("nope")), "\0DELETED");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hash_path_does_not_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"secret-bytes").unwrap();
+        let link = dir.path().join("link.txt");
+        symlink(&target, &link).unwrap();
+        // A symlink is hashed by its target PATH, not the pointed-to bytes - so
+        // it must differ from the regular-file hash of that content (proving the
+        // link was not followed: no FIFO-block, no out-of-repo content leak).
+        assert_ne!(
+            hash_path(&link),
+            hash_path(&target),
+            "symlink must not be followed into its target's content"
+        );
+        let link2 = dir.path().join("link2.txt");
+        symlink(&target, &link2).unwrap();
+        assert_eq!(
+            hash_path(&link),
+            hash_path(&link2),
+            "same target path -> same symlink hash"
         );
     }
 
