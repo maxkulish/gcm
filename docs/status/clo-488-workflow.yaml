@@ -140,7 +140,18 @@ phases:
     gemini_validation_report: docs/reviews/clo-488-gemini-validation.md
     status: complete
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/6
+    pr_number: 6
+    base: main
+    head: feat/clo-488-typed-errors
+    files_changed: 18
+    diff: "+1574 / -25"
+    commits: [5d72be1, bd997d5, 188db85, 3a3bd2b]
+    pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / cargo test (69) - all clean before PR"
+    ci_passed: true    # GitHub Actions green on macOS + Linux
+    ci_runs: [27881768339]
+    merge_state: "CLEAN / MERGEABLE; no required reviews, no automated reviewers"
   complete:
     status: pending
 
@@ -189,3 +200,15 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Validation gate (both read-only - Codex -s read-only, Gemini --sandbox; HEAD unchanged, no CLO-486-style YOLO incident). Gemini PASS (no new findings; one optional unfenced-bare-array note, deferred). Codex round 1 FAIL: HIGH (bare top-level groups array unrecoverable), MEDIUM (ureq limit().read_to_string() ERRORS at the cap -> BadRequest.detail dropped for >=4096B bodies; VERIFIED against ureq 3.3.0 source), LOW (GCM_RETRY_MAX `as u32` wraps). All 3 verified valid and fixed (commit 188db85) with regression tests + AC-488-3b/8b/9 coverage; nothing declined. Codex re-validation: PASS_WITH_NOTES, all RESOLVED, no new findings. Converged. Post-fix: 69 unit + 96 acceptance green, fmt + clippy clean."
+  - timestamp: 2026-06-20T20:05:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check clean; cargo clippy --all-targets -D warnings clean; cargo test 69 passed; tree clean (removed a stray throwaway test_parse.rs dropped by a validation tool). TypeScript checks N/A - Rust project."
+  - timestamp: 2026-06-20T20:06:00Z
+    action: pr_created
+    phase: pr
+    details: "Branch feat/clo-488-typed-errors pushed (new upstream); PR #6 opened against main: https://github.com/maxkulish/gcm/pull/6 (18 files, +1574/-25, 4 commits). Body covers the taxonomy, retry policy, defensive parser, testing (69 unit + 96 acceptance), and the dual-model validation gate (Gemini PASS; Codex FAIL->fixed->PASS)."
+  - timestamp: 2026-06-20T20:10:00Z
+    action: ci_passed
+    phase: pr
+    details: "GitHub Actions CI green on macos-latest + ubuntu-latest (run 27881768339, build/test - 33s/45s). PR #6 MERGEABLE / CLEAN; no required reviews, no automated reviewers on the repo. Awaiting owner merge decision at the PR checkpoint."
