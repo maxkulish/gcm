@@ -4,6 +4,25 @@ use std::path::Path;
 use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
 
+/// JSON-encode the changed-file paths as an array of strings so a path
+/// containing a newline (or any character) stays a single discrete element in
+/// the grouping prompt - newline-joining would split such a path into multiple
+/// lines and the model would group phantom paths (CLO-487 path-agreement).
+fn file_list_json(changed: &[ChangedFile]) -> String {
+    let paths: Vec<&str> = changed.iter().map(|c| c.path.as_str()).collect();
+    serde_json::to_string(&paths).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// JSON-encode the porcelain status as an array of `"XY path"` strings (also
+/// newline-safe, same rationale as [`file_list_json`]).
+fn status_json(changed: &[ChangedFile]) -> String {
+    let rows: Vec<String> = changed
+        .iter()
+        .map(|c| format!("{}{} {}", c.x as char, c.y as char, c.path))
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string())
+}
+
 /// Untracked-expansion caps (FR-57): bound both file count and total bytes so an
 /// un-ignored directory of thousands of files cannot freeze the CLI.
 const MAX_UNTRACKED_FILES: usize = 50;
@@ -24,11 +43,13 @@ pub struct GatheredDiff {
 }
 
 /// The richer context handed to the provider for grouping (CLO-487): the file
-/// list, the porcelain status (so the model sees R/D/M/A/?? codes), the diff
-/// `--stat`, and the per-file-truncated full diff. Distinct from
-/// [`GatheredDiff`] to keep the tracer's single-message concerns separate.
+/// list and porcelain status (both JSON arrays, so newline-containing paths stay
+/// discrete), the diff `--stat`, and the per-file-truncated full diff. Distinct
+/// from [`GatheredDiff`] to keep the tracer's single-message concerns separate.
 pub struct GroupingContext {
+    /// JSON array of the exact changed paths (the model groups by these).
     pub file_list: String,
+    /// JSON array of `"XY path"` porcelain status rows.
     pub status: String,
     pub stat: String,
     pub body: String,
@@ -56,16 +77,8 @@ pub fn gather_for_grouping(
     repo: &Repo,
     changed: &[ChangedFile],
 ) -> Result<GroupingContext, GcmError> {
-    let file_list = changed
-        .iter()
-        .map(|c| c.path.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let status = changed
-        .iter()
-        .map(|c| format!("{}{} {}", c.x as char, c.y as char, c.path))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let file_list = file_list_json(changed);
+    let status = status_json(changed);
 
     let stat = repo.diff_stat()?;
     let tracked = repo.diff_full()?;
@@ -420,6 +433,33 @@ mod tests {
         assert!(out.contains("[diff omitted:"), "placeholder present");
         assert!(!out.contains("a line of content"), "huge body dropped");
         assert!(out.len() < 300, "section is now small");
+    }
+
+    #[test]
+    fn file_list_json_keeps_a_newline_path_as_one_element() {
+        // A path containing a newline must stay a single discrete element, or
+        // the model would see (and group) phantom split paths (Codex finding).
+        let changed = vec![
+            ChangedFile {
+                x: b' ',
+                y: b'M',
+                path: "weird\nname.txt".to_string(),
+                orig_path: None,
+            },
+            ChangedFile {
+                x: b'?',
+                y: b'?',
+                path: "normal.rs".to_string(),
+                orig_path: None,
+            },
+        ];
+        let parsed: Vec<String> = serde_json::from_str(&file_list_json(&changed)).unwrap();
+        assert_eq!(
+            parsed,
+            vec!["weird\nname.txt".to_string(), "normal.rs".to_string()]
+        );
+        let rows: Vec<String> = serde_json::from_str(&status_json(&changed)).unwrap();
+        assert_eq!(rows[0], " M weird\nname.txt");
     }
 
     #[test]

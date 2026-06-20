@@ -173,7 +173,8 @@ pub fn generate_plan(context: &GroupingContext) -> Result<Plan, GroqError> {
 /// contract shape without a network call).
 fn build_plan_payload(context: &GroupingContext, model: &str) -> Value {
     let user_content = format!(
-        "File list:\n{}\n\nGit status:\n{}\n\nDiff stats:\n{}\n\nFull diff:\n{}",
+        "Changed files (JSON array of exact paths - group by these):\n{}\n\n\
+         Git status (JSON array of \"XY path\"):\n{}\n\nDiff stats:\n{}\n\nFull diff:\n{}",
         context.file_list, context.status, context.stat, context.body
     );
     let mut payload = json!({
@@ -301,9 +302,9 @@ mod tests {
         assert_eq!(p["include_reasoning"], json!(false));
         // the user message carries the grouping inputs
         let user = p["messages"][1]["content"].as_str().unwrap();
-        assert!(user.contains("File list:"));
+        assert!(user.contains("Changed files"));
         assert!(user.contains("a.rs"));
-        assert!(user.contains("Git status:"));
+        assert!(user.contains("Git status"));
         assert!(user.contains("diff --git"));
     }
 }

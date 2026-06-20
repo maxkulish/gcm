@@ -433,7 +433,33 @@ git -C "$d" merge feature >/dev/null 2>&1 || true
 [ $rc -eq 1 ] && ok "conflict -> exit 1" || bad "conflict exit (rc=$rc)"
 grep -qi "conflict" /tmp/gcm-out && ok "message names the merge conflict" || bad "no conflict message"
 git -C "$d" rev-parse --verify --quiet MERGE_HEAD >/dev/null && ok "merge still in progress (gcm did not commit)" || bad "merge state lost"
+# --all must NOT bypass the conflict guard (the guard runs before --all).
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && grep -qi "conflict" /tmp/gcm-out && ok "--all also aborts on a conflict (no marker baking)" || bad "--all bypassed the conflict guard (rc=$rc)"
+git -C "$d" rev-parse --verify --quiet MERGE_HEAD >/dev/null && ok "--all left the merge in progress" || bad "--all committed during a conflict"
 rm -rf "$d"
+
+note "AC-G12c: clean merge-in-progress (MERGE_HEAD, no conflict) -> single merge commit"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"
+  printf 'a\n' > "$d/a.txt"; printf 'b\n' > "$d/b.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm base
+  main_b="$(git -C "$d" branch --show-current)"
+  git -C "$d" switch -q -c feature
+  printf 'a2\n' > "$d/a.txt"; git -C "$d" -c commit.gpgsign=false commit -qam feat
+  git -C "$d" switch -q "$main_b"
+  printf 'b2\n' > "$d/b.txt"; git -C "$d" -c commit.gpgsign=false commit -qam mainline
+  git -C "$d" merge --no-commit --no-ff feature >/dev/null 2>&1 || true   # clean, staged, MERGE_HEAD set
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "clean merge -> exit 0" || bad "clean merge (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  git -C "$d" rev-parse --verify --quiet MERGE_HEAD >/dev/null && bad "merge not finalized" || ok "merge finalized (MERGE_HEAD cleared)"
+  parents=$(git -C "$d" show -s --format=%P HEAD | wc -w | tr -d ' ')
+  [ "$parents" = "2" ] && ok "HEAD is a two-parent merge commit" || bad "merge commit has $parents parents"
+  rm -rf "$d"
+else
+  skip "AC-G12c needs signing"
+fi
 
 note "AC-uall: untracked directory expands to individual files (path agreement)"
 d="$(new_repo)"

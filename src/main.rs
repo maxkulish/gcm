@@ -47,20 +47,19 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
         return Err(GcmError::NonInteractive);
     }
 
-    // `--all` bypasses grouping entirely and commits everything as one commit.
-    if args.all {
-        return single_commit(&repo, args);
-    }
-
-    // Merge-state guard (CLO-487 review-2 #2): abort on unresolved conflicts -
-    // clearing the index and staging the working tree would bake `<<<<<<<`
-    // markers into a commit. A *clean* merge-in-progress instead bypasses
-    // grouping so a single `git commit` finalizes the merge as a merge commit.
+    // Merge-state guard (CLO-487 review-2 #2) runs BEFORE any grouping bypass,
+    // including `--all`: staging a conflicted working tree on *either* path
+    // (grouping `add` or single-commit `add -A`) would bake `<<<<<<<` markers
+    // into the commit, so an unresolved conflict must abort regardless of flags.
     let changed = repo.changed_files()?;
     if changed.iter().any(|c| c.is_unmerged()) {
         return Err(GcmError::UnmergedConflicts);
     }
-    if repo.is_merging() {
+
+    // `--all`, or a clean merge-in-progress, bypasses grouping and commits
+    // everything as one. A clean `MERGE_HEAD` makes `git commit` finalize the
+    // merge as a proper two-parent merge commit.
+    if args.all || repo.is_merging() {
         return single_commit(&repo, args);
     }
 
