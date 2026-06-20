@@ -11,6 +11,8 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${GCM_BIN:-$ROOT/target/release/gcm}"
+# Keep retry backoff sub-millisecond so the 429/5xx retry cases (CLO-488) run fast.
+export GCM_RETRY_BASE_MS="${GCM_RETRY_BASE_MS:-1}"
 PASS=0
 FAIL=0
 SKIP=0
@@ -26,19 +28,47 @@ skip()  { SKIP=$((SKIP+1)); printf '  \033[33mSKIP\033[0m %s\n' "$*"; }
 PORT=8731
 CAPTURE="$(mktemp)"
 PLAN_FILE="$(mktemp)"   # grouping tests stage a JSON plan here; empty -> fallback
+COUNTER="$(mktemp)"     # call counter for the stateful /retry429/ route (CLO-488)
 MOCK_PY="$(mktemp).py"
 cat > "$MOCK_PY" <<'PY'
 import http.server, json, os, sys
 CAP = os.environ["CAPTURE_FILE"]
+COUNTER = os.environ.get("COUNTER_FILE", "")
+def _bump():
+    try:
+        with open(COUNTER) as f: n = int(f.read().strip() or "0")
+    except Exception:
+        n = 0
+    with open(COUNTER, "w") as f: f.write(str(n + 1))
+    return n
+def _send_json(h, code, payload, extra_headers=None):
+    b = payload.encode()
+    h.send_response(code)
+    h.send_header("Content-Type", "application/json")
+    for k, v in (extra_headers or {}).items():
+        h.send_header(k, v)
+    h.send_header("Content-Length", str(len(b)))
+    h.end_headers()
+    h.wfile.write(b)
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(n)
         with open(CAP, "ab") as f:
             f.write(body + b"\n")
-        # Route by path prefix so error paths are testable (AC-12).
+        # Route by path prefix so error paths are testable (AC-12, CLO-488).
         if "/fail500/" in self.path:
             self.send_response(500); self.end_headers(); self.wfile.write(b"server error"); return
+        if "/fail400/" in self.path:
+            _send_json(self, 400, '{"error":{"message":"mock bad request: unsupported parameter"}}'); return
+        if "/fail401/" in self.path:
+            _send_json(self, 401, '{"error":{"message":"invalid api key"}}'); return
+        if "/retry429/" in self.path:
+            # Rate-limit the first 2 calls (Retry-After: 0), then succeed -> the
+            # retry path must self-heal (CLO-488 AC-1).
+            if _bump() < 2:
+                _send_json(self, 429, '{"error":{"message":"rate limited"}}', {"Retry-After": "0"}); return
+            # else fall through to the normal 200 path below
         is_plan = b'"response_format"' in body
         if "/empty/" in self.path:
             content = "   \n  "   # whitespace-only -> EmptyResponse
@@ -68,8 +98,8 @@ PY
 
 MOCK_PID=""
 start_mock() {
-  : > "$CAPTURE"
-  CAPTURE_FILE="$CAPTURE" PLAN_FILE="$PLAN_FILE" python3 "$MOCK_PY" "$PORT" >/dev/null 2>&1 &
+  : > "$CAPTURE"; : > "$COUNTER"
+  CAPTURE_FILE="$CAPTURE" PLAN_FILE="$PLAN_FILE" COUNTER_FILE="$COUNTER" python3 "$MOCK_PY" "$PORT" >/dev/null 2>&1 &
   MOCK_PID=$!
   for _ in $(seq 1 20); do
     if curl -s -o /dev/null "http://127.0.0.1:$PORT" 2>/dev/null; then break; fi
@@ -77,7 +107,7 @@ start_mock() {
   done
 }
 stop_mock() { [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null; MOCK_PID=""; }
-cleanup() { stop_mock; rm -f "$CAPTURE" "$MOCK_PY" "$PLAN_FILE"; }
+cleanup() { stop_mock; rm -f "$CAPTURE" "$MOCK_PY" "$PLAN_FILE" "$COUNTER"; }
 trap cleanup EXIT
 
 MOCK_URL="http://127.0.0.1:$PORT/openai/v1"
@@ -473,6 +503,56 @@ printf '%s' '{"groups":[{"files":["pkg/a.txt","pkg/b.txt"],"summary":"pkg","comm
 grep -qi "Falling back" /tmp/gcm-out && bad "fallback: status collapsed pkg/ (no -uall expansion)" || ok "individual files matched plan (-uall agreement)"
 grep -q "Found 1 group" /tmp/gcm-out && ok "grouping ran on the expanded files" || bad "grouping did not run"
 : > "$PLAN_FILE"; rm -rf "$d"
+
+# --- CLO-488 resilient provider calls: typed errors + retries --------------
+# Request count == captured request bodies (each is one JSON line with "model").
+
+note "AC-488-1: HTTP 429 retried then succeeds (no user-visible failure)"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+: > "$COUNTER"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/retry429/v1" "$BIN" --all --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+reqs=$(grep -c '"model"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
+[ $rc -eq 0 ] && ok "429-then-200 -> exit 0 (self-healed)" || bad "429 retry (rc=$rc; $(tail -1 /tmp/gcm-out))"
+grep -qi "rate limit" /tmp/gcm-out && bad "user saw a rate-limit failure despite recovery" || ok "no user-visible failure"
+[ "$reqs" -eq 3 ] && ok "exactly 3 requests (2x429 + 1x200)" || bad "expected 3 requests, got $reqs"
+rm -rf "$d"
+
+note "AC-488-2: HTTP 400 fails fast (no retry loop) with a 400-specific message"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail400/v1" "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+reqs=$(grep -c '"model"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
+[ $rc -eq 1 ] && ok "400 -> exit 1" || bad "400 exit (rc=$rc)"
+[ "$reqs" -eq 1 ] && ok "400 not retried (exactly 1 request)" || bad "400 retried ($reqs requests)"
+grep -q "400" /tmp/gcm-out && ok "message names HTTP 400" || bad "no 400-specific message"
+rm -rf "$d"
+
+note "AC-488-3: HTTP 401 fails fast (no retry) and names the API key"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail401/v1" "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+reqs=$(grep -c '"model"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
+[ $rc -eq 1 ] && ok "401 -> exit 1" || bad "401 exit (rc=$rc)"
+[ "$reqs" -eq 1 ] && ok "auth not retried (exactly 1 request)" || bad "auth retried ($reqs requests)"
+grep -qi "GROQ_API_KEY\|api key" /tmp/gcm-out && ok "message names the API key" || bad "no key guidance"
+rm -rf "$d"
+
+note "AC-488-4: persistent HTTP 500 retried to the bound, then gives up; index untouched"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail500/v1" GCM_RETRY_MAX=3 "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+reqs=$(grep -c '"model"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
+[ $rc -eq 1 ] && ok "persistent 500 -> exit 1" || bad "500 exit (rc=$rc)"
+[ "$reqs" -eq 4 ] && ok "retried to the bound (1 + 3 = 4 requests)" || bad "expected 4 requests, got $reqs"
+grep -qi "server error" /tmp/gcm-out && ok "message is 5xx-specific" || bad "no server-error message"
+[ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after exhausted retries" || bad "index mutated"
+rm -rf "$d"
+
+note "AC-488-8: GCM_DEBUG surfaces the typed error variant; unset -> silent"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail400/v1" GCM_DEBUG=1 "$BIN" --all --yes >/tmp/gcm-out 2>&1 )
+grep -q "BadRequest" /tmp/gcm-out && ok "debug log shows the BadRequest variant" || bad "variant not in debug log"
+grep -q "\[debug\]" /tmp/gcm-out && ok "[debug] lines emitted under GCM_DEBUG" || bad "no [debug] lines under GCM_DEBUG"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail400/v1" "$BIN" --all --yes >/tmp/gcm-out2 2>&1 )
+grep -q "\[debug\]" /tmp/gcm-out2 && bad "debug lines emitted without GCM_DEBUG" || ok "no [debug] lines when GCM_DEBUG unset"
+rm -rf "$d"
 
 stop_mock
 

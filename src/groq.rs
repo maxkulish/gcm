@@ -4,12 +4,23 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::debug;
 use crate::diff::{GatheredDiff, GroupingContext};
 use crate::plan::Plan;
 
 const DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const TIMEOUT_SECS: u64 = 30;
+/// Cap on the error-response body we read for the `BadRequest` detail: a non-2xx
+/// can be a large HTML error page (e.g. a CDN 502/504), so never read it
+/// unbounded (CLO-488 review).
+const MAX_ERROR_BODY_BYTES: u64 = 4096;
+/// Retry budget defaults (FR-22). Up to 4 total attempts; backoff doubles from
+/// 500ms, capped at 8s. A CLI waits synchronously, so the bound is deliberately
+/// tight. Overridable via `GCM_RETRY_MAX` / `GCM_RETRY_BASE_MS` / `GCM_RETRY_MAX_MS`.
+const DEFAULT_MAX_RETRIES: u32 = 3;
+const DEFAULT_RETRY_BASE: Duration = Duration::from_millis(500);
+const DEFAULT_RETRY_MAX: Duration = Duration::from_secs(8);
 
 const SYSTEM_PROMPT: &str = "\
 Analyze this git diff and generate a concise, conventional commit message.
@@ -34,15 +45,34 @@ Rules:
 - For renamed files, use the NEW path in your file list.
 - summary: a one-line description of each group.";
 
-/// Errors from the Groq message call. A light taxonomy for the tracer; the full
-/// typed-error/retry surface (FR-21/22) lands in CLO-488.
+/// Typed taxonomy of Groq provider failures (FR-21). Each variant maps to a
+/// distinct, actionable [`fmt::Display`] message; [`is_retryable`] decides which
+/// are retried with bounded backoff (FR-22). CLO-489 may lift this behind the
+/// provider trait.
 #[derive(Debug)]
 pub enum GroqError {
+    /// `GROQ_API_KEY` is unset or blank (config error; fatal, never retried).
     MissingKey,
+    /// HTTP 429 rate limit (retryable). `retry_after` carries a parsed
+    /// `Retry-After` (seconds) hint when the server sent one.
+    RateLimit { retry_after: Option<Duration> },
+    /// HTTP 401/403: the API key was rejected (fatal - bad/expired key).
+    Auth(u16),
+    /// HTTP 400: the request was rejected - an unsupported parameter/model or a
+    /// gcm bug (not retried). `detail` carries the provider's error message when
+    /// available.
+    BadRequest { detail: Option<String> },
+    /// HTTP 5xx server error, incl. 502/503/504 Gateway Timeout (retryable).
+    Server(u16),
+    /// Any other unexpected non-2xx status (not retried).
     Http(u16),
+    /// The request timed out client-side after [`TIMEOUT_SECS`] (not retried).
     Timeout,
+    /// A connection/transport failure - DNS, refused, reset (not retried).
     Transport(String),
+    /// A 2xx response carried no usable content (not retried).
     EmptyResponse,
+    /// The response/plan could not be parsed (not retried).
     Deserialize(String),
 }
 
@@ -53,12 +83,89 @@ impl fmt::Display for GroqError {
                 f,
                 "GROQ_API_KEY is not set. Export it (e.g. `export GROQ_API_KEY=...`) and retry."
             ),
+            GroqError::RateLimit { .. } => write!(
+                f,
+                "Groq rate limit reached (HTTP 429); wait a moment and retry, or use a different provider."
+            ),
+            GroqError::Auth(code) => write!(
+                f,
+                "Groq rejected the API key (HTTP {code}); check that GROQ_API_KEY is valid and not expired."
+            ),
+            GroqError::BadRequest { detail: Some(d) } => write!(
+                f,
+                "Groq rejected the request (HTTP 400): {d}. Likely an unsupported model/parameter or a gcm bug; please report it."
+            ),
+            GroqError::BadRequest { detail: None } => write!(
+                f,
+                "Groq rejected the request (HTTP 400). Likely an unsupported model/parameter or a gcm bug; please report it."
+            ),
+            GroqError::Server(code) => write!(
+                f,
+                "Groq server error (HTTP {code}); this is usually transient - retry shortly."
+            ),
             GroqError::Http(code) => write!(f, "Groq API returned HTTP {code}"),
             GroqError::Timeout => write!(f, "Groq API request timed out after {TIMEOUT_SECS}s"),
             GroqError::Transport(msg) => write!(f, "could not reach the Groq API: {msg}"),
-            GroqError::EmptyResponse => write!(f, "Groq returned an empty commit message"),
+            GroqError::EmptyResponse => write!(f, "Groq returned an empty response"),
             GroqError::Deserialize(msg) => write!(f, "could not parse the Groq response: {msg}"),
         }
+    }
+}
+
+/// Classify a non-2xx HTTP status into a typed [`GroqError`] (pure; unit-tested).
+/// 504 (Gateway Timeout) is a `Server` error, NOT the client-side `Timeout`.
+fn classify_status(
+    status: u16,
+    retry_after: Option<Duration>,
+    detail: Option<String>,
+) -> GroqError {
+    match status {
+        400 => GroqError::BadRequest { detail },
+        401 | 403 => GroqError::Auth(status),
+        429 => GroqError::RateLimit { retry_after },
+        500..=599 => GroqError::Server(status),
+        _ => GroqError::Http(status),
+    }
+}
+
+/// Parse a `Retry-After` header value into a duration. Only the integer-seconds
+/// form is honored; an HTTP-date (or anything unparseable/empty) yields `None`.
+fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
+    value
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_secs)
+}
+
+/// Pull an actionable detail from a 400 response body: the JSON `error.message`
+/// when present, else the raw body trimmed and truncated to 200 chars; `None`
+/// for an empty body.
+fn bad_request_detail(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+        if let Some(msg) = v
+            .get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+        {
+            return Some(truncate(msg, 200));
+        }
+    }
+    Some(truncate(trimmed, 200))
+}
+
+/// Truncate to at most `max` characters (char-safe, never splits a UTF-8 byte).
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        s.chars().take(max).collect()
     }
 }
 
@@ -95,14 +202,110 @@ fn resolve_config() -> Result<(String, String, String), GroqError> {
     Ok((key, model, base_url))
 }
 
-/// POST a chat-completions payload and return the raw response body. Shared
-/// transport (30s timeout, HTTP-status-as-error) for both calls.
+/// Retry budget for transient provider failures (FR-22). Bounded so a CLI never
+/// hangs; defaults overridable via env for testability and power users.
+struct RetryConfig {
+    max_retries: u32,
+    base: Duration,
+    max: Duration,
+}
+
+impl RetryConfig {
+    fn from_env() -> Self {
+        RetryConfig {
+            max_retries: env_u64("GCM_RETRY_MAX")
+                .map(|v| v as u32)
+                .unwrap_or(DEFAULT_MAX_RETRIES),
+            base: env_u64("GCM_RETRY_BASE_MS")
+                .map(Duration::from_millis)
+                .unwrap_or(DEFAULT_RETRY_BASE),
+            max: env_u64("GCM_RETRY_MAX_MS")
+                .map(Duration::from_millis)
+                .unwrap_or(DEFAULT_RETRY_MAX),
+        }
+    }
+}
+
+/// Read a non-empty, parseable `u64` env var, else `None`.
+fn env_u64(name: &str) -> Option<u64> {
+    std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
+}
+
+/// Which typed errors are worth retrying (FR-22): only transient ones - a 429
+/// rate limit or a 5xx server error. Everything else (400/auth/parse/timeout/
+/// transport/empty/missing-key) is terminal for this call.
+fn is_retryable(e: &GroqError) -> bool {
+    matches!(e, GroqError::RateLimit { .. } | GroqError::Server(_))
+}
+
+/// The server's `Retry-After` hint, when the error carries one (429 only).
+fn retry_after_hint(e: &GroqError) -> Option<Duration> {
+    match e {
+        GroqError::RateLimit { retry_after } => *retry_after,
+        _ => None,
+    }
+}
+
+/// Backoff before the next attempt: honor a `Retry-After` hint (capped at
+/// `cfg.max`), else exponential `base * 2^attempt` capped at `cfg.max`. The
+/// exponent is clamped so the shift can never overflow.
+fn backoff_delay(attempt: u32, hint: Option<Duration>, cfg: &RetryConfig) -> Duration {
+    if let Some(d) = hint {
+        return d.min(cfg.max);
+    }
+    let factor = 2u32.saturating_pow(attempt.min(16));
+    cfg.base.saturating_mul(factor).min(cfg.max)
+}
+
+/// Run `op`, retrying transient failures with bounded backoff. The sleeper is
+/// injected (`FnMut`) so tests record delays with no real sleep and no network;
+/// production passes `std::thread::sleep`.
+fn retry_with<T>(
+    cfg: &RetryConfig,
+    mut sleep: impl FnMut(Duration),
+    mut op: impl FnMut() -> Result<T, GroqError>,
+) -> Result<T, GroqError> {
+    let mut attempt = 0u32;
+    loop {
+        match op() {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if attempt >= cfg.max_retries || !is_retryable(&e) {
+                    return Err(e);
+                }
+                let delay = backoff_delay(attempt, retry_after_hint(&e), cfg);
+                debug::log(&format!(
+                    "groq attempt {} failed: {e:?}; retrying in {delay:?}",
+                    attempt + 1
+                ));
+                sleep(delay);
+                attempt += 1;
+            }
+        }
+    }
+}
+
+/// POST a chat-completions payload and return the raw 2xx body, retrying
+/// transient failures (429/5xx) with bounded backoff (FR-22). Shared by both
+/// calls. The retry loop wraps only the HTTP round-trip; response parsing is the
+/// caller's concern and is not retried.
 fn send_chat(key: &str, base_url: &str, payload: &Value) -> Result<String, GroqError> {
+    let cfg = RetryConfig::from_env();
+    retry_with(&cfg, std::thread::sleep, || {
+        send_chat_once(key, base_url, payload)
+    })
+}
+
+/// One HTTP attempt: POST the payload and return the raw 2xx body. Non-2xx
+/// responses are inspected (status + `Retry-After` + a capped error body) and
+/// classified into a typed [`GroqError`] (FR-21); pre-response transport
+/// failures map via [`map_ureq_error`].
+fn send_chat_once(key: &str, base_url: &str, payload: &Value) -> Result<String, GroqError> {
     let body = serde_json::to_string(payload).map_err(|e| GroqError::Deserialize(e.to_string()))?;
     let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(TIMEOUT_SECS)))
-        .http_status_as_error(true)
+        .http_status_as_error(false)
         .build();
     let agent = ureq::Agent::new_with_config(config);
     let mut response = agent
@@ -111,10 +314,30 @@ fn send_chat(key: &str, base_url: &str, payload: &Value) -> Result<String, GroqE
         .header("Content-Type", "application/json")
         .send(body.as_str())
         .map_err(map_ureq_error)?;
-    response
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        return response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| GroqError::Transport(e.to_string()));
+    }
+    // Non-2xx: capture the Retry-After hint (header lookup is case-insensitive)
+    // and a size-capped error body for the BadRequest detail, then classify.
+    let retry_after = parse_retry_after(
+        response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok()),
+    );
+    let err_body = response
         .body_mut()
+        .with_config()
+        .limit(MAX_ERROR_BODY_BYTES)
         .read_to_string()
-        .map_err(|e| GroqError::Transport(e.to_string()))
+        .unwrap_or_default();
+    let err = classify_status(status, retry_after, bad_request_detail(&err_body));
+    debug::log(&format!("groq response error: {err:?}"));
+    Err(err)
 }
 
 /// Extract the first choice's message content (`<think>` stripped, trimmed).
@@ -166,7 +389,10 @@ pub fn generate_plan(context: &GroupingContext) -> Result<Plan, GroqError> {
     if json.is_empty() {
         return Err(GroqError::EmptyResponse);
     }
-    serde_json::from_str(&json).map_err(|e| GroqError::Deserialize(e.to_string()))
+    // FR-20 defensive parsing: recover the plan even if the model wrapped/fenced
+    // its JSON. A structurally-valid-but-wrong plan still flows through
+    // validate_basic in main.rs -> announced fallback.
+    crate::plan::parse_defensive(&json).map_err(|e| GroqError::Deserialize(e.to_string()))
 }
 
 /// Build the structured-output plan request payload (extracted for testing the
@@ -306,5 +532,273 @@ mod tests {
         assert!(user.contains("a.rs"));
         assert!(user.contains("Git status"));
         assert!(user.contains("diff --git"));
+    }
+
+    #[test]
+    fn classify_status_maps_codes() {
+        assert!(matches!(
+            classify_status(400, None, None),
+            GroqError::BadRequest { .. }
+        ));
+        assert!(matches!(
+            classify_status(401, None, None),
+            GroqError::Auth(401)
+        ));
+        assert!(matches!(
+            classify_status(403, None, None),
+            GroqError::Auth(403)
+        ));
+        assert!(matches!(
+            classify_status(429, None, None),
+            GroqError::RateLimit { .. }
+        ));
+        assert!(matches!(
+            classify_status(500, None, None),
+            GroqError::Server(500)
+        ));
+        assert!(matches!(
+            classify_status(503, None, None),
+            GroqError::Server(503)
+        ));
+        // 504 Gateway Timeout is a Server error, NOT the client-side Timeout (review point 4).
+        assert!(matches!(
+            classify_status(504, None, None),
+            GroqError::Server(504)
+        ));
+        assert!(matches!(
+            classify_status(418, None, None),
+            GroqError::Http(418)
+        ));
+    }
+
+    #[test]
+    fn classify_status_carries_retry_after_and_detail() {
+        match classify_status(429, Some(Duration::from_secs(2)), None) {
+            GroqError::RateLimit { retry_after } => {
+                assert_eq!(retry_after, Some(Duration::from_secs(2)))
+            }
+            other => panic!("expected RateLimit, got {other:?}"),
+        }
+        match classify_status(400, None, Some("bad model".to_string())) {
+            GroqError::BadRequest { detail } => assert_eq!(detail.as_deref(), Some("bad model")),
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_retry_after_seconds_date_absent() {
+        assert_eq!(parse_retry_after(Some("2")), Some(Duration::from_secs(2)));
+        assert_eq!(
+            parse_retry_after(Some("  5 ")),
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(parse_retry_after(Some("0")), Some(Duration::from_secs(0)));
+        assert_eq!(
+            parse_retry_after(Some("Wed, 21 Oct 2026 07:28:00 GMT")),
+            None
+        );
+        assert_eq!(parse_retry_after(Some("")), None);
+        assert_eq!(parse_retry_after(None), None);
+    }
+
+    #[test]
+    fn bad_request_detail_prefers_json_error_message() {
+        assert_eq!(
+            bad_request_detail(r#"{"error":{"message":"bad model"}}"#).as_deref(),
+            Some("bad model")
+        );
+    }
+
+    #[test]
+    fn bad_request_detail_truncates_raw_non_json() {
+        let raw = "x".repeat(500);
+        let d = bad_request_detail(&raw).unwrap();
+        assert!(
+            d.chars().count() <= 200,
+            "detail should be capped at 200 chars"
+        );
+    }
+
+    #[test]
+    fn bad_request_detail_none_for_empty() {
+        assert_eq!(bad_request_detail(""), None);
+        assert_eq!(bad_request_detail("   "), None);
+    }
+
+    #[test]
+    fn display_messages_are_distinct_and_nonempty() {
+        use std::collections::HashSet;
+        let msgs: Vec<String> = vec![
+            GroqError::RateLimit { retry_after: None }.to_string(),
+            GroqError::BadRequest { detail: None }.to_string(),
+            GroqError::Auth(401).to_string(),
+            GroqError::Server(500).to_string(),
+            GroqError::Timeout.to_string(),
+            GroqError::Deserialize("x".to_string()).to_string(),
+        ];
+        assert!(msgs.iter().all(|m| !m.is_empty()));
+        let set: HashSet<&String> = msgs.iter().collect();
+        assert_eq!(
+            set.len(),
+            6,
+            "all six core variant messages must be distinct"
+        );
+    }
+
+    #[test]
+    fn bad_request_display_includes_detail_and_code() {
+        let m = GroqError::BadRequest {
+            detail: Some("unsupported response_format".to_string()),
+        }
+        .to_string();
+        assert!(m.contains("unsupported response_format"));
+        assert!(m.contains("400"));
+    }
+
+    fn cfg(max_retries: u32, base_ms: u64, max_ms: u64) -> RetryConfig {
+        RetryConfig {
+            max_retries,
+            base: Duration::from_millis(base_ms),
+            max: Duration::from_millis(max_ms),
+        }
+    }
+
+    #[test]
+    fn is_retryable_only_ratelimit_and_server() {
+        assert!(is_retryable(&GroqError::RateLimit { retry_after: None }));
+        assert!(is_retryable(&GroqError::Server(500)));
+        assert!(is_retryable(&GroqError::Server(504)));
+        for e in [
+            GroqError::BadRequest { detail: None },
+            GroqError::Auth(401),
+            GroqError::Timeout,
+            GroqError::Transport("x".to_string()),
+            GroqError::EmptyResponse,
+            GroqError::Deserialize("x".to_string()),
+            GroqError::MissingKey,
+            GroqError::Http(418),
+        ] {
+            assert!(!is_retryable(&e), "{e:?} must not be retryable");
+        }
+    }
+
+    #[test]
+    fn retry_after_hint_only_from_ratelimit() {
+        assert_eq!(
+            retry_after_hint(&GroqError::RateLimit {
+                retry_after: Some(Duration::from_secs(3))
+            }),
+            Some(Duration::from_secs(3))
+        );
+        assert_eq!(
+            retry_after_hint(&GroqError::RateLimit { retry_after: None }),
+            None
+        );
+        assert_eq!(retry_after_hint(&GroqError::Server(503)), None);
+    }
+
+    #[test]
+    fn backoff_schedule_doubles_and_caps() {
+        let c = cfg(5, 100, 1000);
+        assert_eq!(backoff_delay(0, None, &c), Duration::from_millis(100));
+        assert_eq!(backoff_delay(1, None, &c), Duration::from_millis(200));
+        assert_eq!(backoff_delay(2, None, &c), Duration::from_millis(400));
+        assert_eq!(backoff_delay(3, None, &c), Duration::from_millis(800));
+        assert_eq!(backoff_delay(4, None, &c), Duration::from_millis(1000)); // capped at max
+        assert_eq!(backoff_delay(20, None, &c), Duration::from_millis(1000)); // no overflow
+    }
+
+    #[test]
+    fn backoff_honors_retry_after_capped() {
+        let c = cfg(3, 100, 1000);
+        assert_eq!(
+            backoff_delay(0, Some(Duration::from_millis(500)), &c),
+            Duration::from_millis(500)
+        );
+        assert_eq!(
+            backoff_delay(0, Some(Duration::from_secs(99)), &c),
+            Duration::from_millis(1000) // hint capped at max
+        );
+    }
+
+    #[test]
+    fn retry_succeeds_after_two_429() {
+        let c = cfg(3, 10, 100);
+        let mut sleeps = Vec::new();
+        let mut results = vec![
+            Err(GroqError::RateLimit { retry_after: None }),
+            Err(GroqError::RateLimit { retry_after: None }),
+            Ok(42),
+        ]
+        .into_iter();
+        let mut calls = 0;
+        let out = retry_with(
+            &c,
+            |d| sleeps.push(d),
+            || {
+                calls += 1;
+                results.next().unwrap()
+            },
+        );
+        assert_eq!(out.unwrap(), 42);
+        assert_eq!(calls, 3);
+        assert_eq!(
+            sleeps,
+            vec![Duration::from_millis(10), Duration::from_millis(20)]
+        );
+    }
+
+    #[test]
+    fn retry_does_not_retry_bad_request() {
+        let c = cfg(3, 10, 100);
+        let mut sleeps = Vec::new();
+        let mut calls = 0;
+        let out: Result<i32, GroqError> = retry_with(
+            &c,
+            |d| sleeps.push(d),
+            || {
+                calls += 1;
+                Err(GroqError::BadRequest { detail: None })
+            },
+        );
+        assert!(matches!(out, Err(GroqError::BadRequest { .. })));
+        assert_eq!(calls, 1);
+        assert!(sleeps.is_empty());
+    }
+
+    #[test]
+    fn retry_exhausts_on_persistent_5xx() {
+        let c = cfg(3, 10, 100);
+        let mut sleeps = Vec::new();
+        let mut calls = 0;
+        let out: Result<i32, GroqError> = retry_with(
+            &c,
+            |d| sleeps.push(d),
+            || {
+                calls += 1;
+                Err(GroqError::Server(500))
+            },
+        );
+        assert!(matches!(out, Err(GroqError::Server(500))));
+        assert_eq!(calls, 4); // 1 initial + 3 retries
+        assert_eq!(sleeps.len(), 3);
+    }
+
+    #[test]
+    fn retry_max_zero_fails_first_attempt() {
+        let c = cfg(0, 10, 100);
+        let mut sleeps = Vec::new();
+        let mut calls = 0;
+        let out: Result<i32, GroqError> = retry_with(
+            &c,
+            |d| sleeps.push(d),
+            || {
+                calls += 1;
+                Err(GroqError::Server(500))
+            },
+        );
+        assert!(matches!(out, Err(GroqError::Server(500))));
+        assert_eq!(calls, 1);
+        assert!(sleeps.is_empty());
     }
 }
