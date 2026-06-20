@@ -103,3 +103,20 @@ fn edit_in_editor(message: &str) -> Result<String, GcmError> {
 pub fn needs_terminal_but_absent(auto_yes: bool, dry_run: bool) -> bool {
     !auto_yes && !dry_run && !std::io::stdin().is_terminal()
 }
+
+/// `--dry-run` preview of the grouping plan: group 1's message plus a note of
+/// how many files remain in later groups (committed on subsequent runs). Stages
+/// and commits nothing (CLO-487 AC-8).
+pub fn preview_plan(message: &str, group_count: usize, remaining: usize) {
+    println!();
+    println!("Group 1 commit message (dry run - nothing staged or committed):");
+    println!("-----------------------------");
+    println!("{message}");
+    println!("-----------------------------");
+    if group_count > 1 {
+        println!(
+            "{remaining} file(s) remain in {} more group(s); run gcm again to commit the next group.",
+            group_count - 1
+        );
+    }
+}

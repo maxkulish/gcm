@@ -2,7 +2,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::error::GcmError;
-use crate::git::Repo;
+use crate::git::{ChangedFile, Repo};
 
 /// Untracked-expansion caps (FR-57): bound both file count and total bytes so an
 /// un-ignored directory of thousands of files cannot freeze the CLI.
@@ -10,11 +10,26 @@ const MAX_UNTRACKED_FILES: usize = 50;
 const MAX_UNTRACKED_BYTES: usize = 256 * 1024;
 /// Per-file read cap for an individual untracked file (mirrors bash `head -c 8192`).
 const PER_FILE_BYTES: usize = 8192;
+/// Per-file cap for a tracked diff section in the grouping prompt: each file's
+/// section is truncated independently with a `[diff omitted: N bytes]`
+/// placeholder rather than tail-chopping the whole body (CLO-487 FR-15).
+const PER_FILE_DIFF_BYTES: usize = 8192;
 /// Coarse final safeguard on the whole assembled body.
 const MAX_TOTAL_BYTES: usize = 350_000;
 
 /// The diff context handed to the provider.
 pub struct GatheredDiff {
+    pub stat: String,
+    pub body: String,
+}
+
+/// The richer context handed to the provider for grouping (CLO-487): the file
+/// list, the porcelain status (so the model sees R/D/M/A/?? codes), the diff
+/// `--stat`, and the per-file-truncated full diff. Distinct from
+/// [`GatheredDiff`] to keep the tracer's single-message concerns separate.
+pub struct GroupingContext {
+    pub file_list: String,
+    pub status: String,
     pub stat: String,
     pub body: String,
 }
@@ -26,7 +41,50 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
     let stat = repo.diff_stat()?;
     let tracked = repo.diff_full()?;
     let mut body = elide_binary_diff(&tracked);
+    append_untracked(repo, &mut body)?;
+    cap_total(&mut body);
+    Ok(GatheredDiff { stat, body })
+}
 
+/// Build the grouping context (CLO-487): the file list and porcelain status are
+/// derived from the already-gathered `changed` set (so they stay byte-identical
+/// to the paths used for validation and staging), the diff `--stat` is the
+/// prompt header, and the body is the tracked diff truncated **per file** with
+/// `[diff omitted: N bytes]` placeholders, plus untracked content (FR-57 caps),
+/// under the `MAX_TOTAL_BYTES` final safeguard.
+pub fn gather_for_grouping(
+    repo: &Repo,
+    changed: &[ChangedFile],
+) -> Result<GroupingContext, GcmError> {
+    let file_list = changed
+        .iter()
+        .map(|c| c.path.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let status = changed
+        .iter()
+        .map(|c| format!("{}{} {}", c.x as char, c.y as char, c.path))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let stat = repo.diff_stat()?;
+    let tracked = repo.diff_full()?;
+    let mut body = truncate_per_file(&elide_binary_diff(&tracked), PER_FILE_DIFF_BYTES);
+    append_untracked(repo, &mut body)?;
+    cap_total(&mut body);
+
+    Ok(GroupingContext {
+        file_list,
+        status,
+        stat,
+        body,
+    })
+}
+
+/// Append untracked, non-gitignored file content to `body`, bounded by the
+/// FR-57 file-count and byte caps. Shared by [`gather`] and
+/// [`gather_for_grouping`] so the two prompts cannot diverge.
+fn append_untracked(repo: &Repo, body: &mut String) -> Result<(), GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
 
@@ -87,10 +145,13 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
         }
         files_done += 1;
     }
+    Ok(())
+}
 
+/// Coarse final safeguard on the whole assembled body (FR-57), truncating on a
+/// char boundary so a multibyte char split at the cap does not panic.
+fn cap_total(body: &mut String) {
     if body.len() > MAX_TOTAL_BYTES {
-        // Truncate on a char boundary so a multibyte char split at the cap does
-        // not panic.
         let mut end = MAX_TOTAL_BYTES;
         while end > 0 && !body.is_char_boundary(end) {
             end -= 1;
@@ -98,8 +159,57 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
         body.truncate(end);
         body.push_str("\n... (diff truncated)\n");
     }
+}
 
-    Ok(GatheredDiff { stat, body })
+/// Truncate a tracked diff **per file**: split on `diff --git ` boundaries and,
+/// for any section longer than `cap`, keep the file's header and replace its
+/// hunk body with `[diff omitted: N bytes]` (N = omitted bytes). This keeps
+/// every changed file present in the prompt instead of tail-chopping the whole
+/// body and severing the last file mid-hunk (CLO-487 FR-15).
+fn truncate_per_file(diff: &str, cap: usize) -> String {
+    let mut out = String::new();
+    let mut section = String::new();
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") && !section.is_empty() {
+            push_capped_section(&section, cap, &mut out);
+            section.clear();
+        }
+        section.push_str(line);
+    }
+    if !section.is_empty() {
+        push_capped_section(&section, cap, &mut out);
+    }
+    out
+}
+
+fn push_capped_section(section: &str, cap: usize, out: &mut String) {
+    if section.len() <= cap {
+        out.push_str(section);
+        return;
+    }
+    // Keep the header (lines up to the first hunk `@@`); if there is no hunk
+    // marker, keep just the first line. Replace the rest with a byte-count
+    // placeholder.
+    let mut header_end = None;
+    let mut idx = 0;
+    let mut first_line_end = section.len();
+    for (i, line) in section.split_inclusive('\n').enumerate() {
+        if i == 0 {
+            first_line_end = line.len();
+        }
+        if line.starts_with("@@") {
+            header_end = Some(idx);
+            break;
+        }
+        idx += line.len();
+    }
+    let header = &section[..header_end.unwrap_or(first_line_end)];
+    let omitted = section.len() - header.len();
+    out.push_str(header);
+    if !header.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&format!("[diff omitted: {omitted} bytes]\n"));
 }
 
 /// Read at most `cap` bytes from a file without loading it fully into memory.
@@ -286,5 +396,47 @@ mod tests {
         let (buf, more) = read_capped(f.path(), 8192).unwrap();
         assert_eq!(buf, b"short");
         assert!(!more);
+    }
+
+    #[test]
+    fn small_diff_section_is_unchanged() {
+        let diff = "diff --git a/x.rs b/x.rs\n--- a/x.rs\n+++ b/x.rs\n@@ -1 +1 @@\n-old\n+new\n";
+        assert_eq!(truncate_per_file(diff, 8192), diff);
+    }
+
+    #[test]
+    fn large_diff_section_keeps_header_and_omits_body() {
+        let mut diff =
+            String::from("diff --git a/big.rs b/big.rs\n--- a/big.rs\n+++ b/big.rs\n@@ -1 +1 @@\n");
+        for _ in 0..500 {
+            diff.push_str("+a line of content that makes this section big\n");
+        }
+        let out = truncate_per_file(&diff, 200);
+        assert!(
+            out.contains("diff --git a/big.rs b/big.rs"),
+            "diff header kept"
+        );
+        assert!(out.contains("+++ b/big.rs"), "file header kept");
+        assert!(out.contains("[diff omitted:"), "placeholder present");
+        assert!(!out.contains("a line of content"), "huge body dropped");
+        assert!(out.len() < 300, "section is now small");
+    }
+
+    #[test]
+    fn truncates_per_file_so_a_small_file_after_a_huge_one_survives() {
+        // Whole-body tail-chop would sever the trailing small file; per-file
+        // truncation keeps it intact (the CLO-487 fix).
+        let mut diff = String::from("diff --git a/big.rs b/big.rs\n@@ -1 +1 @@\n");
+        for _ in 0..500 {
+            diff.push_str("+filler filler filler filler filler\n");
+        }
+        diff.push_str(
+            "diff --git a/small.rs b/small.rs\n--- a/small.rs\n+++ b/small.rs\n@@ -1 +1 @@\n+tiny\n",
+        );
+        let out = truncate_per_file(&diff, 200);
+        assert!(out.contains("diff --git a/small.rs"), "small file present");
+        assert!(out.contains("+tiny"), "small file body intact");
+        assert!(out.contains("[diff omitted:"), "big file elided");
+        assert!(!out.contains("filler filler"), "big file body dropped");
     }
 }

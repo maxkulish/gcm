@@ -14,6 +14,9 @@ pub enum GcmError {
     NonInteractive,
     Editor(String),
     EmptyMessage,
+    /// The repository has unresolved merge conflicts (unmerged index entries).
+    /// gcm aborts rather than risk committing conflict markers (CLO-487).
+    UnmergedConflicts,
 }
 
 impl GcmError {
@@ -39,6 +42,11 @@ impl fmt::Display for GcmError {
             ),
             GcmError::Editor(msg) => write!(f, "editor failed: {msg}"),
             GcmError::EmptyMessage => write!(f, "commit message is empty; nothing committed"),
+            GcmError::UnmergedConflicts => write!(
+                f,
+                "repository has unresolved merge conflicts; resolve them and stage your \
+                 resolution before running gcm"
+            ),
         }
     }
 }
