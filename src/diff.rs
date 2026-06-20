@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 
@@ -62,7 +63,24 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
     let stat = repo.diff_stat()?;
     let tracked = repo.diff_full()?;
     let mut body = elide_binary_diff(&tracked);
-    append_untracked(repo, &mut body)?;
+    append_untracked(repo, &mut body, None)?;
+    cap_total(&mut body);
+    Ok(GatheredDiff { stat, body })
+}
+
+/// Build the single-message diff for **one commit group** (CLO-491, FR-45): the
+/// tracked diff and stat scoped to the group's paths, plus the group's own
+/// untracked files (filtered, so other groups' untracked content never leaks
+/// into this message). Used to regenerate a message-only call for an advanced
+/// group on a cache hit. Unborn-safe: with no `HEAD` the tracked diff is empty
+/// and all content arrives through the filtered untracked path.
+pub fn gather_for_files(repo: &Repo, files: &[&ChangedFile]) -> Result<GatheredDiff, GcmError> {
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    let stat = repo.diff_stat_for(&paths)?;
+    let tracked = repo.diff_full_for(&paths)?;
+    let mut body = elide_binary_diff(&tracked);
+    let allow: HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
+    append_untracked(repo, &mut body, Some(&allow))?;
     cap_total(&mut body);
     Ok(GatheredDiff { stat, body })
 }
@@ -83,7 +101,7 @@ pub fn gather_for_grouping(
     let stat = repo.diff_stat()?;
     let tracked = repo.diff_full()?;
     let mut body = truncate_per_file(&elide_binary_diff(&tracked), PER_FILE_DIFF_BYTES);
-    append_untracked(repo, &mut body)?;
+    append_untracked(repo, &mut body, None)?;
     cap_total(&mut body);
 
     Ok(GroupingContext {
@@ -96,18 +114,31 @@ pub fn gather_for_grouping(
 
 /// Append untracked, non-gitignored file content to `body`, bounded by the
 /// FR-57 file-count and byte caps. Shared by [`gather`] and
-/// [`gather_for_grouping`] so the two prompts cannot diverge.
-fn append_untracked(repo: &Repo, body: &mut String) -> Result<(), GcmError> {
+/// [`gather_for_grouping`] (which pass `None` = every untracked file) and
+/// [`gather_for_files`] (which passes `Some(allow)` to restrict to one group's
+/// paths, so a single group's message diff is not polluted by other groups'
+/// untracked files - CLO-491).
+fn append_untracked(
+    repo: &Repo,
+    body: &mut String,
+    allow: Option<&HashSet<String>>,
+) -> Result<(), GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
 
-    // Every untracked path counts toward the file-count cap - binary and
-    // unreadable files included - so a directory of thousands of files (of any
-    // kind) cannot force thousands of reads. Once either cap is reached, every
-    // remaining file is listed by name only, with no read at all (FR-57).
+    // Every (allow-listed) untracked path counts toward the file-count cap -
+    // binary and unreadable files included - so a directory of thousands of
+    // files (of any kind) cannot force thousands of reads. Once either cap is
+    // reached, every remaining file is listed by name only, with no read at all
+    // (FR-57).
     let mut files_done = 0usize;
     let mut bytes_used = 0usize;
     for path in &untracked {
+        // Filter to the allow-list (if any) before the caps, so excluded paths
+        // neither consume the budget nor reach the prompt.
+        if allow.is_some_and(|a| !a.contains(path)) {
+            continue;
+        }
         if files_done >= MAX_UNTRACKED_FILES || bytes_used >= MAX_UNTRACKED_BYTES {
             body.push_str(&format!(
                 "\n--- /dev/null\n+++ b/{path}\n[content omitted: untracked cap reached]\n"

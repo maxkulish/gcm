@@ -31,6 +31,10 @@ pub struct Cli {
     #[arg(long)]
     pub all: bool,
 
+    /// Discard any cached grouping plan and re-analyze from scratch.
+    #[arg(long)]
+    pub reset: bool,
+
     /// Auto-confirm the commit without prompting (for non-interactive / agent / CI use).
     #[arg(long, visible_alias = "no-input")]
     pub yes: bool,

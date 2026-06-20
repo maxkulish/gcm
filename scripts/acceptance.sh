@@ -27,6 +27,10 @@ PORT=8731
 CAPTURE="$(mktemp)"
 PLAN_FILE="$(mktemp)"   # grouping tests stage a JSON plan here; empty -> fallback
 MOCK_PY="$(mktemp).py"
+# Redirect the plan cache (CLO-491) to a throwaway dir so the suite is hermetic
+# and never pollutes the real OS cache. Scratch repos have unique paths -> unique
+# cache keys, so a single shared dir is collision-free across cases.
+GCM_CACHE_DIR="$(mktemp -d)"; export GCM_CACHE_DIR
 cat > "$MOCK_PY" <<'PY'
 import http.server, json, os, sys
 CAP = os.environ["CAPTURE_FILE"]
@@ -77,7 +81,7 @@ start_mock() {
   done
 }
 stop_mock() { [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null; MOCK_PID=""; }
-cleanup() { stop_mock; rm -f "$CAPTURE" "$MOCK_PY" "$PLAN_FILE"; }
+cleanup() { stop_mock; rm -f "$CAPTURE" "$MOCK_PY" "$PLAN_FILE"; rm -rf "$GCM_CACHE_DIR"; }
 trap cleanup EXIT
 
 MOCK_URL="http://127.0.0.1:$PORT/openai/v1"
@@ -473,6 +477,189 @@ printf '%s' '{"groups":[{"files":["pkg/a.txt","pkg/b.txt"],"summary":"pkg","comm
 grep -qi "Falling back" /tmp/gcm-out && bad "fallback: status collapsed pkg/ (no -uall expansion)" || ok "individual files matched plan (-uall agreement)"
 grep -q "Found 1 group" /tmp/gcm-out && ok "grouping ran on the expanded files" || bad "grouping did not run"
 : > "$PLAN_FILE"; rm -rf "$d"
+
+# --- CLO-491 per-repo plan cache -------------------------------------------
+# The cache lives under $GCM_CACHE_DIR (exported above). reset_cache wipes it so
+# cache_file can glob the single plan file the current case produced.
+reset_cache() { rm -f "$GCM_CACHE_DIR"/plan-*.json; }
+cache_file()  { ls "$GCM_CACHE_DIR"/plan-*.json 2>/dev/null | head -1; }
+
+# Stage a 2-group change set (src.txt -> group 1, docs.md -> group 2) on top of
+# an initial commit. Echoes the repo dir.
+cache_repo_2group() {
+  local d; d="$(new_repo)"
+  printf 'v1\n' > "$d/src.txt"; printf 'v1\n' > "$d/docs.md"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/src.txt"; printf 'v2\n' > "$d/docs.md"
+  printf '%s' '{"groups":[{"files":["src.txt"],"summary":"source","commit_message":"feat: src"},{"files":["docs.md"],"summary":"docs","commit_message":null}]}' > "$PLAN_FILE"
+  echo "$d"
+}
+
+note "AC-C1: re-run commits group 2 from cache with no grouping call (AC-1, FR-2)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  # Run 2 is a cache hit: capture only this run, and blank the plan so any
+  # (unexpected) grouping call would be visible as a fallback.
+  : > "$CAPTURE"; : > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "re-run exit 0" || bad "re-run (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  grep -q '"response_format"' "$CAPTURE" && bad "re-run made a grouping call (cache missed)" || ok "no grouping call on re-run (cache hit)"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'docs.md' && ok "group 2 committed from cache" || bad "group 2 not committed"
+  git -C "$d" log -1 --pretty=%s | grep -qi "mock commit message" && ok "group 2 carried a valid (regenerated) message" || bad "group 2 message missing"
+  [ -z "$(git -C "$d" status --porcelain)" ] && ok "tree clean after group 2" || bad "tree still dirty"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C1 needs signing"
+fi
+
+note "AC-C2: editing a pending file invalidates the cache and re-analyzes (AC-2, FR-27)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  printf 'v3-edited\n' > "$d/docs.md"   # edit the still-pending group-2 file
+  printf '%s' '{"groups":[{"files":["docs.md"],"summary":"docs","commit_message":"docs: edited"}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "re-run after edit exit 0" || bad "edit re-run (rc=$rc)"
+  grep -q '"response_format"' "$CAPTURE" && ok "edit invalidated the cache -> grouping call" || bad "stale cache reused after a content edit"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C2 needs signing"
+fi
+
+note "AC-C3: rejecting pre-commit hook leaves the group staged + plan un-advanced (AC-3, FR-58)"
+reset_cache; d="$(cache_repo_2group)"
+mkdir -p "$d/.git/hooks"
+printf '#!/bin/sh\nexit 1\n' > "$d/.git/hooks/pre-commit"; chmod +x "$d/.git/hooks/pre-commit"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -ne 0 ] && ok "rejecting hook -> exit $rc" || bad "expected non-zero on hook rejection"
+grep -qi "left staged" /tmp/gcm-out && ok "error explains the group is left staged" || bad "FR-58 message missing"
+git -C "$d" diff --cached --name-only | grep -qx 'src.txt' && ok "group 1 left staged for retry" || bad "group 1 not staged after hook reject"
+cf="$(cache_file)"
+[ -n "$cf" ] && grep -q '"src.txt"' "$cf" && ok "cache un-advanced (still holds group 1)" || bad "cache advanced despite the commit failure"
+[ "$(git -C "$d" log --oneline | wc -l | tr -d ' ')" = "1" ] && ok "no commit created" || bad "a commit slipped through the rejecting hook"
+# Removing the hook and re-running retries the same group from the cache.
+rm -f "$d/.git/hooks/pre-commit"; : > "$CAPTURE"; : > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+if [ "$SIGNING_OK" -eq 1 ]; then
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'src.txt' && ok "retry committed the same group 1 from cache" || bad "retry did not commit group 1"
+else
+  skip "AC-C3 retry-commit assertion needs signing"
+fi
+reset_cache; rm -rf "$d"
+
+note "AC-C4: first commit in an unborn repo (no HEAD) works with the cache (AC-4)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"   # fresh repo, no commits -> unborn HEAD
+  printf 'a\n' > "$d/a.txt"; printf 'b\n' > "$d/b.txt"
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"},{"files":["b.txt"],"summary":"b","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "unborn first commit exit 0" || bad "unborn run (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  git -C "$d" rev-parse HEAD >/dev/null 2>&1 && ok "HEAD now exists (first commit created)" || bad "no HEAD after run"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'a.txt' && ok "group 1 (a.txt) committed" || bad "a.txt not committed"
+  [ -n "$(cache_file)" ] && ok "cache advanced to group 2" || bad "no cache after unborn first commit"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C4 needs signing"
+fi
+
+note "AC-C5: cache file lives in the cache dir, named plan-<key>.json, mode 0600 (AC-5, FR-29)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  cf="$(cache_file)"
+  [ -n "$cf" ] && [ -f "$cf" ] && ok "cache file created under the configured cache dir" || bad "no cache file produced"
+  case "$cf" in "$GCM_CACHE_DIR"/plan-*.json) ok "name is plan-<key>.json under GCM_CACHE_DIR" ;; *) bad "unexpected cache path: $cf" ;; esac
+  mode="$(stat -f '%Lp' "$cf" 2>/dev/null || stat -c '%a' "$cf" 2>/dev/null)"
+  [ "$mode" = "600" ] && ok "cache file mode is 0600" || bad "cache file mode is '$mode' (want 600)"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C5 needs signing"
+fi
+
+note "AC-C6: --reset re-analyzes; --all clears the cache (AC-6, FR-8/FR-28)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  [ -n "$(cache_file)" ] && ok "cache warmed (group 2 cached)" || bad "no cache after run 1"
+  : > "$CAPTURE"
+  printf '%s' '{"groups":[{"files":["docs.md"],"summary":"docs","commit_message":"docs: d"}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --reset --yes >/tmp/gcm-out 2>&1 )
+  grep -q '"response_format"' "$CAPTURE" && ok "--reset forced a grouping call" || bad "--reset did not re-analyze"
+  reset_cache; rm -rf "$d"
+
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  [ -n "$(cache_file)" ] && ok "cache warmed before --all" || bad "no cache to clear"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --yes >/tmp/gcm-out 2>&1 )
+  [ -z "$(cache_file)" ] && ok "--all cleared the cache" || bad "--all left the cache in place"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C6 needs signing"
+fi
+
+note "AC-C7: aborting at the prompt leaves the cache un-advanced (AC-7)"
+if [ "$SIGNING_OK" -eq 1 ] && command -v expect >/dev/null 2>&1; then
+  reset_cache; d="$(cache_repo_2group)"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  before="$(cat "$(cache_file)")"
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 20
+    spawn -noecho sh -c "cd $env(GCM_DIR) && GROQ_API_KEY=$env(GROQ_API_KEY) GCM_GROQ_BASE_URL=$env(GCM_GROQ_BASE_URL) $env(GCM_BIN)"
+    expect {
+      -re {\[Y/n/e} { send "n\r" }
+      timeout { exit 3 }
+    }
+    expect eof
+  ' >/tmp/gcm-out 2>&1
+  after="$(cat "$(cache_file)")"
+  [ "$before" = "$after" ] && ok "cache byte-identical after abort (not advanced)" || bad "abort changed/advanced the cache"
+  git -C "$d" status --porcelain | grep -q 'docs.md' && ok "group 2 still pending after abort" || bad "group 2 not pending after abort"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C7 needs signing + expect"
+fi
+
+note "AC-C11: a single-group plan deletes the cache after its commit (eval 11)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"
+  printf 'v1\n' > "$d/only.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/only.txt"
+  printf '%s' '{"groups":[{"files":["only.txt"],"summary":"only","commit_message":"feat: only"}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  [ -z "$(cache_file)" ] && ok "single-group plan left no cache (nothing to advance to)" || bad "cache lingered after the last group"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C11 needs signing"
+fi
+
+note "AC-C21: a group's message excludes other groups' untracked files (blind-spot #3, eval 21)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"
+  printf 'seed\n' > "$d/seed.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  # Three untracked files in three groups. After group 1 commits, groups 2 AND 3
+  # are still untracked, so the message-only call for group 2 must exclude g3.
+  printf 'G1_CONTENT\n' > "$d/g1.txt"
+  printf 'G2_CONTENT\n' > "$d/g2.txt"
+  printf 'G3_CONTENT\n' > "$d/g3.txt"
+  printf '%s' '{"groups":[{"files":["g1.txt"],"summary":"g1","commit_message":"feat: g1"},{"files":["g2.txt"],"summary":"g2","commit_message":null},{"files":["g3.txt"],"summary":"g3","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  # Run 2: cache hit, group 0 = g2 (null msg) -> message-only call scoped to g2,
+  # while g3 is still untracked. The request body must contain g2 but not g3.
+  : > "$CAPTURE"; : > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  grep -q 'G2_CONTENT' "$CAPTURE" && ok "scoped message includes the group's own untracked file" || bad "group 2 content missing from its message diff"
+  grep -q 'G3_CONTENT' "$CAPTURE" && bad "another group's untracked content leaked into the message diff" || ok "other groups' untracked content excluded (filter works)"
+  reset_cache; rm -rf "$d"
+else
+  skip "AC-C21 needs signing"
+fi
 
 stop_mock
 

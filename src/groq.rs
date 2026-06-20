@@ -77,6 +77,16 @@ struct Message {
     content: Option<String>,
 }
 
+/// The configured model id (`GCM_GROQ_MODEL` or the default), resolved
+/// **without** requiring `GROQ_API_KEY`. Used by the plan cache to fold the
+/// model into the freshness fingerprint (CLO-491, FR-27) even when no key is set.
+pub fn resolved_model() -> String {
+    std::env::var("GCM_GROQ_MODEL")
+        .ok()
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+}
+
 /// Resolve `(api_key, model, base_url)` from the environment - shared by the
 /// message (tracer) and plan (grouping) calls.
 fn resolve_config() -> Result<(String, String, String), GroqError> {
@@ -84,10 +94,7 @@ fn resolve_config() -> Result<(String, String, String), GroqError> {
         .ok()
         .filter(|k| !k.trim().is_empty())
         .ok_or(GroqError::MissingKey)?;
-    let model = std::env::var("GCM_GROQ_MODEL")
-        .ok()
-        .filter(|m| !m.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let model = resolved_model();
     let base_url = std::env::var("GCM_GROQ_BASE_URL")
         .ok()
         .filter(|u| !u.trim().is_empty())
