@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-20 (CLO-487 grouping merged)
+**Last Updated**: 2026-06-20 (CLO-488 typed errors + retries started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -61,19 +61,18 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| - | (none active) | - | - | - |
+| [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
 | High | CLO-491 | Per-repo plan cache with commit-safe advancement | CLO-487, CLO-485 (done) | next on the critical path; caches the grouping plan |
-| High | CLO-488 | Resilient provider calls: typed errors + retries | CLO-486 (done) | extends the Groq call |
 | High | CLO-489 | Provider trait + Gemini + OpenAI backends | CLO-486, CLO-485 (done) | provider abstraction (ADR-001) |
 | Medium | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | CLO-487 (done) | automation flags on the grouping path |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> CLO-487 landed (grouping, PR #5). **CLO-491** (plan cache) and **CLO-493** (automation flags) are now unblocked. **CLO-488**, **CLO-489**, **CLO-490** remain ready; the provider chain (CLO-489) runs in parallel. CLO-492 still waits on CLO-488; CLO-497 waits on the rest.
+> CLO-487 landed (grouping, PR #5). **CLO-488** (typed errors + retries) is now **in progress** (Spec phase). **CLO-491** (plan cache) and **CLO-493** (automation flags) are unblocked; **CLO-489**, **CLO-490** remain ready; the provider chain (CLO-489) runs in parallel. CLO-492 still waits on CLO-488; CLO-497 waits on the rest.
 
 ## Blocked
 
