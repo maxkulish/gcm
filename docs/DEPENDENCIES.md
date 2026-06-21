@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-20 (CLO-491 plan cache started)
+**Last Updated**: 2026-06-21 (CLO-491 plan cache merged)
 
 ## Current Blockers
 
@@ -10,7 +10,7 @@
 | CLO-494 | CLO-489 | Ready (not started) | Anthropic provider |
 | CLO-495 | CLO-489 | Ready (not started) | Ollama provider |
 | CLO-496 | CLO-489 | Ready (not started) | Onboarding wizard |
-| CLO-497 | CLO-488…CLO-496 | Backlog | Release + cutover (last); CLO-487 satisfied |
+| CLO-497 | CLO-488…CLO-496 | Backlog | Release + cutover (last); CLO-487 + CLO-491 satisfied |
 
 ## Unblocked & Ready
 

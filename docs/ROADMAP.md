@@ -1,12 +1,12 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-20 (CLO-491 plan cache started)
+**Last Updated**: 2026-06-21 (CLO-491 plan cache merged)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
-| Phase 1: Foundations | 13 | 3 | In Progress |
+| Phase 1: Foundations | 13 | 4 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -20,5 +20,5 @@ Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions; foundational decisions i
 | CLO-488 | Resilient provider calls: typed errors + retries | Ready | CLO-486 |
 | CLO-489 | Provider trait + Gemini + OpenAI backends | Ready | CLO-486, CLO-485 |
 | CLO-490 | Optional secret scanning + `gcmignore` | Ready | CLO-486 |
-| CLO-491 | Per-repo plan cache with commit-safe advancement | In Progress | CLO-487, CLO-485 |
+| CLO-491 | Per-repo plan cache with commit-safe advancement | Done | CLO-487, CLO-485 |
 | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | Ready | CLO-487 |
