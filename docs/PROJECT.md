@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-21 (CLO-492 validation + fallback merged — PR #9, Done; CLO-488 PR #6 merged, CLO-491 merged on main)
+**Last Updated**: 2026-06-21 (CLO-489 provider trait + Gemini/OpenAI at PR #10; CLO-492 validation + fallback merged PR #9, Done; CLO-488 PR #6 merged; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -23,7 +23,7 @@
 | [CLO-486](https://linear.app/cloud-ai/issue/CLO-486) | S1 | Single-commit tracer: AI message via Groq with safe diff read | AFK | High | Done | CLO-485 | 4,5,6,9,10,18a,31a,32,34,35,36,39,41,47,48,49,57 |
 | [CLO-487](https://linear.app/cloud-ai/issue/CLO-487) | S2 | Semantic grouping → commit first group | AFK | High | Done | CLO-486 | 1,2a,3,7,15,16,19,23a,24a,31,33 |
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | S4 | Resilient provider calls: typed errors + retries | AFK | High | Backlog | CLO-486 | 20,21,22 |
-| [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | Backlog | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
+| [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | In Progress | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
 | [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
 | [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Done | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
@@ -62,16 +62,16 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
+| [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | Provider trait + Gemini + OpenAI backends | In Progress | PR | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| High | CLO-489 | Provider trait + Gemini + OpenAI backends | CLO-486, CLO-485 (done) | provider abstraction (ADR-001) |
 | Medium | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | CLO-487 (done) | automation flags on the grouping path |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> CLO-491 (plan cache) merged (PR #7). **CLO-492** (validation + fallback) merged (PR #9, `c328431`) — Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — its post-merge sync is still pending in its own workflow. **CLO-489**, **CLO-490**, **CLO-493** remain ready; the provider chain (CLO-489) runs in parallel. CLO-497 waits on the rest of the feature set (CLO-487/491/492 now satisfied).
+> CLO-491 (plan cache) merged (PR #7). **CLO-492** (validation + fallback) merged (PR #9, `c328431`) — Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. **CLO-489** (provider trait + Gemini + OpenAI) is at **PR #10** (CI green; awaiting merge) and unblocks CLO-494/495/496. **CLO-490**, **CLO-493** remain ready. CLO-497 waits on the rest of the feature set (CLO-487/491/492 now satisfied).
 
 ## Blocked
 

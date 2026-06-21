@@ -29,6 +29,7 @@ PORT=8731
 CAPTURE="$(mktemp)"
 PLAN_FILE="$(mktemp)"   # grouping tests stage a JSON plan here; empty -> fallback
 COUNTER="$(mktemp)"     # call counter for the stateful /retry429/ route (CLO-488)
+HEADERS="$(mktemp)"     # captured auth headers per request (CLO-489 eval 26)
 MOCK_PY="$(mktemp).py"
 # Redirect the plan cache (CLO-491) to a throwaway dir so the suite is hermetic
 # and never pollutes the real OS cache. Scratch repos have unique paths -> unique
@@ -38,6 +39,7 @@ cat > "$MOCK_PY" <<'PY'
 import http.server, json, os, sys
 CAP = os.environ["CAPTURE_FILE"]
 COUNTER = os.environ.get("COUNTER_FILE", "")
+HEADERS = os.environ.get("HEADERS_FILE", "")
 def _bump():
     try:
         with open(COUNTER) as f: n = int(f.read().strip() or "0")
@@ -60,6 +62,17 @@ class H(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(n)
         with open(CAP, "ab") as f:
             f.write(body + b"\n")
+        # Capture auth headers so a test can assert the per-provider scheme
+        # (Groq/OpenAI: Authorization Bearer; Gemini: x-goog-api-key) - CLO-489.
+        if HEADERS:
+            with open(HEADERS, "a") as hf:
+                hf.write("AUTH=%s GOOG=%s\n" % (
+                    self.headers.get("Authorization", ""),
+                    self.headers.get("x-goog-api-key", ""),
+                ))
+        # Gemini safety block: 200 OK, no content, finishReason SAFETY (CLO-489 pt3).
+        if "/geminisafety/" in self.path:
+            _send_json(self, 200, '{"candidates":[{"finishReason":"SAFETY"}]}'); return
         # Route by path prefix so error paths are testable (AC-12, CLO-488).
         if "/fail500/" in self.path:
             self.send_response(500); self.end_headers(); self.wfile.write(b"server error"); return
@@ -79,7 +92,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if _bump() < 2:
                 _send_json(self, 429, '{"error":{"message":"rate limited"}}', {"Retry-After": "0"}); return
             # else fall through to the normal 200 path below
-        is_plan = b'"response_format"' in body
+        # Gemini uses the :generateContent endpoint + responseSchema; the
+        # OpenAI-compatible providers (Groq, OpenAI) use response_format (CLO-489).
+        is_gemini = ":generatecontent" in self.path.lower() or "/gemini" in self.path.lower()
+        is_plan = (b'"response_format"' in body) or (b'"responseSchema"' in body)
         if "/empty/" in self.path:
             content = "   \n  "   # whitespace-only -> EmptyResponse
         elif is_plan:
@@ -96,7 +112,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 pass
         else:
             content = "chore(test): mock commit message"
-        resp = json.dumps({"choices":[{"message":{"content":content}}]}).encode()
+        if is_gemini:
+            resp = json.dumps({"candidates":[{"content":{"parts":[{"text":content}]},"finishReason":"STOP"}]}).encode()
+        else:
+            resp = json.dumps({"choices":[{"message":{"content":content}}]}).encode()
         self.send_response(200)
         self.send_header("Content-Type","application/json")
         self.send_header("Content-Length", str(len(resp)))
@@ -108,8 +127,8 @@ PY
 
 MOCK_PID=""
 start_mock() {
-  : > "$CAPTURE"; : > "$COUNTER"
-  CAPTURE_FILE="$CAPTURE" PLAN_FILE="$PLAN_FILE" COUNTER_FILE="$COUNTER" python3 "$MOCK_PY" "$PORT" >/dev/null 2>&1 &
+  : > "$CAPTURE"; : > "$COUNTER"; : > "$HEADERS"
+  CAPTURE_FILE="$CAPTURE" PLAN_FILE="$PLAN_FILE" COUNTER_FILE="$COUNTER" HEADERS_FILE="$HEADERS" python3 "$MOCK_PY" "$PORT" >/dev/null 2>&1 &
   MOCK_PID=$!
   for _ in $(seq 1 20); do
     if curl -s -o /dev/null "http://127.0.0.1:$PORT" 2>/dev/null; then break; fi
@@ -117,10 +136,12 @@ start_mock() {
   done
 }
 stop_mock() { [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null; MOCK_PID=""; }
-cleanup() { stop_mock; rm -f "$CAPTURE" "$MOCK_PY" "$PLAN_FILE" "$COUNTER"; rm -rf "$GCM_CACHE_DIR"; }
+cleanup() { stop_mock; rm -f "$CAPTURE" "$MOCK_PY" "$PLAN_FILE" "$COUNTER" "$HEADERS"; rm -rf "$GCM_CACHE_DIR"; }
 trap cleanup EXIT
 
+# OpenAI-compatible base (Groq, OpenAI) and a Gemini base pointed at the same mock.
 MOCK_URL="http://127.0.0.1:$PORT/openai/v1"
+GEMINI_MOCK_URL="http://127.0.0.1:$PORT/gemini"
 
 # --- scratch repo helper ----------------------------------------------------
 new_repo() {
@@ -1031,6 +1052,100 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   reset_cache; rm -rf "$d"
 else
   skip "AC-C-drynoclear needs signing"
+fi
+
+# --- CLO-489 provider trait: Gemini + OpenAI backends ----------------------
+# OpenAI uses the OpenAI-compatible mock (MOCK_URL); Gemini uses the
+# :generateContent mock (GEMINI_MOCK_URL). Real Gemini/OpenAI HTTP is not
+# exercised in-sandbox (egress); the binary reaches the real APIs in the user's
+# environment. Per-provider request/parse shapes are unit-tested; these cases
+# prove end-to-end selection, auth, and grouping over the mock.
+
+note "AC-489-default: bare gcm (no --provider/env) uses Groq (parity, O3)"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$HEADERS"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "default provider run exit 0" || bad "default provider (rc=$rc; $(tail -1 /tmp/gcm-out))"
+grep -q 'AUTH=Bearer dummy' "$HEADERS" && ok "default sends Authorization: Bearer (Groq)" || bad "default auth header wrong"
+rm -rf "$d"
+
+note "AC-489-unknown: an unknown provider fails fast, lists valid names, no network"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && GCM_PROVIDER=bogus GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && ok "unknown GCM_PROVIDER -> exit 1" || bad "unknown provider (rc=$rc)"
+grep -qi "unknown provider" /tmp/gcm-out && grep -q "groq" /tmp/gcm-out && ok "error names the bad value + valid names" || bad "error not actionable"
+reqs=$(grep -c '"model"\|"contents"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
+[ "$reqs" -eq 0 ] && ok "no network call for an unknown provider" || bad "unknown provider still called the API ($reqs)"
+( cd "$d" && "$BIN" --provider=bogus --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 2 ] && ok "--provider=bogus -> clap usage error (exit 2)" || bad "--provider clap validation (rc=$rc)"
+rm -rf "$d"
+
+note "AC-489-missingkey: each provider names its own API key env var (FR-18)"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && env -u GEMINI_API_KEY GCM_GEMINI_BASE_URL="$GEMINI_MOCK_URL" "$BIN" --provider=google --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && grep -q "GEMINI_API_KEY" /tmp/gcm-out && ok "google missing key names GEMINI_API_KEY" || bad "google missing-key (rc=$rc)"
+( cd "$d" && env -u OPENAI_API_KEY GCM_OPENAI_BASE_URL="$MOCK_URL" "$BIN" --provider=openai --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && grep -q "OPENAI_API_KEY" /tmp/gcm-out && ok "openai missing key names OPENAI_API_KEY" || bad "openai missing-key (rc=$rc)"
+rm -rf "$d"
+
+note "AC-489-auth-headers: per-provider auth scheme (eval 26)"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+: > "$HEADERS"
+( cd "$d" && OPENAI_API_KEY=sk-test GCM_OPENAI_BASE_URL="$MOCK_URL" "$BIN" --provider=openai --all --dry-run >/tmp/gcm-out 2>&1 )
+grep -q 'AUTH=Bearer sk-test' "$HEADERS" && ok "openai sends Authorization: Bearer" || bad "openai auth header"
+: > "$HEADERS"
+( cd "$d" && GEMINI_API_KEY=g-test GCM_GEMINI_BASE_URL="$GEMINI_MOCK_URL" "$BIN" --provider=google --all --dry-run >/tmp/gcm-out 2>&1 )
+grep -q 'GOOG=g-test' "$HEADERS" && ok "gemini sends x-goog-api-key" || bad "gemini auth header"
+rm -rf "$d"
+
+note "AC-489-model: --model overrides the model id sent to the provider (FR-14)"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && OPENAI_API_KEY=dummy GCM_OPENAI_BASE_URL="$MOCK_URL" "$BIN" --provider=openai --model=custom-model-xyz --all --dry-run >/tmp/gcm-out 2>&1 )
+grep -q 'custom-model-xyz' "$CAPTURE" && ok "the overridden model id is in the request" || bad "--model not applied"
+rm -rf "$d"
+
+note "AC-489-safety: Gemini safety block -> actionable non-retryable error (pt3)"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && GEMINI_API_KEY=dummy GCM_GEMINI_BASE_URL="http://127.0.0.1:$PORT/geminisafety" "$BIN" --provider=google --all --yes >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && ok "safety block -> exit 1" || bad "safety block (rc=$rc)"
+grep -qi "blocked" /tmp/gcm-out && grep -qi "safety" /tmp/gcm-out && ok "message names the safety block" || bad "no safety-block message"
+rm -rf "$d"
+
+note "AC-489-openai: --provider=openai produces a grouped commit (strict json_schema)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"
+  printf 'v1\n' > "$d/src.txt"; printf 'v1\n' > "$d/docs.md"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/src.txt"; printf 'v2\n' > "$d/docs.md"
+  printf '%s' '{"groups":[{"files":["src.txt"],"summary":"source","commit_message":"feat: src"},{"files":["docs.md"],"summary":"docs","commit_message":null}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  ( cd "$d" && OPENAI_API_KEY=dummy GCM_OPENAI_BASE_URL="$MOCK_URL" "$BIN" --provider=openai --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "openai grouped commit exit 0" || bad "openai grouped (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  grep -q '"response_format"' "$CAPTURE" && ok "openai sent a strict json_schema request" || bad "openai request not json_schema"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'src.txt' && ok "group 1 committed via openai" || bad "openai group 1 missing"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'docs.md' && bad "docs.md leaked into group 1" || ok "group 2 left for next run"
+  : > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+else
+  skip "AC-489-openai needs signing"
+fi
+
+note "AC-489-google: --provider=google produces a grouped commit (responseSchema + thinkingLevel)"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  reset_cache; d="$(new_repo)"
+  printf 'v1\n' > "$d/src.txt"; printf 'v1\n' > "$d/docs.md"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/src.txt"; printf 'v2\n' > "$d/docs.md"
+  printf '%s' '{"groups":[{"files":["src.txt"],"summary":"source","commit_message":"feat: src"},{"files":["docs.md"],"summary":"docs","commit_message":null}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  ( cd "$d" && GEMINI_API_KEY=dummy GCM_GEMINI_BASE_URL="$GEMINI_MOCK_URL" "$BIN" --provider=google --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "google grouped commit exit 0" || bad "google grouped (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  grep -q '"responseSchema"' "$CAPTURE" && ok "gemini sent a responseSchema request" || bad "gemini request not responseSchema"
+  grep -q 'thinkingLevel' "$CAPTURE" && ok "gemini request sets thinkingLevel (reasoning suppression)" || bad "no thinkingLevel"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'src.txt' && ok "group 1 committed via gemini" || bad "gemini group 1 missing"
+  : > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+else
+  skip "AC-489-google needs signing"
 fi
 
 stop_mock

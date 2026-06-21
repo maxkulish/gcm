@@ -20,13 +20,11 @@ use crate::plan::Plan;
 /// On-disk cache file format version. Bumped only when [`CacheFile`]'s shape
 /// changes; on read a mismatch is a miss (the stale file is ignored/replaced).
 const CACHE_FORMAT_VERSION: u32 = 1;
-/// Folded into the fingerprint: bump when the grouping prompt or schema changes
-/// so a cached plan from an older contract re-analyzes.
-const FINGERPRINT_VERSION: u32 = 1;
-/// Provider token in the fingerprint. Groq is the only backend until the
-/// provider trait lands (CLO-489), after which this must become the active
-/// provider's id so a provider switch re-analyzes.
-const PROVIDER: &str = "groq";
+/// Folded into the fingerprint: bump when the grouping prompt or schema changes,
+/// or when the fingerprint composition changes, so a cached plan from an older
+/// contract re-analyzes. Bumped to 2 in CLO-489 (the provider is now folded in
+/// via the provider-qualified model id instead of a hardcoded `groq` token).
+const FINGERPRINT_VERSION: u32 = 2;
 
 /// The JSON wrapper persisted to disk: a fingerprint envelope around the typed
 /// plan. (FR-30 bash-cache compat was dropped by ADR-001 #12, so the format is
@@ -163,10 +161,13 @@ fn repo_key(repo_root: &Path) -> String {
     hex(&h.finalize())
 }
 
-/// Fingerprint over the pending change set (FR-27): version + provider/model +
-/// per-file (path, content hash), with paths sorted for stability. Read from the
-/// LIVE change set each run; never pins `HEAD`; unborn-safe (working-tree reads
-/// + `git status` only).
+/// Fingerprint over the pending change set (FR-27): version + provider-qualified
+/// model id (e.g. "groq:openai/gpt-oss-120b", so a provider OR model switch
+/// re-analyzes) + per-file (path, content hash), with paths sorted for
+/// stability. Read from the LIVE change set each run; never pins `HEAD`;
+/// unborn-safe (working-tree reads + `git status` only). The cache KEY/location
+/// (`sha256(repo-root)`) is provider-independent (FR-25); only this freshness
+/// fingerprint gains provider awareness (CLO-489).
 fn fingerprint(repo: &Repo, pending: &[ChangedFile], model: &str) -> String {
     let mut entries: Vec<(String, String)> = pending
         .iter()
@@ -182,8 +183,6 @@ fn digest_fingerprint(model: &str, entries: &[(String, String)]) -> String {
     let mut h = Sha256::new();
     h.update(FINGERPRINT_VERSION.to_le_bytes());
     h.update(b"\0");
-    h.update(PROVIDER.as_bytes());
-    h.update(b":");
     h.update(model.as_bytes());
     h.update(b"\0");
     for (path, content) in entries {
