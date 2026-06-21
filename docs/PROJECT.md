@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-20 (CLO-487 grouping merged)
+**Last Updated**: 2026-06-20 (CLO-491 plan cache started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -25,7 +25,7 @@
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | S4 | Resilient provider calls: typed errors + retries | AFK | High | Backlog | CLO-486 | 20,21,22 |
 | [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | Backlog | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
 | [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
-| [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Backlog | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
+| [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | In Progress | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Backlog | CLO-487, CLO-488 | 23,24,46,47 |
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Backlog | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Backlog | CLO-489, CLO-485 | 13b,18c |
@@ -61,19 +61,18 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| - | (none active) | - | - | - |
+| [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | Per-repo plan cache with commit-safe advancement | In Progress | Discovery | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| High | CLO-491 | Per-repo plan cache with commit-safe advancement | CLO-487, CLO-485 (done) | next on the critical path; caches the grouping plan |
 | High | CLO-488 | Resilient provider calls: typed errors + retries | CLO-486 (done) | extends the Groq call |
 | High | CLO-489 | Provider trait + Gemini + OpenAI backends | CLO-486, CLO-485 (done) | provider abstraction (ADR-001) |
 | Medium | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | CLO-487 (done) | automation flags on the grouping path |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> CLO-487 landed (grouping, PR #5). **CLO-491** (plan cache) and **CLO-493** (automation flags) are now unblocked. **CLO-488**, **CLO-489**, **CLO-490** remain ready; the provider chain (CLO-489) runs in parallel. CLO-492 still waits on CLO-488; CLO-497 waits on the rest.
+> **CLO-491** (plan cache) is now in progress (Discovery) — next on the critical path. **CLO-493** (automation flags), **CLO-488**, **CLO-489**, **CLO-490** remain ready; the provider chain (CLO-489) runs in parallel. CLO-492 still waits on CLO-488; CLO-497 waits on the rest.
 
 ## Blocked
 

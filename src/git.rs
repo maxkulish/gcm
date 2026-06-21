@@ -119,6 +119,59 @@ impl Repo {
         }
     }
 
+    /// Diff `--stat` scoped to specific paths (CLO-491 per-group message header).
+    /// Same HEAD/unborn handling as [`Self::diff_stat`]. Empty `paths` returns an
+    /// empty string rather than an unscoped whole-tree diff.
+    pub fn diff_stat_for(&self, paths: &[&str]) -> Result<String, GcmError> {
+        if paths.is_empty() {
+            return Ok(String::new());
+        }
+        if self.has_head() {
+            self.capture_scoped(&["diff", "--stat", "HEAD"], paths)
+        } else {
+            let unstaged = self.capture_scoped(&["diff", "--stat"], paths)?;
+            let staged = self.capture_scoped(&["diff", "--stat", "--cached"], paths)?;
+            Ok(format!("{unstaged}{staged}"))
+        }
+    }
+
+    /// Full diff (no color) scoped to specific paths (CLO-491 per-group message
+    /// body). Same HEAD/unborn handling as [`Self::diff_full`]. Empty `paths`
+    /// returns an empty string.
+    pub fn diff_full_for(&self, paths: &[&str]) -> Result<String, GcmError> {
+        if paths.is_empty() {
+            return Ok(String::new());
+        }
+        if self.has_head() {
+            self.capture_scoped(&["diff", "--no-color", "HEAD"], paths)
+        } else {
+            let unstaged = self.capture_scoped(&["diff", "--no-color"], paths)?;
+            let staged = self.capture_scoped(&["diff", "--no-color", "--cached"], paths)?;
+            Ok(format!("{unstaged}{staged}"))
+        }
+    }
+
+    /// Like [`Self::capture`] but appends `-- <paths>` with
+    /// `GIT_LITERAL_PATHSPECS=1`, so a filename containing a glob metacharacter
+    /// (`*`, `?`) cannot pull in siblings (the CLO-487 review-2 #3 hazard).
+    fn capture_scoped(&self, base: &[&str], paths: &[&str]) -> Result<String, GcmError> {
+        let mut cmd = self.git(base);
+        cmd.env("GIT_LITERAL_PATHSPECS", "1");
+        cmd.arg("--");
+        cmd.args(paths);
+        let out = cmd
+            .output()
+            .map_err(|e| GcmError::Git(format!("failed to run git {}: {e}", base.join(" "))))?;
+        if !out.status.success() {
+            return Err(GcmError::Git(format!(
+                "git {} failed: {}",
+                base.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
     /// Untracked files honoring gitignore (`--exclude-standard`), NUL-split so
     /// unicode/space/newline paths survive (FR-31, FR-48).
     pub fn untracked_files(&self) -> Result<Vec<String>, GcmError> {
@@ -158,6 +211,12 @@ impl Repo {
 
     /// Create a signed commit (FR-4). Stdio is inherited so GPG/SSH passphrase
     /// (pinentry) prompts work on the user's terminal.
+    ///
+    /// A non-zero `git commit` (a rejecting pre-commit hook, a signing failure)
+    /// returns [`GcmError::CommitFailed`], not [`GcmError::Git`]: the caller
+    /// leaves the staged group in place and does not advance the plan cache
+    /// (CLO-491, FR-58). A failure to even spawn `git` is a `Git` error (no
+    /// commit was attempted, so the staged group should be rolled back).
     pub fn commit_signed(&self, message: &str) -> Result<(), GcmError> {
         let status = self
             .git(&["commit", "-S", "-m", message])
@@ -167,8 +226,8 @@ impl Repo {
             .status()
             .map_err(|e| GcmError::Git(format!("failed to run git commit: {e}")))?;
         if !status.success() {
-            return Err(GcmError::Git(
-                "git commit failed (see output above); index restored".to_string(),
+            return Err(GcmError::CommitFailed(
+                "git commit failed (see output above)".to_string(),
             ));
         }
         Ok(())
