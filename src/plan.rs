@@ -236,6 +236,34 @@ pub fn schema() -> Value {
     })
 }
 
+/// The Gemini `generationConfig.responseSchema` (CLO-489): the **OpenAPI-3.0
+/// subset** Gemini accepts, which differs from [`schema`] (JSON-Schema strict):
+/// types are upper-case (`OBJECT`/`ARRAY`/`STRING`), nullability is `nullable:
+/// true` (not a `["string","null"]` union), there is **no** `additionalProperties`
+/// (silently ignored), and `propertyOrdering` hints field order. The `Plan`/`Group`
+/// structs and `parse_defensive` are shared; only the wire schema differs.
+pub fn gemini_schema() -> Value {
+    json!({
+        "type": "OBJECT",
+        "properties": {
+            "groups": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "files": { "type": "ARRAY", "items": { "type": "STRING" } },
+                        "summary": { "type": "STRING" },
+                        "commit_message": { "type": "STRING", "nullable": true }
+                    },
+                    "required": ["files", "summary", "commit_message"],
+                    "propertyOrdering": ["files", "summary", "commit_message"]
+                }
+            }
+        },
+        "required": ["groups"]
+    })
+}
+
 /// Basic plan validation (FR-23 basic): the plan must have at least one group,
 /// group 1 must be non-empty and carry a usable message, and no group may
 /// reference a file absent from the real change set. Full bijective validation
@@ -430,6 +458,31 @@ mod tests {
         assert_eq!(
             PlanError::Parse("boom".to_string()).to_string(),
             "plan parse error: boom"
+        );
+    }
+
+    #[test]
+    fn gemini_schema_is_openapi_subset() {
+        let s = gemini_schema();
+        assert_eq!(s["type"], json!("OBJECT"));
+        // No additionalProperties key (Gemini ignores it; must not be emitted).
+        assert!(s.get("additionalProperties").is_none());
+        assert_eq!(s["required"], json!(["groups"]));
+        let item = &s["properties"]["groups"]["items"];
+        assert_eq!(item["type"], json!("OBJECT"));
+        assert!(item.get("additionalProperties").is_none());
+        // commit_message is nullable via `nullable: true`, NOT a type union.
+        assert_eq!(
+            item["properties"]["commit_message"]["type"],
+            json!("STRING")
+        );
+        assert_eq!(
+            item["properties"]["commit_message"]["nullable"],
+            json!(true)
+        );
+        assert_eq!(
+            item["required"],
+            json!(["files", "summary", "commit_message"])
         );
     }
 

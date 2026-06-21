@@ -30,12 +30,63 @@ const MAX_UNTRACKED_FILES: usize = 50;
 const MAX_UNTRACKED_BYTES: usize = 256 * 1024;
 /// Per-file read cap for an individual untracked file (mirrors bash `head -c 8192`).
 const PER_FILE_BYTES: usize = 8192;
-/// Per-file cap for a tracked diff section in the grouping prompt: each file's
-/// section is truncated independently with a `[diff omitted: N bytes]`
-/// placeholder rather than tail-chopping the whole body (CLO-487 FR-15).
-const PER_FILE_DIFF_BYTES: usize = 8192;
-/// Coarse final safeguard on the whole assembled body.
-const MAX_TOTAL_BYTES: usize = 350_000;
+
+/// Per-provider diff budget (CLO-489, FR-13a): the coarse total-body safeguard
+/// and the per-tracked-file truncation cap. Each provider declares its own (a
+/// smaller-context model like `gpt-4o-mini` gets a tighter total); env overrides
+/// `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` apply across providers.
+pub struct DiffBudget {
+    /// Coarse final safeguard on the whole assembled body.
+    pub total_bytes: usize,
+    /// Per-file cap for a tracked diff section in the grouping prompt: each file's
+    /// section is truncated independently with a `[diff omitted: N bytes]`
+    /// placeholder rather than tail-chopping the whole body (CLO-487 FR-15).
+    pub per_file_bytes: usize,
+}
+
+impl DiffBudget {
+    /// Standard defaults (today's Groq values) - behavioral parity (O3).
+    pub const STANDARD_TOTAL: usize = 350_000;
+    pub const STANDARD_PER_FILE: usize = 8192;
+
+    /// Build a budget from per-provider defaults, applying the cross-provider env
+    /// overrides when set to a non-empty, positive integer.
+    pub fn resolve(default_total: usize, default_per_file: usize) -> Self {
+        Self::from_overrides(
+            env_usize("GCM_DIFF_TOTAL_BYTES"),
+            env_usize("GCM_DIFF_PER_FILE_BYTES"),
+            default_total,
+            default_per_file,
+        )
+    }
+
+    /// Pure budget assembly (env reads factored out for unit testing): an override
+    /// wins when present, else the provider default.
+    fn from_overrides(
+        total: Option<usize>,
+        per_file: Option<usize>,
+        default_total: usize,
+        default_per_file: usize,
+    ) -> Self {
+        DiffBudget {
+            total_bytes: total.unwrap_or(default_total),
+            per_file_bytes: per_file.unwrap_or(default_per_file),
+        }
+    }
+
+    /// The standard (Groq/Google) budget with env overrides applied.
+    pub fn standard() -> Self {
+        Self::resolve(Self::STANDARD_TOTAL, Self::STANDARD_PER_FILE)
+    }
+}
+
+/// Read a non-empty, parseable, positive `usize` env var, else `None`.
+fn env_usize(name: &str) -> Option<usize> {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+}
 
 /// The diff context handed to the provider.
 pub struct GatheredDiff {
@@ -59,12 +110,12 @@ pub struct GroupingContext {
 /// Build the prompt diff: tracked changes (binary-elided) plus untracked,
 /// non-gitignored file content, bounded by the FR-57 caps. Reads only the
 /// working tree; nothing is staged (FR-47).
-pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
+pub fn gather(repo: &Repo, budget: &DiffBudget) -> Result<GatheredDiff, GcmError> {
     let stat = repo.diff_stat()?;
     let tracked = repo.diff_full()?;
     let mut body = elide_binary_diff(&tracked);
     append_untracked(repo, &mut body, None)?;
-    cap_total(&mut body);
+    cap_total(&mut body, budget.total_bytes);
     Ok(GatheredDiff { stat, body })
 }
 
@@ -74,14 +125,18 @@ pub fn gather(repo: &Repo) -> Result<GatheredDiff, GcmError> {
 /// into this message). Used to regenerate a message-only call for an advanced
 /// group on a cache hit. Unborn-safe: with no `HEAD` the tracked diff is empty
 /// and all content arrives through the filtered untracked path.
-pub fn gather_for_files(repo: &Repo, files: &[&ChangedFile]) -> Result<GatheredDiff, GcmError> {
+pub fn gather_for_files(
+    repo: &Repo,
+    files: &[&ChangedFile],
+    budget: &DiffBudget,
+) -> Result<GatheredDiff, GcmError> {
     let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
     let stat = repo.diff_stat_for(&paths)?;
     let tracked = repo.diff_full_for(&paths)?;
     let mut body = elide_binary_diff(&tracked);
     let allow: HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
     append_untracked(repo, &mut body, Some(&allow))?;
-    cap_total(&mut body);
+    cap_total(&mut body, budget.total_bytes);
     Ok(GatheredDiff { stat, body })
 }
 
@@ -94,15 +149,16 @@ pub fn gather_for_files(repo: &Repo, files: &[&ChangedFile]) -> Result<GatheredD
 pub fn gather_for_grouping(
     repo: &Repo,
     changed: &[ChangedFile],
+    budget: &DiffBudget,
 ) -> Result<GroupingContext, GcmError> {
     let file_list = file_list_json(changed);
     let status = status_json(changed);
 
     let stat = repo.diff_stat()?;
     let tracked = repo.diff_full()?;
-    let mut body = truncate_per_file(&elide_binary_diff(&tracked), PER_FILE_DIFF_BYTES);
+    let mut body = truncate_per_file(&elide_binary_diff(&tracked), budget.per_file_bytes);
     append_untracked(repo, &mut body, None)?;
-    cap_total(&mut body);
+    cap_total(&mut body, budget.total_bytes);
 
     Ok(GroupingContext {
         file_list,
@@ -194,9 +250,9 @@ fn append_untracked(
 
 /// Coarse final safeguard on the whole assembled body (FR-57), truncating on a
 /// char boundary so a multibyte char split at the cap does not panic.
-fn cap_total(body: &mut String) {
-    if body.len() > MAX_TOTAL_BYTES {
-        let mut end = MAX_TOTAL_BYTES;
+fn cap_total(body: &mut String, total_bytes: usize) {
+    if body.len() > total_bytes {
+        let mut end = total_bytes;
         while end > 0 && !body.is_char_boundary(end) {
             end -= 1;
         }
@@ -355,6 +411,17 @@ fn flush_section(section: &str, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diff_budget_override_wins_else_default() {
+        // An env override (Some) wins; a default fills in for None (CLO-489 AC-8).
+        let b = DiffBudget::from_overrides(Some(1000), None, 350_000, 8192);
+        assert_eq!(b.total_bytes, 1000);
+        assert_eq!(b.per_file_bytes, 8192);
+        let d = DiffBudget::from_overrides(None, None, 256_000, 8192);
+        assert_eq!(d.total_bytes, 256_000);
+        assert_eq!(d.per_file_bytes, 8192);
+    }
 
     #[test]
     fn ascii_text_is_not_binary() {

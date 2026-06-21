@@ -4,8 +4,8 @@ mod debug;
 mod diff;
 mod error;
 mod git;
-mod groq;
 mod plan;
+mod provider;
 mod ui;
 
 use std::collections::HashSet;
@@ -16,6 +16,7 @@ use cli::Cli;
 use error::GcmError;
 use git::{ChangedFile, Repo};
 use plan::Plan;
+use provider::{ErrorKind, Provider};
 use ui::Decision;
 
 fn main() {
@@ -67,24 +68,31 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
         return Err(GcmError::UnmergedConflicts);
     }
 
+    // Select the provider once (FR-12, precedence flag > env > default). Pure
+    // w.r.t. the API key (keys are read lazily inside the calls), so this runs
+    // before the no-changes/merge branches without needing a key. An unknown
+    // provider name fails fast here.
+    let provider = provider::select(args.provider, args.model.as_deref())?;
+
     // `--all`, or a clean merge-in-progress, bypasses grouping and commits
     // everything as one. A clean `MERGE_HEAD` makes `git commit` finalize the
     // merge as a proper two-parent merge commit. The single-commit path clears
     // the cached plan (FR-28).
     if args.all || repo.is_merging() {
-        return single_commit(&repo, args);
+        return single_commit(&repo, args, provider.as_ref());
     }
 
     // Grouping path. A fresh plan is persisted to the per-repo cache; a cache
     // hit reuses it and skips the grouping call entirely (FR-25/FR-2). The
-    // model is folded into the freshness fingerprint (FR-27). A structured-
-    // output/parse/validation failure falls back to the single-commit path with
-    // an announced reason (never silent); a fatal error (missing key, git
-    // failure) is returned as-is.
-    let model = groq::resolved_model();
+    // provider-qualified model is folded into the freshness fingerprint (FR-27),
+    // so a provider/model switch re-analyzes. A structured-output/parse/
+    // validation failure falls back to the single-commit path with an announced
+    // reason (never silent); a fatal error (missing key, git failure) is
+    // returned as-is.
+    let model = provider.cache_model_id();
     let plan = match cache::load(&repo, &changed, &model) {
         Some(plan) => plan,
-        None => match build_plan(&repo, &changed) {
+        None => match build_plan(&repo, &changed, provider.as_ref()) {
             Ok(plan) => {
                 // Save the full plan even on a `--dry-run` (FR-7: dry-run
                 // uses/saves but does not advance); advancement is gated later.
@@ -94,12 +102,12 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
             Err(BuildError::Fatal(e)) => return Err(e),
             Err(BuildError::Fallback(reason)) => {
                 eprintln!("gcm: {reason}. Falling back to single-commit mode.");
-                return single_commit(&repo, args);
+                return single_commit(&repo, args, provider.as_ref());
             }
         },
     };
 
-    commit_first_group(&repo, args, &changed, &plan, &model)
+    commit_first_group(&repo, args, &changed, &plan, &model, provider.as_ref())
 }
 
 /// Whether the group-commit flow committed or the user aborted. Gates cache
@@ -121,17 +129,27 @@ enum BuildError {
 /// Model/plan failures (structured-output error, unparseable JSON, empty
 /// response, validation) are `Fallback`; a missing key or git failure is
 /// `Fatal`.
-fn build_plan(repo: &Repo, changed: &[ChangedFile]) -> Result<Plan, BuildError> {
-    let ctx = diff::gather_for_grouping(repo, changed).map_err(BuildError::Fatal)?;
-    let plan = groq::generate_plan(&ctx).map_err(|e| match e {
+fn build_plan(
+    repo: &Repo,
+    changed: &[ChangedFile],
+    provider: &dyn Provider,
+) -> Result<Plan, BuildError> {
+    let ctx = diff::gather_for_grouping(repo, changed, &provider.diff_budget())
+        .map_err(BuildError::Fatal)?;
+    let plan = provider.generate_plan(&ctx).map_err(|e| {
         // A missing or rejected key fails the single-commit fallback identically;
         // do not pretend to recover. Every other provider error degrades to the
         // single-commit path (the simpler message call may still succeed where the
         // json_schema plan call did not). CLO-492 owns richer fallback policy.
-        groq::GroqError::MissingKey | groq::GroqError::Auth(_) => {
-            BuildError::Fatal(GcmError::Groq(e))
+        let fatal = matches!(
+            e.kind,
+            ErrorKind::MissingKey { .. } | ErrorKind::Auth { .. }
+        );
+        if fatal {
+            BuildError::Fatal(GcmError::Provider(e))
+        } else {
+            BuildError::Fallback(e.to_string())
         }
-        other => BuildError::Fallback(other.to_string()),
     })?;
     let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
     plan::validate_basic(&plan, &change_set).map_err(|e| BuildError::Fallback(e.to_string()))?;
@@ -146,6 +164,7 @@ fn commit_first_group(
     changed: &[ChangedFile],
     plan: &Plan,
     model: &str,
+    provider: &dyn Provider,
 ) -> Result<(), GcmError> {
     display_groups(plan);
     let group1 = &plan.groups[0];
@@ -157,7 +176,11 @@ fn commit_first_group(
     // taken BEFORE staging. No grouping call is made here.
     let message = match group1.commit_message.as_deref() {
         Some(m) if !m.trim().is_empty() => m.to_string(),
-        _ => groq::generate_commit_message(&diff::gather_for_files(repo, &group1_files)?)?,
+        _ => provider.generate_message(&diff::gather_for_files(
+            repo,
+            &group1_files,
+            &provider.diff_budget(),
+        )?)?,
     };
 
     if args.dry_run {
@@ -208,10 +231,10 @@ fn commit_group_flow(
 
 /// The single-commit path (CLO-486 tracer): used by `--all`, a clean
 /// merge-in-progress, and the grouping fallback. Commits all changes as one.
-fn single_commit(repo: &Repo, args: &Cli) -> Result<(), GcmError> {
+fn single_commit(repo: &Repo, args: &Cli, provider: &dyn Provider) -> Result<(), GcmError> {
     if args.dry_run {
-        let gathered = diff::gather(repo)?;
-        let message = groq::generate_commit_message(&gathered)?;
+        let gathered = diff::gather(repo, &provider.diff_budget())?;
+        let message = provider.generate_message(&gathered)?;
         ui_preview(&message);
         return Ok(());
     }
@@ -223,16 +246,16 @@ fn single_commit(repo: &Repo, args: &Cli) -> Result<(), GcmError> {
     // and re-analyzes on a mismatch.
     cache::clear(repo);
     let snapshot = repo.snapshot_index()?;
-    let result = single_commit_flow(repo, args);
+    let result = single_commit_flow(repo, args, provider);
     if result.is_err() {
         let _ = repo.restore_index(&snapshot);
     }
     result
 }
 
-fn single_commit_flow(repo: &Repo, args: &Cli) -> Result<(), GcmError> {
-    let gathered = diff::gather(repo)?;
-    let message = groq::generate_commit_message(&gathered)?;
+fn single_commit_flow(repo: &Repo, args: &Cli, provider: &dyn Provider) -> Result<(), GcmError> {
+    let gathered = diff::gather(repo, &provider.diff_budget())?;
+    let message = provider.generate_message(&gathered)?;
     match ui::confirm(&message, args.yes)? {
         Decision::Abort => {
             println!("Aborted. Nothing staged, nothing committed.");

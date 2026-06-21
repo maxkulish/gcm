@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-21 (CLO-488 typed errors + retries, PR #6; CLO-491 merged on main)
+**Last Updated**: 2026-06-21 (CLO-489 provider trait + Gemini/OpenAI started, Spec phase; CLO-488 PR #6; CLO-491 merged on main)
 
 ## Current Blockers
 
@@ -17,7 +17,6 @@
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
 | CLO-493 | CLO-487 (grouping merged) | 2026-06-20 |
-| CLO-489 | CLO-486 + CLO-485 (both merged) | 2026-06-19 |
 | CLO-490 | CLO-486 (tracer merged) | 2026-06-19 |
 
-> CLO-488 moved to Active Work (In Progress) on 2026-06-20; now at the PR phase (PR #6). CLO-491 merged on main 2026-06-21.
+> CLO-489 moved to Active Work (In Progress, Spec phase) on 2026-06-21 — provider chain; unblocks CLO-494/495/496 on completion. CLO-488 at PR phase (PR #6). CLO-491 merged on main 2026-06-21.

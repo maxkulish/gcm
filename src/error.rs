@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::groq::GroqError;
+use crate::provider::ProviderError;
 
 /// Top-level runtime error. CLI usage errors are handled by clap (exit 2);
 /// every variant here maps to exit code 1. User abort is not an error and is
@@ -9,7 +9,7 @@ use crate::groq::GroqError;
 pub enum GcmError {
     NotARepo,
     Git(String),
-    Groq(GroqError),
+    Provider(ProviderError),
     /// Non-TTY context without `--yes`/`--no-input`: cannot prompt (ADR-001 #10).
     NonInteractive,
     Editor(String),
@@ -47,7 +47,7 @@ impl fmt::Display for GcmError {
                 write!(f, "not a git repository (run gcm inside a git work tree)")
             }
             GcmError::Git(msg) => write!(f, "{msg}"),
-            GcmError::Groq(e) => write!(f, "{e}"),
+            GcmError::Provider(e) => write!(f, "{e}"),
             GcmError::NonInteractive => write!(
                 f,
                 "no terminal available to confirm the commit. Re-run with --yes (or --no-input) \
@@ -69,9 +69,9 @@ impl fmt::Display for GcmError {
     }
 }
 
-impl From<GroqError> for GcmError {
-    fn from(e: GroqError) -> Self {
-        GcmError::Groq(e)
+impl From<ProviderError> for GcmError {
+    fn from(e: ProviderError) -> Self {
+        GcmError::Provider(e)
     }
 }
 
