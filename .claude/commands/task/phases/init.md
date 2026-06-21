@@ -45,45 +45,121 @@ ls docs/status/clo-XX-workflow.yaml 2>/dev/null
 
 ---
 
-## Step 2.3: Classify Task Type (New Workflow Only)
+## Step 2.3: Classify Task Type & Recommend (New Workflow Only)
 
-1. **If `--ops` flag provided**: Set `task_type: operational`
-2. **If `--spec` flag provided**: Set `task_type: specification`
+This step produces an **evidence-backed recommendation** for the task type, presents it for confirmation with the recommended option pre-selected, and records the rationale in the workflow YAML. The hardest call is the specification-vs-development boundary, so that is where the analytical effort goes; operational is detected cheaply from labels and keywords.
 
-3. **Otherwise, analyze task**:
-   - Check Linear labels for: `ops`, `maintenance`, `admin`, `devops`
-   - Check title for keywords: "restore", "backup", "migrate", "configure", "setup", "fix", "investigate", "cleanup"
-   - Check description length and complexity (short + clear scope -> specification)
-   - Check description for procedural content (step-by-step instructions -> operational)
+### 2.3.0 - Flag override
 
-4. **Auto-classify if clear indicators**:
-   - 2+ ops keywords -> likely operational
-   - Short, well-scoped description with no architecture decisions needed -> likely specification
-   - Complex feature requiring architecture decisions -> development
+- **If `--ops` flag provided**: Set `task_type: operational`, `classification.method: flag`. Skip the probe, proceed to 2.3.5.
+- **If `--spec` flag provided**: Set `task_type: specification`, `classification.method: flag`. Skip the probe, proceed to 2.3.5.
+- If a flag contradicts the cheap operational signals (2.3.1), print a one-line heads-up but honor the flag (explicit user intent wins).
 
-5. **Ask user if ambiguous**:
-   ```
-   TASK TYPE CLASSIFICATION
+### 2.3.1 - Operational gate (cheap, first)
 
-   Task: CLO-XX - [title]
-   Labels: [labels]
-   Indicators found: [list]
+Scan Linear labels and title for operational indicators:
+- **Labels**: `ops`, `maintenance`, `admin`, `devops`, `bug`, `hotfix`
+- **Title keywords**: `restore`, `backup`, `migrate`, `configure`, `setup`, `investigate`, `cleanup`
 
-   Which workflow should we use?
+If **2+ indicators** are present:
+- Set `classification.recommended: operational`, `classification.method: operational_gate`, `classification.confidence: high`
+- Skip the codebase probe, go to 2.3.4 (still presented for confirmation)
 
-   1. [development] - Full workflow (design doc Q&A -> plan -> implement -> PR)
-      Use for: New features with architecture decisions, complex cross-module changes (L scope)
+Otherwise, proceed to 2.3.2.
 
-   2. [specification] - Lean workflow (write spec -> implement -> PR)
-      Use for: Well-scoped features, clear requirements, single-module changes (S/M scope)
+### 2.3.2 - Evidence gathering (the check)
 
-   3. [operational] - Streamlined workflow (execute -> document -> PR if needed)
-      Use for: Troubleshooting, configuration, admin tasks, investigations
+Runs for the specification-vs-development boundary.
 
-   Your choice:
-   ```
+**Metadata** (from the Linear issue already fetched): title, description, labels, comments, subtask count, estimate.
 
-6. **Initialize based on classification**:
+**Codebase probe** (bounded to stay cheap):
+1. Extract up to ~5 candidate component or symbol names from the description.
+2. Use Grep/Glob to **locate** them - locate, do not read full files.
+3. Count distinct top-level modules implicated -> blast radius.
+4. Search for similar existing code -> prior art.
+5. Check `docs/adrs/` and `docs/design-docs/` for related decisions.
+6. Flag architecture-decision triggers: new dependency, new data model or migration, new public interface, new process boundary, state-ownership or concurrency change.
+
+Fill the evidence table. Each row records `lean: spec|dev|neutral` and one line of evidence drawn from the probe (record `neutral` when the evidence is inconclusive):
+
+| Dimension | Leans SPEC | Leans DEVELOPMENT |
+|---|---|---|
+| Blast radius | single module / few files | cross-module / many files |
+| Architecture novelty | follows an existing pattern | new data model, dependency, interface, process boundary, or state/concurrency change |
+| Prior art | similar existing code is a template | greenfield, no template |
+| Requirement clarity | acceptance criteria derivable now | open questions / trade-offs remain |
+| Scope signal | S/M estimate | L/XL estimate |
+
+### 2.3.3 - Verdict and confidence
+
+Make a **holistic verdict** over the table (not a weighted sum). Derive confidence from row agreement:
+- 4-5 rows aligned -> `high`
+- 3/2 split -> `medium`
+- mostly neutral or even -> `low`
+
+A vague ticket where the probe finds little produces neutral rows and therefore low confidence, which correctly signals the task needs the discussion a full cycle provides.
+
+Set `classification.recommended` to the verdict and `classification.method: probe`.
+
+### 2.3.4 - Present and confirm
+
+Display the recommendation with the recommended option pre-selected (Enter accepts):
+
+```
+TASK CLASSIFICATION - CLO-XX: [title]
+
+Recommendation:  [TYPE]   confidence: [HIGH|MEDIUM|LOW] ([N]/5 signals aligned)
+
+Evidence:
+  Blast radius          [lean]   [note]
+  Architecture novelty  [lean]   [note]
+  Prior art             [lean]   [note]
+  Requirement clarity   [lean]   [note]
+  Scope signal          [lean]   [note]
+
+Rationale: [one-line synthesis]
+
+  1. [development]    full cycle (discovery -> design -> plan -> implement -> PR)
+                      For: new features with architecture decisions, cross-module changes (L scope)
+  2. [specification]  lean (spec -> implement -> PR)
+                      For: well-scoped features, clear requirements, single-module changes (S/M scope)
+  3. [operational]    streamlined (execute -> document -> PR if needed)
+                      For: troubleshooting, configuration, admin tasks, investigations
+  4. [pause]          save state, continue later
+
+(The RECOMMENDED marker appears on the recommended option.)
+Choice [Enter = recommended]:
+```
+
+- **Enter** or selecting the recommendation -> accept.
+- **A different number** -> override; record the divergence in `classification.chosen`.
+- **pause** -> save state and exit with resume instructions.
+
+Set `classification.chosen` to the user's selection (operational gate short-circuits here too: present, confirm, set `chosen`).
+
+### 2.3.5 - Record and initialize
+
+Write the classification block to the workflow YAML:
+
+```yaml
+classification:
+  recommended: <type>
+  chosen: <type>               # may differ from recommended
+  confidence: <high|medium|low>
+  method: <flag|operational_gate|probe>
+  evidence:                    # omit when method is flag or operational_gate
+    blast_radius:         { lean: <spec|dev|neutral>, note: "<evidence>" }
+    architecture_novelty: { lean: <spec|dev|neutral>, note: "<evidence>" }
+    prior_art:            { lean: <spec|dev|neutral>, note: "<evidence>" }
+    requirement_clarity:  { lean: <spec|dev|neutral>, note: "<evidence>" }
+    scope_signal:         { lean: <spec|dev|neutral>, note: "<evidence>" }
+  rationale: "<one-line synthesis>"
+```
+
+Add history entry: `task_classified` (details: recommended, chosen, confidence).
+
+Then initialize phases for the chosen `task_type`:
 
    **For Development tasks**:
    ```yaml

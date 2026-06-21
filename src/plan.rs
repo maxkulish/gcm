@@ -1,20 +1,22 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// The grouping plan returned by the provider's structured-output mode
 /// (ADR-001 Decision 1). Typed deserialization replaces the bash tool's
 /// `sed -> perl -> jq` scrape of reasoning-polluted JSON (FR-16, FR-19).
-#[derive(Debug, Deserialize)]
+/// `Serialize`/`Clone` so the plan can be persisted to (and advanced in) the
+/// per-repo cache (CLO-491, FR-25).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Plan {
     pub groups: Vec<Group>,
 }
 
 /// One logical commit: the files it covers, a one-line summary, and (for
 /// `groups[0]` only, per the regenerate-per-group contract) a commit message.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Group {
     pub files: Vec<String>,
     pub summary: String,

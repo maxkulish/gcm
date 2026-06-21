@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-20 (CLO-488 typed errors + retries started)
+**Last Updated**: 2026-06-21 (CLO-488 typed errors + retries, PR #6; merged with CLO-491 on main)
 
 ## Current Blockers
 
@@ -16,7 +16,6 @@
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| CLO-491 | CLO-487 + CLO-485 (both merged) | 2026-06-20 |
 | CLO-493 | CLO-487 (grouping merged) | 2026-06-20 |
 | CLO-489 | CLO-486 + CLO-485 (both merged) | 2026-06-19 |
 | CLO-490 | CLO-486 (tracer merged) | 2026-06-19 |

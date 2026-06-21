@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.ts",
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
     "@mariozechner/pi-tui": "^0.70.5",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "typebox": "^1.1.24"

@@ -17,6 +17,12 @@ pub enum GcmError {
     /// The repository has unresolved merge conflicts (unmerged index entries).
     /// gcm aborts rather than risk committing conflict markers (CLO-487).
     UnmergedConflicts,
+    /// `git commit` itself failed after the group was staged (e.g. a rejecting
+    /// pre-commit hook, a signing failure). The group is left **staged** and the
+    /// plan cache is **not** advanced so the user can fix and retry (CLO-491,
+    /// FR-58). Distinct from [`GcmError::Git`] (pre-commit-step failures, which
+    /// restore the index).
+    CommitFailed(String),
 }
 
 impl GcmError {
@@ -24,6 +30,13 @@ impl GcmError {
     /// is produced by clap before we get here.
     pub fn exit_code(&self) -> i32 {
         1
+    }
+
+    /// Whether this error means the staged group should be **left in place**.
+    /// Only a commit-step failure ([`GcmError::CommitFailed`]) leaves the group
+    /// staged (FR-58); every other error restores the pre-run index (FR-47).
+    pub fn leaves_staged(&self) -> bool {
+        matches!(self, GcmError::CommitFailed(_))
     }
 }
 
@@ -47,6 +60,11 @@ impl fmt::Display for GcmError {
                 "repository has unresolved merge conflicts; resolve them and stage your \
                  resolution before running gcm"
             ),
+            GcmError::CommitFailed(msg) => write!(
+                f,
+                "{msg}\nThe group is left staged and the plan was not advanced; \
+                 fix the issue and re-run gcm to retry this group."
+            ),
         }
     }
 }
@@ -54,5 +72,31 @@ impl fmt::Display for GcmError {
 impl From<GroqError> for GcmError {
     fn from(e: GroqError) -> Self {
         GcmError::Groq(e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_commit_failed_leaves_the_group_staged() {
+        // FR-58: a commit-step failure leaves the group staged; every other
+        // error restores the pre-run index (FR-47).
+        assert!(GcmError::CommitFailed("hook rejected".to_string()).leaves_staged());
+        assert!(!GcmError::Git("git add failed".to_string()).leaves_staged());
+        assert!(!GcmError::UnmergedConflicts.leaves_staged());
+        assert!(!GcmError::NotARepo.leaves_staged());
+    }
+
+    #[test]
+    fn commit_failed_surfaces_the_underlying_error() {
+        let msg =
+            GcmError::CommitFailed("git commit failed (see output above)".to_string()).to_string();
+        assert!(msg.contains("git commit failed"));
+        assert!(
+            msg.contains("left staged"),
+            "tells the user the group is kept"
+        );
     }
 }
