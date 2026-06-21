@@ -57,6 +57,10 @@ At the prompt: `Y`/Enter commits group 1, `n` aborts (exit 0, nothing staged), `
 | `GCM_GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model id |
 | `GCM_GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | Override the API base URL |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
+| `GCM_DEBUG` | (unset) | When set (not `0`), print the typed provider error and each retry attempt to stderr |
+| `GCM_RETRY_MAX` | `3` | Max retries for transient (429/5xx) failures |
+| `GCM_RETRY_BASE_MS` | `500` | Base backoff in ms (doubles per attempt) |
+| `GCM_RETRY_MAX_MS` | `8000` | Per-attempt backoff cap in ms |
 
 ### Exit codes
 
@@ -82,6 +86,12 @@ with an actionable message rather than hanging on a prompt.
   unavailable, unparseable JSON, or a plan that references files outside the change set),
   `gcm` announces it and falls back to a single commit. An unresolved merge conflict makes
   `gcm` stop with an error rather than risk committing conflict markers.
+- **Resilient provider calls**: failures are classified into typed errors (rate-limit,
+  bad-request, auth, server, timeout, transport, parse). Transient ones (HTTP 429 and 5xx)
+  are retried with bounded exponential backoff, so a rate limit or a server blip self-heals
+  with no user-visible failure; 400 and auth errors fail fast with an actionable message and
+  are never retried. All retries happen before anything is staged. Set `GCM_DEBUG=1` to see
+  the typed error and retry attempts.
 - **Transactional**: messages are generated before anything is staged. If you decline, or
   signing / a pre-commit hook fails, the index is restored to its pre-run state.
 - **Safe diff read**: binary files are elided, each file's diff is truncated independently

@@ -11,7 +11,11 @@ are staged in full, later groups are left unstaged (their changes are never lost
 \n\
 PRIVACY: gcm sends your working-tree diff and the content of untracked, non-gitignored\n\
 files to the configured LLM provider (Groq) to generate the plan and commit messages.\n\
-Gitignored files (e.g. .env) are never sent. See the README for each provider's data policy.";
+Gitignored files (e.g. .env) are never sent. See the README for each provider's data policy.\n\
+\n\
+RESILIENCE: transient provider failures (HTTP 429 rate limit, 5xx) are retried with\n\
+bounded exponential backoff; 400/auth errors fail fast. Set GCM_DEBUG=1 to print the\n\
+typed error and retry attempts to stderr.";
 
 #[derive(Parser, Debug)]
 #[command(

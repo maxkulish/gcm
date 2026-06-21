@@ -1,0 +1,225 @@
+# Workflow state for CLO-488
+# Managed by /task:orchestrate
+
+task: CLO-488
+title: "Make provider calls resilient with typed errors and retries"
+linear_url: https://linear.app/cloud-ai/issue/CLO-488/make-provider-calls-resilient-with-typed-errors-and-retries
+branch: feat/clo-488-typed-errors
+task_type: specification        # S4 slice; extends CLO-486 Groq provider call; architecture pre-locked by ADR-001
+deliverable: src/ (typed error taxonomy in groq.rs + bounded exponential backoff retry on 429/5xx + defensive parsing; never retry 400/auth)
+slice: S4
+labels: [AFK]                   # agent may implement and merge without human input
+priority: High
+covers_fr: [20, 21, 22]          # FR-20 defensive parsing fallback, FR-21 typed error taxonomy (Must), FR-22 retry+backoff (Must)
+
+# Reference material for the spec/implementation
+references:
+  adr: docs/adrs/001-foundational-architecture-decisions.md   # Decision 2 (blocking ureq client - no async), Decision 3 (typed errors + retries cited), capability matrix (Groq 429/400 semantics)
+  prd: docs/prds/prd-gcm.md   # FR-20 (line 151), FR-21 (152), FR-22 (153); problem 3 (line 25); success metric (line 45)
+  bash_origin: docs/tmp/git-commit-ai.sh   # the 2>/dev/null collapse-to-empty failure this replaces
+  prior_spec: docs/specs/2026-06-20-clo-487-semantic-grouping.md   # immediate predecessor; same spec/format
+  tracer_spec: docs/specs/2026-06-19-clo-486-single-commit-tracer.md   # established the GroqError taxonomy this extends
+  groq_src: src/groq.rs   # GroqError enum (lines 39-63) + send_chat/map_ureq_error (100-220) - the extension point
+  error_src: src/error.rs   # GcmError::Groq wrapper
+  main_src: src/main.rs   # build_plan fallback routing (93-103); MissingKey=Fatal, other=Fallback
+  prior_workflow: docs/status/clo-487-workflow.yaml
+
+depends_on:
+  blocked_by: []                 # CLO-486 merged (b7ff8fc) -> satisfied
+  blocks: [CLO-492, CLO-497]     # CLO-492 (validation+fallback) needs typed errors; CLO-497 (release) needs the full feature set
+
+workflow:
+  current_phase: pr
+  status: in_progress
+  classification_rationale: "Same profile as CLO-486/487 (both user-confirmed specifications): ADR-001 locks every architecture decision relevant here (Decision 2 = blocking ureq client, no async runtime for retries; Decision 3 explicitly names 'typed errors (FR-21) and retries (FR-22)' as a driver; capability matrix records Groq's 429/400/json_schema semantics). FR-20/21/22 are fully specified Must-level requirements with explicit/testable acceptance criteria in the Linear task. AFK autonomy. Extends an existing module (src/groq.rs, whose GroqError doc comment literally says 'the full typed-error/retry surface (FR-21/22) lands in CLO-488') - no new architecture decisions, so a full discovery/design-doc would be near-empty. Auto-classified specification (no flag); AFK label authorizes proceeding without a classification prompt."
+
+phases:
+  discovery:
+    status: skipped
+    skip_reason: "Specification task - PRD mature, ADR-001 Accepted; error taxonomy + retry policy pre-decided (FR-21/22 Must, ADR Decision 3); no architecture decisions remain"
+    approved: true
+  design:
+    status: skipped
+    reason: "Specification task - using /spec instead of a full design doc; architecture fixed by ADR-001 (blocking client, typed errors + retries)"
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-20-clo-488-typed-errors.md
+    approved: true
+    approved_at: 2026-06-20T18:40:00Z
+    scope: "M (~6 files, ~6 sub-tasks)"
+    review_completed: true
+    review_gemini: docs/reviews/clo-488-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-488-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-488-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS   # Gemini APPROVE_WITH_SUGGESTIONS (substantive); Ollama APPROVE_WITH_SUGGESTIONS (structural confirmation only, no distinct findings); Claude fallback not invoked
+    review_pipeline_note: "lok spec-review succeeded end-to-end (exit 0; no NUL-byte synthesis failure like CLO-487). Gemini gave 9 concrete suggestions; Ollama (glm-5:cloud) returned only a meta structural confirmation."
+    review_applied: true
+    applied_suggestions:
+      - "HIGH: cap the non-2xx error-body read at 4096 bytes (response.body_mut().as_reader().take(4096)) - guards against large HTML error pages (Cloudflare 502/504) -> Constraints + 3b + sub-task 2 + eval 21"
+      - "MED: retry_with sleeper typed `mut sleep: impl FnMut(Duration)` (+ FnMut op) so the recording test sleeper needs no RefCell/Mutex -> Constraints + 3b pseudocode + sub-task 3"
+      - "MED: BadRequest.detail extracts error.message from the JSON body, else raw truncated <=200 chars (bad_request_detail helper) -> Constraints + 3b + sub-task 2 + eval 24"
+      - "MED: Retry-After header lookup must be case-insensitive -> Constraints + 3b + sub-task 2 + eval 6"
+      - "MED: generate_plan maps PlanError -> GroqError::Deserialize(e.to_string()) (resolves the signature mismatch) -> Constraints + sub-task 4"
+      - "LOW: normalize Auth(u16) (variant) vs Auth(code)/Auth(_) bindings -> 3b table + naming note"
+      - "LOW: PlanError::Parse(String) gets a Display arm `plan parse error: {msg}` + an assertion -> Constraints + sub-task 4 + AC-9 + eval 22"
+      - "LOW: add a multi-fence/prose-prefixed parse_defensive eval case -> AC-9 + eval 23"
+      - "LOW: document parse_defensive layer-4 precedence (top-level groups -> wrapper keys -> DFS) -> Constraints + 3b + sub-task 4"
+    flagged_suggestions: []   # none contradicted ADR-001 or any prior decision; zero user-conflict prompts
+    review_round2_user_impl:
+      source: "user (deep implementation-level review at the spec checkpoint, 5 points)"
+      verified: "points 1-3 empirically reproduced with the project's serde_json in a throwaway crate before applying (CLO-487-style receiving-code-review discipline)"
+      applied:
+        - "P1 (VALID, empirical): first-balanced-brace extraction is brittle - prose with a decoy '{...}' grabs the wrong block and never reaches the real JSON (from_str::<Value> on prose+json = Err, so a parse-whole-then-search recovery cannot start either). Fix: candidate-and-recover - try ALL balanced {...} substrings + each fenced block, first success wins. -> Constraints + 3b + sub-task 4 + eval 25."
+        - "P2 (VALID, empirical): from_value::<Plan>(bare array) = Err('invalid type: map, expected a sequence'); must re-wrap as json!({\"groups\": arr}) before from_value. -> Constraints + 3b + sub-task 4 + eval 27."
+        - "P3 (VALID, empirical): naive multi-fence strip concatenates blocks into invalid JSON (from_str::<Value> = Err). Fix: extract each fenced block's inner content as a separate candidate; never delete-markers-and-concatenate. -> Constraints + 3b + sub-task 4 + eval 26."
+        - "P4 (CORRECT AS-IS, locked): 504 Gateway Timeout -> Server(504) (retryable) via the 500..=599 arm; do NOT special-case to client Timeout. Added explicit note + classify(504) test. -> 3b note + AC-4 + eval 28."
+        - "P5 (MINOR, applied): dropped 'retries were exhausted' from RateLimit/Server Display (inaccurate at GCM_RETRY_MAX=0); retry count lives in the GCM_DEBUG trace, not the user message. -> 3b table + AC-4."
+      also_hardened: "balanced-brace scan must be string/escape-aware so a brace inside a JSON string value (e.g. a path 'a}b') cannot truncate the candidate -> eval 29."
+      pushback: "none required - all 5 points were correct (3 empirically confirmed, P4 was already correct and just needed locking, P5 a minor accurate refinement). No conflict with ADR-001."
+    key_decisions:
+      - "Retryable set = {429 RateLimit, 5xx Server} ONLY (matches FR-22 normative text); Timeout/Transport NOT retried this slice (a 30s client timeout already waited - retrying risks a multi-minute CLI hang)."
+      - "send_chat switches to http_status_as_error(false) to inspect status + Retry-After header + 400 error-body detail; pure classify_status() helper for unit testing."
+      - "Bounded exponential backoff: max_retries=3, base=500ms, cap=8s; Retry-After honored on 429 (capped to max); env overrides GCM_RETRY_MAX/BASE_MS/MAX_MS for testability + power users."
+      - "retry_with() takes an INJECTED sleep fn so unit tests record durations with no real sleeps + no network; std::thread::sleep in production (blocking client, ADR-001 Decision 2)."
+      - "FR-20 defensive parse_defensive() in plan.rs: fence-strip -> direct -> balanced-object -> Value(top/wrapper-key/recursive groups); adds PlanError::Parse; <think> strip stays upstream."
+      - "Minimal env-gated src/debug.rs (GCM_DEBUG -> stderr) for 'error type visible in debug logs' AC; explicitly NOT a logging framework (CLO-493 owns FR-38)."
+      - "main.rs: Auth(_)|MissingKey -> Fatal (key fails both paths); other GroqError -> Fallback (unchanged). No new fallback branches (CLO-492 owns fallback)."
+      - "No new crate deps (no tokio/rand/tracing); std-only retry; retries are strictly pre-staging so index transaction (FR-47) is untouched."
+  implement:
+    status: in_progress
+    approach: "Direct implementation from the spec decomposition (specification workflow - no separate plan file; the 6 sub-tasks ARE the plan). TDD on pure-logic units (classify_status, parse_retry_after, bad_request_detail, is_retryable, backoff_delay, retry_with via injected sleeper, parse_defensive/recover_groups, Display distinctness) with stub->RED->impl->GREEN; scripts/acceptance.sh for integration via the extended stateful mock-Groq harness. Sub-task order 1->2->3->4->5->6."
+    sub_tasks:
+      - { n: 1, name: "src/debug.rs: GCM_DEBUG-gated stderr log helper + module decl", status: complete }
+      - { n: 2, name: "src/groq.rs: typed taxonomy + classify_status + send_chat_once (http_status_as_error(false), capped body, Retry-After, bad_request_detail)", status: complete }
+      - { n: 3, name: "src/groq.rs: RetryConfig+from_env, is_retryable, retry_after_hint, backoff_delay, retry_with(FnMut sleeper); wire send_chat", status: complete }
+      - { n: 4, name: "src/plan.rs: PlanError::Parse + Display + parse_defensive (candidate-and-recover) + recover_groups; generate_plan uses it", status: complete }
+      - { n: 5, name: "src/main.rs: Auth|MissingKey->Fatal routing; GCM_DEBUG final {e:?}", status: complete }
+      - { n: 6, name: "tests + scripts/acceptance.sh stateful mock (/retry429,/fail400,/fail401) + README/--help docs", status: complete }
+    tdd_note: "Pure-logic units done test-first: stub (todo!()) -> watched RED (cargo test) -> implemented -> watched GREEN. classify_status/parse_retry_after/bad_request_detail/Display, is_retryable/retry_after_hint/backoff_delay/retry_with(injected FnMut sleeper), parse_defensive/recover_groups/balanced_end/Parse-Display all RED-then-GREEN. main.rs routing + GCM_DEBUG are integration-covered by acceptance.sh (not unit-testable without heavy mocking)."
+    review_fixes_implemented: "All 9 lok suggestions + all 5 user round-2 points are in the code: 4096-byte capped error-body read (with_config().limit()); FnMut sleeper (recording test sleeper, no RefCell); BadRequest.detail via error.message-or-200-char-truncate; case-insensitive Retry-After (http::HeaderMap native); PlanError->GroqError::Deserialize map; candidate-and-recover parse (per-fence + all string/escape-aware balanced {..} + whole), json!({groups:arr}) re-wrap, top->wrapper->DFS precedence; 504->Server; dropped 'retries exhausted' wording."
+    new_files: [src/debug.rs]
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "68 passed (2 debug, 23 groq incl. taxonomy/retry policy/loop, 19 plan incl. defensive parse, + existing diff/git/etc.)"
+      cargo_build_release: ok
+      acceptance_sh: "89 PASS / 0 FAIL / 1 SKIP (manual $EDITOR). New CLO-488 cases: AC-488-1 429-retry-then-success (3 reqs), AC-488-2 400 fast-fail (1 req), AC-488-3 401 fast-fail names key (1 req), AC-488-4 5xx exhausts (4 reqs) + index untouched, AC-488-8 GCM_DEBUG variant visible / silent when unset."
+    egress_note: "Real Groq HTTP not exercised in-sandbox (same egress limit as CLO-486/487); retry+taxonomy proven by unit tests (injected sleeper, no network) + the stateful mock-Groq acceptance harness. Binary reaches Groq in the user's real environment."
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-488-gemini-validation.md
+        verdict: PASS
+        notes: "No new findings. One optional future-hardening note: parse_defensive's balanced-object scan only extracts {..}; an UNFENCED bare [..] array after prose would not be captured - 'incredibly unlikely' under Groq strict json_schema + markdown fences; deferred (the fix strictly meets the finding criteria). Initial run failed on a trusted-directory gate; re-run with GEMINI_CLI_TRUST_WORKSPACE=true."
+        mode: "--sandbox -y read-only; no working-tree mutation"
+      codex:
+        report: docs/reviews/clo-488-codex-validation.md
+        verdict: FAIL
+        mode: "-s read-only (GPT-5.4 high effort); HEAD unchanged"
+        findings_applied:
+          - "HIGH: parse_defensive could not recover a bare top-level groups array [{..},..] (no {groups:..} wrapper) -> recover_groups now treats a top-level Value::Array as the groups payload + re-wraps; the Plan deserialize still validates element shape. Commit 188db85 + plan unit test parse_defensive_bare_top_level_array."
+          - "MEDIUM: bounded body read used ureq limit().read_to_string(), which ERRORS once the cap is hit (VERIFIED in ureq 3.3.0 src: LimitReader returns BodyExceedsLimit; ureq's own limit_below_size test confirms), so BadRequest.detail dropped to None for bodies >=4096B. Fix: std Take reader (as_reader().take(4096).read_to_end) + from_utf8_lossy. Commit 188db85 + acceptance AC-488-9 (>4096 body)."
+          - "LOW: GCM_RETRY_MAX parsed u64 then `as u32` (wraps out-of-range to a surprising count) -> u32::try_from(..).ok() so invalid -> default. Commit 188db85."
+        missing_coverage_added:
+          - "AC-488-3b: 403 auth fast-fail (the same Auth arm as 401, now exercised)."
+          - "AC-488-8b: retry attempts logged under GCM_DEBUG (transient RateLimit variant visible during retries)."
+          - "AC-488-9: >4096-byte error body stays bounded yet still yields a (truncated) detail."
+        findings_declined: []   # all 3 findings were valid (each verified) and applied; nothing declined
+      post_fix_quality_gate:
+        cargo_test: "69 passed (+parse_defensive_bare_top_level_array)"
+        cargo_clippy: "clean (-D warnings)"
+        cargo_fmt: clean
+        acceptance_sh: "96 PASS / 0 FAIL / 1 SKIP (+AC-488-3b, +AC-488-8b, +AC-488-9)"
+      fix_commit: 188db85
+      codex_revalidation:
+        report: docs/reviews/clo-488-codex-revalidation.md
+        verdict: "PASS_WITH_NOTES (all 3 findings RESOLVED; no new findings; only note = read-only sandbox could not run tests, which we did: 69 unit + 96 acceptance green)"
+      converged: true   # Gemini PASS; Codex FAIL -> fixed -> PASS_WITH_NOTES
+    codex_validated: true
+    codex_verdict: "FAIL -> PASS_WITH_NOTES (converged)"
+    codex_report: docs/reviews/clo-488-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-488-gemini-validation.md
+    status: complete
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/6
+    pr_number: 6
+    base: main
+    head: feat/clo-488-typed-errors
+    files_changed: 18
+    diff: "+1574 / -25"
+    commits: [5d72be1, bd997d5, 188db85, 3a3bd2b]
+    pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / cargo test (69) - all clean before PR"
+    ci_passed: true    # GitHub Actions green on macOS + Linux
+    ci_runs: [27881768339]
+    merge_state: "CLEAN / MERGEABLE; no required reviews"
+    reviews_addressed: 1
+    review_rounds:
+      - reviewer: copilot-pull-request-reviewer
+        verdict: COMMENTED
+        comments: 2
+        finding: "Both comments: debug::log(&format!(..)) eagerly allocates the formatted String even when GCM_DEBUG is off (format! runs before log() checks enabled()). Valid (low impact - error paths only)."
+        fix: "Replaced with a debug_log! macro that gates format_args! behind enabled() (no allocation when off); main.rs uses it too. Commit c3f7a71. Both comments replied (2/2)."
+  complete:
+    status: pending
+
+# Scope checklist (from the Linear task)
+scope:
+  - "Typed error taxonomy: rate-limit (429), bad-request (400), server (5xx), timeout, auth, parse"
+  - "Retry 429/5xx with bounded exponential backoff; never retry 400/auth"
+  - "Defensive parsing fallback when structured output is unavailable (FR-20)"
+  - "Surface a clear, distinct message per error type"
+
+acceptance_criteria:
+  - "A simulated 429 retries and then succeeds with no user-visible failure"
+  - "A 400/auth error fails fast with an actionable message (no retry loop)"
+  - "The error type is visible in debug logs"
+
+history:
+  - timestamp: 2026-06-20T18:09:52Z
+    action: workflow_started
+    phase: spec
+    details: "New workflow for CLO-488 (S4 resilient provider calls: typed errors + retries, FR-20/21/22). Auto-classified specification: same profile as CLO-486/487 (ADR-001 locks architecture - Decision 2 blocking client, Decision 3 names typed errors + retries as a driver; capability matrix records Groq 429/400 semantics), explicit Must-level FRs with testable ACs, AFK autonomy, extends src/groq.rs whose GroqError doc comment already earmarks this surface for CLO-488. No flags; AFK authorizes autonomous proceed. Discovery + design-doc skipped."
+  - timestamp: 2026-06-20T18:09:52Z
+    action: project_sync_start
+    phase: spec
+    details: "WIP 0/3 (none active -> room), CLO-488 unblocked (CLO-486 merged b7ff8fc satisfied the only blocker; not in Current Blockers). PROJECT.md: added to Active Work (Phase: Spec), removed from Up Next, narrative + Last-Updated bumped. ROADMAP.md: Ready -> In Progress. DEPENDENCIES.md: removed from Unblocked & Ready, note added. All three Last-Updated -> 2026-06-20 (CLO-488 started)."
+  - timestamp: 2026-06-20T18:23:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "lok spec-review succeeded end-to-end (exit 0 - no NUL-byte synthesis failure like CLO-487). Gemini 3.5 Flash: APPROVE_WITH_SUGGESTIONS with 9 concrete suggestions (1 High, 4 Med, 4 Low). Ollama (glm-5:cloud): APPROVE_WITH_SUGGESTIONS but only a meta structural confirmation (no distinct technical findings). Claude fallback not invoked. Consolidated APPROVE_WITH_SUGGESTIONS; no NEEDS_REVISION. Reviews in docs/reviews/clo-488-spec-review-{gemini,ollama,synthesis}.md."
+  - timestamp: 2026-06-20T18:24:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "All 9 Gemini suggestions auto-applied (each additive/refinement/risk-hardening; none contradicted ADR-001 or any prior decision -> zero user-conflict prompts). HIGH: 4096-byte cap on the non-2xx error-body read (large-HTML-error guard). MED: FnMut sleeper (no RefCell in tests); BadRequest.detail = error.message-or-truncated; case-insensitive Retry-After; explicit PlanError->GroqError::Deserialize mapping. LOW: Auth(u16) naming normalized; PlanError::Parse Display + assertion; multi-fence/prose parse eval; parse_defensive layer-4 precedence documented. Eval grew to 24 rows. Spec advanced to checkpoint."
+  - timestamp: 2026-06-20T18:38:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "Round 2: user delivered a deep implementation-level review at the spec checkpoint (5 points). Points 1-3 empirically reproduced with the project's serde_json in a throwaway crate before applying (receiving-code-review discipline): P1 first-balanced-brace is brittle on prose-with-decoy-brace; P2 from_value::<Plan>(bare array) errors -> must wrap json!({groups:arr}); P3 naive multi-fence strip concatenates to invalid JSON. Rewrote parse_defensive to a candidate-and-recover strategy (per-fence inner content + all string/escape-aware balanced {...} substrings + whole content; per-candidate from_str::<Plan> then recover_groups re-wrapped via from_value). P4 (504->Server, correct as-is) locked with a note + classify test; P5 dropped the inaccurate 'retries were exhausted' Display wording. Eval grew to 29 rows. No pushback needed - all points correct; no ADR-001 conflict."
+  - timestamp: 2026-06-20T18:40:00Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved at the spec checkpoint ('continue with updated plan, approved') after the round-2 implementation fixes were applied. Consensus APPROVE_WITH_SUGGESTIONS (Gemini substantive + Ollama structural); all 9 lok suggestions + all 5 user round-2 points applied. Plan phase skipped (spec decomposition IS the plan). Advancing to implement; will run autonomously through implementation + the dual-model validation gate (AFK) and stop at the PR checkpoint."
+  - timestamp: 2026-06-20T19:30:00Z
+    action: implementation_complete
+    phase: implement
+    details: "6 sub-tasks done TDD-first (stub todo!() -> watched RED via cargo test -> implemented -> watched GREEN) for every pure-logic unit: debug.rs (GCM_DEBUG gate), groq.rs taxonomy (classify_status/parse_retry_after/bad_request_detail/Display + send_chat_once with http_status_as_error(false), capped body, Retry-After), groq.rs retry (RetryConfig/is_retryable/retry_after_hint/backoff_delay/retry_with with injected FnMut sleeper), plan.rs defensive parse (parse_defensive candidate-and-recover + recover_groups + Parse), main.rs routing (Auth|MissingKey->Fatal) + GCM_DEBUG {e:?}, acceptance.sh stateful mock + docs. Commits 5d72be1 (feat) + bd997d5 (docs). 68 unit + 89 acceptance green; no new deps; no async."
+  - timestamp: 2026-06-20T19:55:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Validation gate (both read-only - Codex -s read-only, Gemini --sandbox; HEAD unchanged, no CLO-486-style YOLO incident). Gemini PASS (no new findings; one optional unfenced-bare-array note, deferred). Codex round 1 FAIL: HIGH (bare top-level groups array unrecoverable), MEDIUM (ureq limit().read_to_string() ERRORS at the cap -> BadRequest.detail dropped for >=4096B bodies; VERIFIED against ureq 3.3.0 source), LOW (GCM_RETRY_MAX `as u32` wraps). All 3 verified valid and fixed (commit 188db85) with regression tests + AC-488-3b/8b/9 coverage; nothing declined. Codex re-validation: PASS_WITH_NOTES, all RESOLVED, no new findings. Converged. Post-fix: 69 unit + 96 acceptance green, fmt + clippy clean."
+  - timestamp: 2026-06-20T20:05:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check clean; cargo clippy --all-targets -D warnings clean; cargo test 69 passed; tree clean (removed a stray throwaway test_parse.rs dropped by a validation tool). TypeScript checks N/A - Rust project."
+  - timestamp: 2026-06-20T20:06:00Z
+    action: pr_created
+    phase: pr
+    details: "Branch feat/clo-488-typed-errors pushed (new upstream); PR #6 opened against main: https://github.com/maxkulish/gcm/pull/6 (18 files, +1574/-25, 4 commits). Body covers the taxonomy, retry policy, defensive parser, testing (69 unit + 96 acceptance), and the dual-model validation gate (Gemini PASS; Codex FAIL->fixed->PASS)."
+  - timestamp: 2026-06-20T20:10:00Z
+    action: ci_passed
+    phase: pr
+    details: "GitHub Actions CI green on macos-latest + ubuntu-latest (run 27881768339, build/test - 33s/45s). PR #6 MERGEABLE / CLEAN; no required reviews. Awaiting owner merge decision at the PR checkpoint."
+  - timestamp: 2026-06-20T20:20:00Z
+    action: review_addressed
+    phase: pr
+    details: "Copilot PR reviewer (copilot-pull-request-reviewer) left 2 inline comments, both the same valid point: debug::log(&format!(..)) eagerly formats/allocates even when GCM_DEBUG is off (format! runs before log() checks enabled()). Low impact (error paths only) but a real inefficiency. Fixed by replacing debug::log with a debug_log! macro that gates format_args! behind enabled() - zero formatting/allocation when disabled; main.rs converted too. Commit c3f7a71, pushed. Both comments replied (2/2). 69 unit + 96 acceptance green; fmt + clippy clean."

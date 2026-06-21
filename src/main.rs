@@ -1,5 +1,6 @@
 mod cache;
 mod cli;
+mod debug;
 mod diff;
 mod error;
 mod git;
@@ -28,6 +29,9 @@ fn run(args: &Cli) -> i32 {
     match execute(args) {
         Ok(()) => 0,
         Err(e) => {
+            // Surface the typed variant (e.g. Groq(RateLimit { .. })) in debug
+            // logs so the error type is visible (CLO-488 acceptance).
+            crate::debug_log!("{e:?}");
             eprintln!("gcm: {e}");
             e.exit_code()
         }
@@ -120,8 +124,13 @@ enum BuildError {
 fn build_plan(repo: &Repo, changed: &[ChangedFile]) -> Result<Plan, BuildError> {
     let ctx = diff::gather_for_grouping(repo, changed).map_err(BuildError::Fatal)?;
     let plan = groq::generate_plan(&ctx).map_err(|e| match e {
-        // Missing key fails both paths identically; do not pretend to recover.
-        groq::GroqError::MissingKey => BuildError::Fatal(GcmError::Groq(e)),
+        // A missing or rejected key fails the single-commit fallback identically;
+        // do not pretend to recover. Every other provider error degrades to the
+        // single-commit path (the simpler message call may still succeed where the
+        // json_schema plan call did not). CLO-492 owns richer fallback policy.
+        groq::GroqError::MissingKey | groq::GroqError::Auth(_) => {
+            BuildError::Fatal(GcmError::Groq(e))
+        }
         other => BuildError::Fallback(other.to_string()),
     })?;
     let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
