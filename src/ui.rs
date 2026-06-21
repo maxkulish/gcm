@@ -104,6 +104,27 @@ pub fn needs_terminal_but_absent(auto_yes: bool, dry_run: bool) -> bool {
     !auto_yes && !dry_run && !std::io::stdin().is_terminal()
 }
 
+/// FR-46 warning text shown before a pre-existing curated index is reset. Pure
+/// (returns the string) so the wording is unit-testable; the caller prints it to
+/// stderr. gcm groups whole files, so it resets the index and re-stages by group;
+/// partial (hunk-level) `git add -p` staging is not preserved in v1, so the hunks
+/// the user excluded would be committed. Consistent with the static `--help`
+/// disclosure (`EGRESS_DISCLOSURE`, `src/cli.rs`).
+pub fn curated_index_warning(staged: usize, partial: usize) -> String {
+    let mut s = format!(
+        "gcm: warning: {staged} file(s) already staged - gcm will reset the curated index and re-stage by group."
+    );
+    s.push('\n');
+    s.push_str("gcm: warning: hunk-level staging is not preserved in v1");
+    if partial > 0 {
+        s.push_str(&format!(
+            " ({partial} file(s) partially staged via `git add -p`; their excluded hunks will be committed)"
+        ));
+    }
+    s.push('.');
+    s
+}
+
 /// `--dry-run` preview of the grouping plan: group 1's message plus a note of
 /// how many files remain in later groups (committed on subsequent runs). Stages
 /// and commits nothing (CLO-487 AC-8).
@@ -117,6 +138,36 @@ pub fn preview_plan(message: &str, group_count: usize, remaining: usize) {
         println!(
             "{remaining} file(s) remain in {} more group(s); run gcm again to commit the next group.",
             group_count - 1
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn curated_index_warning_has_required_substrings() {
+        let w = curated_index_warning(3, 1);
+        // AC-7 testable substrings.
+        assert!(w.contains("curated index"), "names the curated index: {w}");
+        assert!(w.contains("reset"), "says it will reset: {w}");
+        assert!(
+            w.contains("hunk-level staging is not preserved"),
+            "states the v1 limitation: {w}"
+        );
+        assert!(w.contains('3'), "names the staged count: {w}");
+        assert!(w.contains('1'), "names the partial count: {w}");
+    }
+
+    #[test]
+    fn curated_index_warning_omits_partial_detail_when_zero() {
+        let w = curated_index_warning(2, 0);
+        assert!(w.contains("curated index"));
+        assert!(w.contains("hunk-level staging is not preserved"));
+        assert!(
+            !w.contains("git add -p"),
+            "no partial-staging detail when partial == 0: {w}"
         );
     }
 }

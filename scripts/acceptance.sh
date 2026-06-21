@@ -392,7 +392,10 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   git -C "$d" -c commit.gpgsign=false add -A >/dev/null
   git -C "$d" -c commit.gpgsign=false commit -qm init
   printf '2\n' > "$d/ab.txt"; printf '2\n' > "$star"
-  printf '%s' '{"groups":[{"files":["a*.txt"],"summary":"star","commit_message":"feat: star file"}]}' > "$PLAN_FILE"
+  # Both files changed -> a valid partition must cover both (group 1 = the literal
+  # a*.txt; ab.txt deferred to group 2). The point is that staging group 1 does
+  # not glob ab.txt in, even though the plan now also lists it (in a later group).
+  printf '%s' '{"groups":[{"files":["a*.txt"],"summary":"star","commit_message":"feat: star file"},{"files":["ab.txt"],"summary":"sibling","commit_message":null}]}' > "$PLAN_FILE"
   ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
   [ $rc -eq 0 ] && ok "exit 0" || bad "glob-name group (rc=$rc)"
   git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'ab.txt' && bad "glob leaked ab.txt into the commit" || ok "only the literal a*.txt staged"
@@ -427,6 +430,130 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   : > "$PLAN_FILE"; rm -rf "$d"
 else
   skip "AC-G7 needs signing"
+fi
+
+# --- CLO-492 full plan validation + safe fallback --------------------------
+# FR-23 full: a plan that omits a changed file, duplicates one, or has an empty
+# group is rejected to fallback (not just unknown files as in the bash tool).
+# FR-46: a pre-existing curated index is warned about before it is reset.
+
+note "AC-V1 (CLO-492): plan omitting a changed file -> fallback, file not dropped"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; printf 'v1\n' > "$d/a.txt"; printf 'v1\n' > "$d/b.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/a.txt"; printf 'v2\n' > "$d/b.txt"
+  # Plan covers only a.txt; b.txt is omitted -> full validation must reject it.
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"partial","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  grep -qi "Falling back" /tmp/gcm-out && ok "omission -> fallback announced" || bad "no fallback on omission"
+  grep -qi "omitted changed file" /tmp/gcm-out && ok "reason names the omitted file" || bad "omission reason missing"
+  # The fallback lumps everything: b.txt must be committed, never silently dropped.
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'b.txt' && ok "omitted file committed by fallback (not dropped)" || bad "b.txt dropped from history"
+  [ "$(git -C "$d" log --oneline | wc -l | tr -d ' ')" = "2" ] && ok "single fallback commit" || bad "fallback commit count"
+  plan_reqs=$(grep -c 'response_format' "$CAPTURE")
+  [ "$plan_reqs" = "1" ] && ok "validation fallback not retried (1 grouping request)" || bad "grouping retried ($plan_reqs requests)"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-V1 needs signing"
+fi
+
+note "AC-V2 (CLO-492): plan listing a file in two groups -> fallback, not committed"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; printf 'v1\n' > "$d/a.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/a.txt"
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"one","commit_message":"feat: a"},{"files":["a.txt"],"summary":"two","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  grep -qi "Falling back" /tmp/gcm-out && ok "duplicate -> fallback announced" || bad "no fallback on duplicate"
+  grep -qi "more than one group" /tmp/gcm-out && ok "reason names the duplicated file" || bad "duplicate reason missing"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-V2 needs signing"
+fi
+
+note "AC-V3 (CLO-492): plan with an empty group (any position) -> fallback"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; printf 'v1\n' > "$d/a.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/a.txt"
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"one","commit_message":"feat: a"},{"files":[],"summary":"empty","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  grep -qi "Falling back" /tmp/gcm-out && ok "empty group -> fallback announced" || bad "no fallback on empty group"
+  grep -qi "references no files" /tmp/gcm-out && ok "reason names the empty group" || bad "empty-group reason missing"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-V3 needs signing"
+fi
+
+note "AC-V4 (CLO-492): pre-staged hunk warns before the index is reset (FR-46); dry-run silent"
+# No signing gate: the curated-index warning is emitted before any commit, so it
+# is on stderr regardless of whether the gcm commit itself can complete.
+d="$(new_repo)"
+printf 'l1\nl2\n' > "$d/a.txt"
+git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+git -C "$d" -c commit.gpgsign=false commit -qm init
+# Partially-staged file (status MM): stage one edit, then modify again.
+printf 'l1x\nl2\n' > "$d/a.txt"; git -C "$d" add a.txt
+printf 'l1x\nl2x\n' > "$d/a.txt"
+git -C "$d" status --porcelain=v1 | grep -q '^MM a.txt' && ok "fixture is partially staged (MM)" || bad "fixture not MM ($(git -C "$d" status --porcelain=v1))"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run >/tmp/gcm-dry 2>&1 )
+grep -qi "curated index" /tmp/gcm-dry && bad "dry-run warned (nothing is reset on a preview)" || ok "dry-run is silent about the curated index"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+grep -qi "curated index" /tmp/gcm-out && ok "real run warns about the curated index" || bad "no curated-index warning"
+grep -qi "reset" /tmp/gcm-out && ok "warning says the index will be reset" || bad "warning missing 'reset'"
+grep -qi "hunk-level staging is not preserved" /tmp/gcm-out && ok "warning states the v1 limitation" || bad "hunk-level note missing"
+grep -qi "partially staged" /tmp/gcm-out && ok "warning flags the partial staging" || bad "partial-staging note missing"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-V5 (CLO-492): --all also warns before resetting a curated index"
+d="$(new_repo)"
+printf 'l1\nl2\n' > "$d/a.txt"
+git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+git -C "$d" -c commit.gpgsign=false commit -qm init
+printf 'l1x\nl2\n' > "$d/a.txt"; git -C "$d" add a.txt; printf 'l1x\nl2x\n' > "$d/a.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --yes >/tmp/gcm-out 2>&1 )
+grep -qi "curated index" /tmp/gcm-out && ok "--all warns about the curated index" || bad "--all curated-index warning missing"
+rm -rf "$d"
+
+note "AC-V6 (CLO-492): declining the forced fallback leaves the index unchanged; warnings ordered (PTY)"
+if command -v expect >/dev/null 2>&1; then
+  d="$(new_repo)"; printf 'v1\n' > "$d/a.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/a.txt"; git -C "$d" add a.txt   # curated index (a.txt staged)
+  printf 'v3\n' > "$d/a.txt"                            # now MM: partially staged
+  : > "$PLAN_FILE"   # empty plan -> the mock returns non-JSON -> forced fallback
+  before="$(git -C "$d" write-tree)"; beforestat="$(git -C "$d" status --porcelain=v1)"
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 20
+    spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN)"
+    expect {
+      -re {\[Y/n/e} { send "n\r" }
+      timeout { exit 3 }
+    }
+    expect eof
+    catch wait result
+    exit [lindex $result 3]
+  ' >/tmp/gcm-out 2>&1; rc=$?
+  after="$(git -C "$d" write-tree)"; afterstat="$(git -C "$d" status --porcelain=v1)"
+  grep -qi "curated index" /tmp/gcm-out && ok "curated-index warning shown" || bad "no curated-index warning"
+  grep -qi "Falling back" /tmp/gcm-out && ok "forced fallback announced" || bad "no fallback announced"
+  # AC-18: the curated-index warning precedes the fallback warning.
+  cur_line=$(grep -ni "curated index" /tmp/gcm-out | head -1 | cut -d: -f1)
+  fb_line=$(grep -ni "Falling back" /tmp/gcm-out | head -1 | cut -d: -f1)
+  { [ -n "$cur_line" ] && [ -n "$fb_line" ] && [ "$cur_line" -lt "$fb_line" ]; } && ok "curated-index warning precedes the fallback warning" || bad "warning ordering wrong (cur=$cur_line fb=$fb_line)"
+  [ $rc -eq 0 ] && ok "decline -> exit 0" || bad "decline exit (rc=$rc)"
+  [ "$before" = "$after" ] && ok "staged tree SHA unchanged after decline" || bad "staged tree changed after decline"
+  [ "$beforestat" = "$afterstat" ] && ok "git status identical after decline" || bad "status changed after decline"
+  [ -z "$(git -C "$d" log --oneline | sed -n 2p)" ] && ok "no commit created on decline" || bad "commit created on decline"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-V6 PTY decline needs 'expect' (index-restore covered by AC-13; staging is post-confirm)"
 fi
 
 note "AC-G8: --dry-run previews the plan and commits nothing"

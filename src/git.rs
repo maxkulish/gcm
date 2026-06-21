@@ -338,6 +338,25 @@ impl ChangedFile {
             || (self.x == b'A' && self.y == b'A')
     }
 
+    /// Whether the entry has staged (index-side) changes - a curated index gcm is
+    /// about to reset/override (FR-46). Reads the index-side status char `x`: any
+    /// real change (`M`/`A`/`D`/`R`/`C`...) except a clean index (` `) or an
+    /// untracked entry (`?`). Unmerged entries can also satisfy this, but the
+    /// caller checks `is_staged` only after the `is_unmerged` abort guard, so a
+    /// conflict never reaches it.
+    pub fn is_staged(&self) -> bool {
+        self.x != b' ' && self.x != b'?'
+    }
+
+    /// Whether the entry is partially staged - both the index (`x`) and worktree
+    /// (`y`) sides diverge (the `git add -p` / staged-then-modified signature,
+    /// e.g. `MM`, `AM`, `MD`). This is the data-loss case v1 cannot preserve:
+    /// gcm stages whole files, so the worktree hunks the user excluded get
+    /// committed anyway (FR-46).
+    pub fn is_partially_staged(&self) -> bool {
+        self.is_staged() && self.y != b' ' && self.y != b'?'
+    }
+
     /// The paths to stage for this entry: the new path, plus the original path
     /// for a rename/copy so the deletion of the old name is staged too.
     pub fn stage_paths(&self) -> Vec<&str> {
@@ -431,6 +450,57 @@ mod tests {
     fn stage_paths_includes_orig_for_rename() {
         let files = parse_status_z(b"R  new.txt\0old.txt\0");
         assert_eq!(files[0].stage_paths(), vec!["new.txt", "old.txt"]);
+    }
+
+    #[test]
+    fn is_staged_reflects_index_side() {
+        assert!(
+            parse_status_z(b"M  a.txt\0")[0].is_staged(),
+            "staged-only modify"
+        );
+        assert!(
+            !parse_status_z(b" M a.txt\0")[0].is_staged(),
+            "unstaged-only"
+        );
+        assert!(
+            parse_status_z(b"MM a.txt\0")[0].is_staged(),
+            "partially staged"
+        );
+        assert!(
+            parse_status_z(b"A  a.txt\0")[0].is_staged(),
+            "added (fully staged)"
+        );
+        assert!(!parse_status_z(b"?? a.txt\0")[0].is_staged(), "untracked");
+        assert!(
+            parse_status_z(b"R  new.txt\0old.txt\0")[0].is_staged(),
+            "rename staged"
+        );
+    }
+
+    #[test]
+    fn is_partially_staged_requires_both_sides() {
+        assert!(
+            !parse_status_z(b"M  a.txt\0")[0].is_partially_staged(),
+            "fully staged, no worktree delta"
+        );
+        assert!(
+            !parse_status_z(b" M a.txt\0")[0].is_partially_staged(),
+            "unstaged-only"
+        );
+        assert!(parse_status_z(b"MM a.txt\0")[0].is_partially_staged(), "MM");
+        assert!(parse_status_z(b"AM a.txt\0")[0].is_partially_staged(), "AM");
+        assert!(
+            parse_status_z(b"MD a.txt\0")[0].is_partially_staged(),
+            "staged mod + worktree delete"
+        );
+        assert!(
+            !parse_status_z(b"A  a.txt\0")[0].is_partially_staged(),
+            "added, no worktree delta"
+        );
+        assert!(
+            !parse_status_z(b"?? a.txt\0")[0].is_partially_staged(),
+            "untracked"
+        );
     }
 
     #[test]
