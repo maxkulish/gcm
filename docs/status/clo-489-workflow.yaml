@@ -164,6 +164,13 @@ phases:
         verdict: COMMENTED
         comments: 0
         finding: "Reviewed 24/24 changed files, generated no comments. Overview only - no actionable feedback."
+    conflict_resolution:
+      - merged: "origin/main @ c328431 (CLO-492 #9 full plan validation + safe fallback)"
+        commit: aec62ca
+        details: "Code conflicts in plan.rs + main.rs. plan.rs: kept CLO-489 gemini_schema() AND CLO-492 validate()/check_structure/validate_partition/validate_cached (dropped my validate_basic - superseded; EmptyFirstGroup->EmptyGroup already merged in the enum). main.rs: combined provider::select + trait dispatch (generate_plan/diff_budget + MissingKey|Auth->Fatal routing) with CLO-492's plan::validate + validate_cached cache-hit re-validation + FR-46 curated-index warning; threaded provider.as_ref() into all single_commit call sites. Docs: both CLO-489 (PR) and CLO-492 active. 118 unit + 188 acceptance green."
+      - merged: "origin/main @ 7aac21b (CLO-492 #9 post-merge project sync)"
+        commit: 341ae58
+        details: "Docs-only conflicts (PROJECT/ROADMAP/DEPENDENCIES): CLO-492 now Done (Recently Completed); CLO-489 stays at PR #10. No code conflicts. Up to date with main (0 behind); PR #10 MERGEABLE/CLEAN; CI green on merge commit 341ae58."
   complete:
     status: pending
 
@@ -220,3 +227,7 @@ history:
     action: pr_created
     phase: pr
     details: "Branch feat/clo-489-provider pushed (new upstream); PR #10 opened against main: https://github.com/maxkulish/gcm/pull/10 (26 files, +2666/-932, 3 commits). Body covers the trait/registry, the 3 backends, the validation gate (Gemini PASS; Codex FAIL->fixed->PASS_WITH_NOTES), and the egress note. Pre-flight clean (fmt/clippy/test 105). CI kicked off (run 27915293436); MERGEABLE. Stopping at the PR checkpoint for the owner merge decision (AFK)."
+  - timestamp: 2026-06-21T21:10:00Z
+    action: review_addressed
+    phase: pr
+    details: "Resolved merge conflicts after main advanced twice while at the PR checkpoint. Round 1: merged CLO-492 (#9 full plan validation + safe fallback, commit c328431) - real code conflicts in plan.rs (kept gemini_schema + took validate()/validate_cached, dropped validate_basic) and main.rs (combined provider dispatch with validate/validate_cached + FR-46 warning; threaded provider into all single_commit calls); merge commit aec62ca, 118 unit + 188 acceptance green. Round 2: merged CLO-492 post-merge sync (7aac21b) - docs-only (CLO-492->Done/Recently Completed, CLO-489 stays PR); merge commit 341ae58. PR #10 now MERGEABLE/CLEAN, 0 behind main, CI green on 341ae58. Back at the PR checkpoint awaiting the owner merge decision."
