@@ -25,8 +25,8 @@ depends_on:
   blocks: [CLO-497]              # cross-platform releases + alias cutover
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   classification_rationale: "User selected Development at the classification checkpoint despite the specification precedent (CLO-486/CLO-487 both spec under ADR-001 lock). Development path chosen: discovery -> design -> plan -> implement -> pr -> complete. Rationale for the choice rests with the owner; orchestrator honors it. The task does carry genuine design surface beyond the prior slices: cache key scheme (sha256(repo-root)), OS-appropriate location + 0600 perms, a content-fingerprint freshness model over pending files (fixing the bash name-only staleness bug), commit-safe advancement state machine (fixing the bash null-message advancement bug), and failure handling on rejecting pre-commit hooks."
 
 phases:
@@ -169,11 +169,30 @@ phases:
       - "P4 unborn: gather_for_files unborn-safe; message-only call never fires while unborn (HEAD exists post first commit)"
       - "P5 partial-staging: documented accepted tradeoff (index selection only, never work-tree); commit-failure leaves group staged"
   pr:
-    status: pending
-    pr_url: null
-    pr_number: null
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/7
+    pr_number: 7
+    base: main
+    head: feat/clo-491-plan-cache
+    pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / cargo test (58) - all clean before PR"
+    code_diff: "+1043 / -44 across src + Cargo.toml + scripts/acceptance.sh"
+    ci_passed: true
+    ci_runs: [27882063643, 27882491639]   # initial PR + the Copilot-fix push
+    merge_state: "CLEAN / MERGEABLE; no required reviews"
+    reviews_addressed: 1   # GitHub Copilot: 2 inline comments, both fixed (1348c0b), 2/2 replies
+    review_commits: [1348c0b]
+    review_note: "Copilot (COMMENTED, not CHANGES_REQUESTED): (1) hash_path returned \\0DELETED on a File::open failure after symlink_metadata succeeded -> now \\0UNREADABLE; (2) cache::load/save re-ran git status -> now reuse main.rs's already-computed `changed` (advance still recomputes post-commit). Both VERIFIED + fixed in 1348c0b; replied 2/2."
+    approved: true        # owner merged PR #7 (squash) on GitHub
+    merge_commit: 8073ad626885e6120f2946c4b3a5d67a013707c4
+    merged_at: 2026-06-21T17:43:29Z
+    merge_strategy: squash
+    merged_by: maxkulish
   complete:
-    status: pending
+    status: complete
+    merged_at: 2026-06-21T17:43:29Z
+    aggregation_files_updated: true
+    linear_status_updated: true
+    unblocked: []   # CLO-491 only blocks CLO-497, which still waits on CLO-488..496
 
 # Scope checklist (from the Linear task)
 scope:
@@ -246,3 +265,23 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Dual-model gate (both read-only, HEAD unchanged). Gemini PASS (no defects; only a CLO-489 PROVIDER-token note already TODO'd in code). Codex round 1 FAIL: HIGH (content_hash followed symlinks -> FIFO hang / target-bytes leak; fixed via symlink_metadata + hash-by-target-path + special-file marker, mirroring diff.rs) + MEDIUM (--all --dry-run didn't clear cache - kept by design per FR-7, documented + locked by AC-C-drynoclear; pushed back on the 'fix') + 6 coverage gaps (filled). Commit 31563d7 (+3 hash_path unit tests, +6 eval acceptance cases, strengthened AC-C3). Codex re-validation: PASS_WITH_NOTES (HIGH+MEDIUM RESOLVED) + 2 LOW test-rigor notes -> fixed (a5c4684: AC-C-hookfix proves advancement, AC-C-delete proves replay). Converged. Post-fix: 58 unit + 117 acceptance green, clippy clean."
+  - timestamp: 2026-06-20T20:16:00Z
+    action: pr_created
+    phase: pr
+    details: "Pre-flight clean (fmt/clippy -D warnings/58 tests). Branch pushed; PR #7 opened against main: https://github.com/maxkulish/gcm/pull/7. CI green on macos-latest + ubuntu-latest (run 27882063643). MERGEABLE / CLEAN."
+  - timestamp: 2026-06-21T17:35:00Z
+    action: review_addressed
+    phase: pr
+    details: "/pr:review - GitHub Copilot left 2 inline comments (COMMENTED, PR stayed MERGEABLE). Both VERIFIED valid and fixed in 1348c0b: (1) hash_path \\0DELETED->\\0UNREADABLE on a post-metadata open failure; (2) cache::load/save reuse main.rs's already-computed `changed` (no redundant git status; advance still recomputes post-commit). Pushed, replied 2/2. CI green (run 27882491639). 58 unit + 117 acceptance."
+  - timestamp: 2026-06-21T17:43:29Z
+    action: pr_merged
+    phase: complete
+    details: "Owner squash-merged PR #7 on GitHub (merge commit 8073ad6). gcm per-repo plan cache is on main. Worktree mode: post-merge cleanup runs in the main repo /Users/mk/Code/gcm (ff-pulled to include the merge); the feat/clo-491-plan-cache worktree is deleted by the owner via `gd`."
+  - timestamp: 2026-06-21T17:46:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Post-merge sync on main (/Users/mk/Code/gcm). Linear CLO-491 -> Done. PROJECT.md: master table -> Done, removed from Active Work (now none), added to Recently Completed, Up Next note refreshed. ROADMAP: CLO-491 -> Done, Phase 1 4/13 complete. DEPENDENCIES: CLO-497 blocker note now lists CLO-487 + CLO-491 satisfied (CLO-497 still waits on CLO-488..496); no task newly unblocked (CLO-491 only blocked CLO-497). Last-Updated bumped to 2026-06-21 across all three. WIP back to 0/3."
+  - timestamp: 2026-06-21T17:46:00Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-491 development workflow complete. Deliverable: gcm per-repo plan cache with commit-safe advancement on main (PR #7 squash, merge 8073ad6). Fixes the bash name-only-staleness + null-message-advancement bugs. 58 unit + 117 acceptance tests, CI green, dual-model validation converged (Gemini PASS; Codex FAIL->fixed->PASS), Copilot review addressed. Full dev path: discovery (focused) -> design (2 review rounds incl. 5 owner blind spots) -> plan -> implement -> PR. Linear CLO-491 -> Done. CLO-497 one blocker closer."
