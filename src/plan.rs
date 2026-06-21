@@ -25,18 +25,25 @@ pub struct Group {
     pub commit_message: Option<String>,
 }
 
-/// Why a plan was rejected by [`validate_basic`]. Each maps to an announced
-/// fallback to the single-commit path (FR-23 basic; full validation is CLO-492).
+/// Why a plan was rejected by [`validate`]. Each maps to an announced fallback
+/// to the single-commit path (FR-23 full: the plan must partition the change set
+/// - no omissions, no duplicates, no empty groups, message on `groups[0]`).
 #[derive(Debug, PartialEq, Eq)]
 pub enum PlanError {
     /// The plan has no groups at all (`groups: []`).
     NoGroups,
-    /// Group 1 references no files - nothing to commit.
-    EmptyFirstGroup,
+    /// A group references no files (0-based group index; rendered 1-based).
+    EmptyGroup(usize),
     /// Group 1 has a null/empty commit message (the exact bash null-message bug).
     MissingFirstMessage,
     /// A plan file is not in the real change set (a hallucinated path).
     UnknownFile(String),
+    /// A changed file is listed in more than one group (or twice in one group);
+    /// staging would record it under two commits (FR-23 case c).
+    DuplicateFile(String),
+    /// A changed file appears in no group at all - the bash validator missed
+    /// this and silently dropped the file from history (FR-23 case b).
+    OmittedFile(String),
     /// The response could not be parsed into a plan at all (FR-20 defensive
     /// parsing exhausted every candidate).
     Parse(String),
@@ -46,12 +53,18 @@ impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PlanError::NoGroups => write!(f, "plan contained no groups"),
-            PlanError::EmptyFirstGroup => write!(f, "group 1 references no files"),
+            PlanError::EmptyGroup(i) => write!(f, "group {} references no files", i + 1),
             PlanError::MissingFirstMessage => {
                 write!(f, "group 1 has no commit message")
             }
             PlanError::UnknownFile(p) => {
-                write!(f, "group 1 references unknown file '{p}'")
+                write!(f, "plan references unknown file '{p}'")
+            }
+            PlanError::DuplicateFile(p) => {
+                write!(f, "file '{p}' appears in more than one group")
+            }
+            PlanError::OmittedFile(p) => {
+                write!(f, "plan omitted changed file '{p}'")
             }
             PlanError::Parse(msg) => write!(f, "plan parse error: {msg}"),
         }
@@ -264,27 +277,90 @@ pub fn gemini_schema() -> Value {
     })
 }
 
-/// Basic plan validation (FR-23 basic): the plan must have at least one group,
-/// group 1 must be non-empty and carry a usable message, and no group may
-/// reference a file absent from the real change set. Full bijective validation
-/// (every changed file covered exactly once) is CLO-492.
-pub fn validate_basic(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
-    let first = plan.groups.first().ok_or(PlanError::NoGroups)?;
-    if first.files.is_empty() {
-        return Err(PlanError::EmptyFirstGroup);
-    }
-    match &first.commit_message {
+/// Full plan validation (FR-23): the plan must **partition** the change set.
+/// Rejected (each -> an announced single-commit fallback) when any of these hold,
+/// checked in this deterministic order so the reported error is stable:
+///
+/// 1. no groups at all (`NoGroups`);
+/// 2. any group references no files (`EmptyGroup`, first offending group);
+/// 3. `groups[0]` has a null/blank commit message (`MissingFirstMessage` - the
+///    FR-45 placement check; later groups' messages are tolerated/ignored);
+/// 4. any group references a path absent from the change set (`UnknownFile`,
+///    first offending file in group-then-file order);
+/// 5. any path appears in more than one group, or twice in one group
+///    (`DuplicateFile`, first repeat);
+/// 6. any changed file is covered by no group (`OmittedFile`, first omission in
+///    sorted order for determinism over the unordered change set).
+///
+/// (4)+(5)+(6) together make the union of group files a bijection with the
+/// change set. The validator is pure: no git calls, `change_set` is supplied by
+/// the caller (`changed.iter().map(|c| c.path)`).
+pub fn validate(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
+    check_structure(plan)?;
+    // FR-45 message placement: a freshly generated plan must carry the group-0
+    // message. (Not checked on the cache-hit path - see `validate_cached`.)
+    match &plan.groups[0].commit_message {
         Some(m) if !m.trim().is_empty() => {}
         _ => return Err(PlanError::MissingFirstMessage),
     }
-    // No group may reference a file outside the real change set (catches
-    // hallucinated paths). Full coverage/bijection checks are CLO-492.
+    validate_partition(plan, change_set)
+}
+
+/// Partition-only re-validation for a **cached** plan, safe to run on the
+/// cache-hit path: it enforces the same bijection (no empty groups, no unknowns,
+/// no duplicates, no omissions) but **skips the `groups[0]` message check**. An
+/// advanced cache entry legitimately carries a null first message (regenerated
+/// per group, ADR-001 Decision 6), so checking it would wrongly reject the normal
+/// "commit the next group" flow. This is defense in depth: a plan written by a
+/// pre-CLO-492 binary (which only screened unknown files) - or any future
+/// advance defect - must still partition the current change set, or grouping
+/// would silently drop/duplicate a file (the FR-23 bug this slice fixes).
+pub fn validate_cached(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
+    check_structure(plan)?;
+    validate_partition(plan, change_set)
+}
+
+/// Structural checks shared by [`validate`] and [`validate_cached`]: at least one
+/// group, and no empty group (first offender, 0-based).
+fn check_structure(plan: &Plan) -> Result<(), PlanError> {
+    if plan.groups.is_empty() {
+        return Err(PlanError::NoGroups);
+    }
+    for (i, group) in plan.groups.iter().enumerate() {
+        if group.files.is_empty() {
+            return Err(PlanError::EmptyGroup(i));
+        }
+    }
+    Ok(())
+}
+
+/// The bijection check shared by [`validate`] and [`validate_cached`]: every plan
+/// path is known (in the change set) and unique (no file in two groups, or twice
+/// in one), and every changed file is covered by some group.
+fn validate_partition(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
+    // Single walk over every plan path: reject the first unknown (outside the
+    // change set) or duplicate (already seen in any group). `seen` doubles as the
+    // coverage set for the omission check below.
+    let mut seen: HashSet<&str> = HashSet::with_capacity(change_set.len());
     for group in &plan.groups {
         for file in &group.files {
             if !change_set.contains(file) {
                 return Err(PlanError::UnknownFile(file.clone()));
             }
+            if !seen.insert(file.as_str()) {
+                return Err(PlanError::DuplicateFile(file.clone()));
+            }
         }
+    }
+    // Every changed file must be covered. Sort the omissions so the reported file
+    // is deterministic over the unordered `change_set`.
+    let mut omitted: Vec<&String> = change_set
+        .iter()
+        .filter(|f| !seen.contains(f.as_str()))
+        .collect();
+    if !omitted.is_empty() {
+        omitted.sort();
+        return Err(PlanError::OmittedFile(omitted[0].clone()));
     }
     Ok(())
 }
@@ -316,17 +392,30 @@ mod tests {
     }
 
     #[test]
-    fn accepts_a_valid_plan() {
-        let p =
-            parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":"feat: a"}]}"#);
-        assert_eq!(validate_basic(&p, &change_set(&["a.rs", "b.md"])), Ok(()));
+    fn accepts_a_valid_partition() {
+        // groups[0] covers a.rs (with message), group 2 covers b.md - exact partition.
+        let p = parse(
+            r#"{"groups":[
+                {"files":["a.rs"],"summary":"core","commit_message":"feat: a"},
+                {"files":["b.md"],"summary":"docs","commit_message":null}
+            ]}"#,
+        );
+        assert_eq!(validate(&p, &change_set(&["a.rs", "b.md"])), Ok(()));
     }
 
     #[test]
-    fn rejects_empty_groups() {
+    fn accepts_single_group_covering_all() {
+        let p = parse(
+            r#"{"groups":[{"files":["a.rs","b.md"],"summary":"s","commit_message":"feat: a"}]}"#,
+        );
+        assert_eq!(validate(&p, &change_set(&["a.rs", "b.md"])), Ok(()));
+    }
+
+    #[test]
+    fn rejects_no_groups() {
         let p = parse(r#"{"groups":[]}"#);
         assert_eq!(
-            validate_basic(&p, &change_set(&["a.rs"])),
+            validate(&p, &change_set(&["a.rs"])),
             Err(PlanError::NoGroups)
         );
     }
@@ -335,8 +424,23 @@ mod tests {
     fn rejects_empty_first_group() {
         let p = parse(r#"{"groups":[{"files":[],"summary":"s","commit_message":"feat: a"}]}"#);
         assert_eq!(
-            validate_basic(&p, &change_set(&["a.rs"])),
-            Err(PlanError::EmptyFirstGroup)
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::EmptyGroup(0))
+        );
+    }
+
+    #[test]
+    fn rejects_empty_group_at_later_index() {
+        // FR-23 case d: an empty group anywhere, not just group 1.
+        let p = parse(
+            r#"{"groups":[
+                {"files":["a.rs"],"summary":"s","commit_message":"feat: a"},
+                {"files":[],"summary":"empty","commit_message":null}
+            ]}"#,
+        );
+        assert_eq!(
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::EmptyGroup(1))
         );
     }
 
@@ -345,7 +449,7 @@ mod tests {
         // The exact bash null-message bug: must be caught, not silently single-committed.
         let p = parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null}]}"#);
         assert_eq!(
-            validate_basic(&p, &change_set(&["a.rs"])),
+            validate(&p, &change_set(&["a.rs"])),
             Err(PlanError::MissingFirstMessage)
         );
     }
@@ -354,7 +458,7 @@ mod tests {
     fn rejects_blank_message_in_group1() {
         let p = parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":"   "}]}"#);
         assert_eq!(
-            validate_basic(&p, &change_set(&["a.rs"])),
+            validate(&p, &change_set(&["a.rs"])),
             Err(PlanError::MissingFirstMessage)
         );
     }
@@ -368,7 +472,121 @@ mod tests {
             ]}"#,
         );
         assert_eq!(
-            validate_basic(&p, &change_set(&["a.rs"])),
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::UnknownFile("ghost.rs".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_omitted_file() {
+        // FR-23 case b: b.md changed but covered by no group -> reject, do not drop.
+        let p =
+            parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":"feat: a"}]}"#);
+        assert_eq!(
+            validate(&p, &change_set(&["a.rs", "b.md"])),
+            Err(PlanError::OmittedFile("b.md".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_cross_group_duplicate() {
+        // FR-23 case c: a.rs listed in two groups.
+        let p = parse(
+            r#"{"groups":[
+                {"files":["a.rs"],"summary":"s","commit_message":"feat: a"},
+                {"files":["a.rs"],"summary":"s2","commit_message":null}
+            ]}"#,
+        );
+        assert_eq!(
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::DuplicateFile("a.rs".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_same_group_duplicate() {
+        // Degenerate duplicate: the same file twice within one group.
+        let p = parse(
+            r#"{"groups":[{"files":["a.rs","a.rs"],"summary":"s","commit_message":"feat: a"}]}"#,
+        );
+        assert_eq!(
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::DuplicateFile("a.rs".to_string()))
+        );
+    }
+
+    #[test]
+    fn covers_rename_by_new_path() {
+        // The validator uses the (new) path only; a rename's new path covers it.
+        let p = parse(
+            r#"{"groups":[{"files":["new.rs"],"summary":"s","commit_message":"feat: rename"}]}"#,
+        );
+        assert_eq!(validate(&p, &change_set(&["new.rs"])), Ok(()));
+    }
+
+    #[test]
+    fn plan_error_display_is_distinct() {
+        let msgs = [
+            PlanError::NoGroups.to_string(),
+            PlanError::EmptyGroup(1).to_string(),
+            PlanError::MissingFirstMessage.to_string(),
+            PlanError::UnknownFile("x".into()).to_string(),
+            PlanError::DuplicateFile("x".into()).to_string(),
+            PlanError::OmittedFile("x".into()).to_string(),
+            PlanError::Parse("x".into()).to_string(),
+        ];
+        assert!(msgs.iter().all(|m| !m.is_empty()), "no empty Display");
+        let unique: HashSet<&String> = msgs.iter().collect();
+        assert_eq!(unique.len(), msgs.len(), "all 7 Display strings distinct");
+        // 0-based store, 1-based render.
+        assert!(PlanError::EmptyGroup(1).to_string().contains("group 2"));
+    }
+
+    #[test]
+    fn validate_cached_tolerates_null_first_message() {
+        // An advanced cache entry has a null groups[0] message (regenerated per
+        // group). The full `validate` rejects that (MissingFirstMessage), but
+        // `validate_cached` must accept it as long as the partition holds.
+        let p = parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null}]}"#);
+        assert_eq!(
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::MissingFirstMessage),
+            "full validate still requires the group-0 message"
+        );
+        assert_eq!(
+            validate_cached(&p, &change_set(&["a.rs"])),
+            Ok(()),
+            "validate_cached tolerates the null first message"
+        );
+    }
+
+    #[test]
+    fn validate_cached_still_enforces_the_partition() {
+        // Omission, duplicate, empty group, and unknown file are all rejected on
+        // the cache-hit path too - the bijection is enforced regardless of source.
+        let omit = parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null}]}"#);
+        assert_eq!(
+            validate_cached(&omit, &change_set(&["a.rs", "b.md"])),
+            Err(PlanError::OmittedFile("b.md".to_string()))
+        );
+        let dup = parse(
+            r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null},{"files":["a.rs"],"summary":"s2","commit_message":null}]}"#,
+        );
+        assert_eq!(
+            validate_cached(&dup, &change_set(&["a.rs"])),
+            Err(PlanError::DuplicateFile("a.rs".to_string()))
+        );
+        let empty = parse(
+            r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null},{"files":[],"summary":"e","commit_message":null}]}"#,
+        );
+        assert_eq!(
+            validate_cached(&empty, &change_set(&["a.rs"])),
+            Err(PlanError::EmptyGroup(1))
+        );
+        let ghost =
+            parse(r#"{"groups":[{"files":["ghost.rs"],"summary":"s","commit_message":null}]}"#);
+        assert_eq!(
+            validate_cached(&ghost, &change_set(&["a.rs"])),
             Err(PlanError::UnknownFile("ghost.rs".to_string()))
         );
     }
