@@ -36,11 +36,17 @@ const PER_FILE_BYTES: usize = 8192;
 /// smaller-context model like `gpt-4o-mini` gets a tighter total); env overrides
 /// `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` apply across providers.
 pub struct DiffBudget {
-    /// Coarse final safeguard on the whole assembled body.
+    /// Coarse final safeguard on the whole assembled body. Applied on **every**
+    /// path (single-commit `gather`, per-group `gather_for_files`, and grouping
+    /// `gather_for_grouping`) - this is the per-provider total-input cap.
     pub total_bytes: usize,
-    /// Per-file cap for a tracked diff section in the grouping prompt: each file's
-    /// section is truncated independently with a `[diff omitted: N bytes]`
-    /// placeholder rather than tail-chopping the whole body (CLO-487 FR-15).
+    /// Per-file cap for a tracked diff section in the **grouping** prompt only:
+    /// each file's section is truncated independently with a `[diff omitted: N
+    /// bytes]` placeholder rather than tail-chopping the whole body (CLO-487
+    /// FR-15, so every changed file stays present for the model to group). The
+    /// single-commit and per-group-message paths intentionally do NOT apply
+    /// per-file truncation (they rely on `total_bytes`), preserving the CLO-486
+    /// tracer's full-diff behavior (O3 parity).
     pub per_file_bytes: usize,
 }
 

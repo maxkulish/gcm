@@ -73,6 +73,11 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
     // before the no-changes/merge branches without needing a key. An unknown
     // provider name fails fast here.
     let provider = provider::select(args.provider, args.model.as_deref())?;
+    crate::debug_log!(
+        "provider: {} ({})",
+        provider.name(),
+        provider.cache_model_id()
+    );
 
     // `--all`, or a clean merge-in-progress, bypasses grouping and commits
     // everything as one. A clean `MERGE_HEAD` makes `git commit` finalize the

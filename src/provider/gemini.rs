@@ -68,6 +68,10 @@ impl Gemini {
 }
 
 impl Provider for Gemini {
+    fn name(&self) -> &'static str {
+        NAME
+    }
+
     fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
         let key = self.api_key()?;
         let payload = build_plan_payload(ctx);

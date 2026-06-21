@@ -54,6 +54,10 @@ impl Groq {
 }
 
 impl Provider for Groq {
+    fn name(&self) -> &'static str {
+        NAME
+    }
+
     fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
         let key = self.api_key()?;
         let payload = build_plan_payload(ctx, &self.model);
@@ -103,7 +107,10 @@ impl Provider for Groq {
 }
 
 /// Build the structured-output plan request payload (ADR-001 Decisions 1 & 5).
+/// `strict: true` json_schema is **gpt-oss-only** on Groq (capability matrix);
+/// other families (e.g. qwen) use best-effort `strict: false`, else Groq 400s.
 fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
+    let strict = model.contains("gpt-oss");
     let mut payload = json!({
         "model": model,
         "temperature": 0.2,
@@ -115,7 +122,7 @@ fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
             "type": "json_schema",
             "json_schema": {
                 "name": "commit_plan",
-                "strict": true,
+                "strict": strict,
                 "schema": crate::plan::schema(),
             }
         }
@@ -163,6 +170,17 @@ mod tests {
         assert!(user.contains("a.rs"));
         assert!(user.contains("Git status"));
         assert!(user.contains("diff --git"));
+    }
+
+    #[test]
+    fn qwen_plan_uses_best_effort_strict_false() {
+        // Codex validation HIGH: strict json_schema is gpt-oss-only on Groq; a
+        // qwen model must request strict:false or Groq 400s.
+        let p = build_plan_payload(&ctx(), "qwen/qwen3.6-27b");
+        assert_eq!(p["response_format"]["json_schema"]["strict"], json!(false));
+        // gpt-oss stays strict:true
+        let g = build_plan_payload(&ctx(), "openai/gpt-oss-120b");
+        assert_eq!(g["response_format"]["json_schema"]["strict"], json!(true));
     }
 
     #[test]

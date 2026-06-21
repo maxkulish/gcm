@@ -25,6 +25,8 @@ use crate::plan::Plan;
 /// required: the structured grouping plan and the single commit message (tracer,
 /// grouping fallback, and per-group message regeneration on an advanced cache hit).
 pub trait Provider {
+    /// Stable display name for messages/debug (e.g. "Groq" / "Google" / "OpenAI").
+    fn name(&self) -> &'static str;
     /// Structured grouping plan; defensively parsed into a typed [`Plan`].
     fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError>;
     /// A single conventional-commit message for the gathered diff.
