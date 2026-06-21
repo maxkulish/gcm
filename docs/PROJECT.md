@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-21 (CLO-492 validation + fallback started — Spec phase; CLO-488 PR #6 merged, CLO-491 merged on main)
+**Last Updated**: 2026-06-21 (CLO-492 validation + fallback merged — PR #9, Done; CLO-488 PR #6 merged, CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -26,7 +26,7 @@
 | [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | Backlog | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
 | [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
 | [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Done | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
-| [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | In Progress | CLO-487, CLO-488 | 23,24,46,47 |
+| [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Backlog | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Backlog | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Backlog | CLO-489 | 56 |
@@ -62,7 +62,6 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
-| [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | Full plan validation + safe fallback | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
@@ -72,7 +71,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Medium | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | CLO-487 (done) | automation flags on the grouping path |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> CLO-491 (plan cache) merged (PR #7). **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — its post-merge sync is still pending in its own workflow. **CLO-492** (validation + fallback) is now unblocked (both CLO-487 and CLO-488 satisfied) and started — Spec phase. **CLO-489**, **CLO-490**, **CLO-493** remain ready; the provider chain (CLO-489) runs in parallel. CLO-497 waits on the rest of the feature set.
+> CLO-491 (plan cache) merged (PR #7). **CLO-492** (validation + fallback) merged (PR #9, `c328431`) — Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — its post-merge sync is still pending in its own workflow. **CLO-489**, **CLO-490**, **CLO-493** remain ready; the provider chain (CLO-489) runs in parallel. CLO-497 waits on the rest of the feature set (CLO-487/491/492 now satisfied).
 
 ## Blocked
 
@@ -87,6 +86,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-492 | Full plan validation + safe fallback | 2026-06-21 | FR-23 full bijective validation (`plan::validate`): rejects omissions, cross-group duplicates, empty groups (new `PlanError::{EmptyGroup,DuplicateFile,OmittedFile}`) - the bash validator only caught unknown files. FR-46 runtime curated-index warning (`is_staged`/`is_partially_staged` + `ui::curated_index_warning`) before any index reset, even under `--yes`, silent on `--dry-run`. Cache-hit re-validation (`validate_cached`, partition-only) so a pre-CLO-492 cache can't replay an omission. FR-24/FR-47 verified (fallback already post-retry + post-confirm staging + index restore from CLO-488/491). 101 unit + 167 acceptance; Gemini PASS + Codex FAIL→fixed→PASS (caught a cache-hit bypass); Copilot 1 fixed + 1 pushed back. Spec workflow. PR #9 (squash) merged. |
 | CLO-491 | Per-repo plan cache with commit-safe advancement | 2026-06-21 | Per-repo plan cache (`src/cache.rs`): `sha256(repo-root)` key in the OS cache dir, `0600`; streamed content fingerprint (no HEAD pin, unborn-safe) so re-runs commit the next group with no grouping call; regenerate-per-group message on hit; `CommitFailed`/`CommitOutcome` gate leaves the group staged + un-advanced on a rejected hook (FR-58); `--reset`/`--all`/fallback clear. Fixed the bash name-only-staleness + null-message-advancement bugs. 58 unit + 117 acceptance; Gemini PASS + Codex FAIL→fixed→PASS; Copilot 2 comments addressed. Dev workflow (discovery→design→plan→implement). PR #7 (squash) merged. |
 | CLO-487 | Semantic grouping → commit first group | 2026-06-20 | Structured-output grouping plan (typed Plan/Group, strict json_schema) → commit group 1; re-run advances. `-uall` NUL status parse, literal NUL-stdin staging (rename-safe, glob-safe, ARG_MAX-safe), per-file diff truncation, merge-conflict abort, announced single-commit fallback. 39 unit + 73 acceptance tests; Gemini PASS + Codex FAIL→fixed→PASS. PR #5 (squash) merged. Unblocked CLO-491/493. |
 | CLO-486 | Single-commit tracer: AI message via Groq with safe diff read | 2026-06-19 | Rust scaffold + tracer: safe diff read → Groq message → `[Y/n/e]` → signed commit. 15 unit + 35 acceptance tests; 3 Codex validation passes. PR #4 (squash) merged. Unblocked CLO-487/488/489/490. |

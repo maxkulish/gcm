@@ -44,8 +44,8 @@ classification:
   rationale: "CLO-492 hardens code that already exists (validate_basic, Fallback path, snapshot/restore primitives all in place with CLO-492-tagged seams); directly extends CLO-487/488 (both specs) and matches the established spec precedent for the grouping/provider family. 5/5 signals lean spec -> HIGH."
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
 
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
@@ -125,8 +125,31 @@ phases:
     codex_validated: true
     codex_verdict: "FAIL -> fixed -> PASS_WITH_NOTES (converged)"
     gemini_verdict: PASS
-  pr:        { status: pending }
-  complete:  { status: pending }
+  pr:
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/9
+    pr_number: 9
+    base: main
+    head: feat/clo-492-validation
+    pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / cargo test (101) - all clean before PR"
+    code_diff: "+570 / -32 across src + scripts/acceptance.sh (plan.rs +276, git.rs +70, ui.rs +51, main.rs +40, acceptance.sh +165)"
+    ci_passed: true
+    ci_runs: [27914750265, "<rerun on e7e6aed>"]   # build/test green on ubuntu-latest + macos-latest both runs
+    merge_state: "CLEAN / MERGEABLE; no required reviews"
+    reviews_addressed: 1   # GitHub Copilot: 2 inline comments
+    review_commits: [e7e6aed]
+    review_note: "Copilot (COMMENTED, PR stayed MERGEABLE): (1) plan.rs claimed `omitted[0].clone()` (omitted: Vec<&String>) won't compile - VERIFIED FALSE: .clone() on &String resolves to <String as Clone>::clone -> owned String (CI green on both platforms confirms it builds); pushed back, no change. (2) ui.rs substring test used contains('1') for the partial count but the text always carries 'v1' -> ineffective; VERIFIED VALID, fixed in e7e6aed to assert '(1 partially' + '3 file(s) already staged'. Replied 2/2."
+    approved: true        # owner squash-merged PR #9 on GitHub
+    merge_commit: c328431eb4202dcebf44341f359206523f232428
+    merged_at: 2026-06-21T19:45:34Z
+    merge_strategy: squash
+    merged_by: maxkulish
+  complete:
+    status: complete
+    merged_at: 2026-06-21T19:45:34Z
+    aggregation_files_updated: true
+    linear_status_updated: true
+    unblocked: []   # CLO-492 only blocks CLO-497, which still waits on CLO-489/490/493/494/495/496
 
 # Scope checklist (from the Linear task)
 scope:
@@ -173,3 +196,23 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Dual-model gate (both read-only, HEAD unchanged). Gemini PASS (no defects; sandbox-only LOW notes). Codex round 1 FAIL: HIGH (cache-hit path replayed cached plans WITHOUT FR-23 validation - a pre-CLO-492 cache could drive an omission/duplicate) + MEDIUM (curated_index_warning omitted the partial count at 0). Both VERIFIED against the code/spec and fixed in f3e6387: plan::validate_cached (partition-only, skips the groups[0] message check so the advance flow's null first message isn't wrongly rejected) wired into the cache-hit arm with clear+fallback on failure; warning always names both counts. +4 unit tests + AC-V7 (isolated-cache jq tamper) + AC-V1 request-count. Post-fix: 101 unit + 167 acceptance green, clippy/fmt clean. Codex re-validation: PASS_WITH_NOTES (no findings; confirms both resolved). Converged."
+  - timestamp: 2026-06-21T19:16:00Z
+    action: pr_created
+    phase: pr
+    details: "Pre-flight clean (fmt/clippy -D warnings/101 tests). Branch pushed; PR #9 opened against main: https://github.com/maxkulish/gcm/pull/9. CI green on macos-latest + ubuntu-latest (run 27914750265). MERGEABLE / CLEAN. +570/-32 across src + acceptance.sh."
+  - timestamp: 2026-06-21T19:22:00Z
+    action: review_addressed
+    phase: pr
+    details: "/pr:review - GitHub Copilot left 2 inline comments (COMMENTED, PR stayed MERGEABLE). (1) plan.rs:335 'omitted[0].clone() won't compile' - VERIFIED FALSE: .clone() on &String resolves to <String as Clone>::clone -> owned String (CI green on both platforms confirms it builds); pushed back, no change. (2) ui.rs:156 'contains(1) confounded by v1' - VERIFIED VALID: the partial-count assertion was ineffective; fixed in e7e6aed to assert '(1 partially' + '3 file(s) already staged'. Pushed, replied 2/2. CI re-ran green on e7e6aed."
+  - timestamp: 2026-06-21T19:45:34Z
+    action: pr_merged
+    phase: complete
+    details: "Owner squash-merged PR #9 on GitHub (merge commit c328431). gcm full plan validation + safe fallback is on main. Worktree mode: post-merge cleanup runs in the main repo /Users/mk/Code/gcm (ff-pulled to include the merge); the feat/clo-492-validation worktree is deleted by the owner via `gd`."
+  - timestamp: 2026-06-21T19:48:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Post-merge sync on main (/Users/mk/Code/gcm). Linear CLO-492 -> Done + completion comment. PROJECT.md: master table -> Done, removed from Active Work, added to Recently Completed, Up Next note refreshed. ROADMAP: CLO-492 -> Done, Phase 1 5/13 complete. DEPENDENCIES: CLO-497 blocker note now lists CLO-487 + CLO-491 + CLO-492 satisfied (still waits on CLO-489/490/493/494/495/496); no task newly unblocked. Last-Updated bumped to 2026-06-21 across all three. CLO-488's own stale rows left for its workflow's post-merge sync."
+  - timestamp: 2026-06-21T19:48:00Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-492 specification workflow complete. Deliverable: gcm full plan validation + safe fallback on main (PR #9 squash, merge c328431). FR-23 full bijective validation (omission/duplicate/empty-group), FR-46 runtime curated-index warning, cache-hit re-validation; FR-24/FR-47 verified against the existing CLO-488/491 machinery. 101 unit + 167 acceptance, CI green, spec review (Gemini+Ollama APPROVE) + validation gate converged (Gemini PASS; Codex FAIL->fixed->PASS, caught a real cache-hit bypass) + Copilot review addressed. Spec path: spec -> implement -> PR. Linear CLO-492 -> Done. CLO-497 one blocker closer."
