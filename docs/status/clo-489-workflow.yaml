@@ -146,7 +146,15 @@ phases:
     codex_report: docs/reviews/clo-489-codex-validation.md
     gemini_validation_report: docs/reviews/clo-489-gemini-validation.md
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/10
+    pr_number: 10
+    base: main
+    head: feat/clo-489-provider
+    files_changed: 26
+    diff: "+2666 / -932"
+    commits: [2ecf754, 548c1cd, 79169d8]
+    pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / cargo test (105) - all clean before PR"
   complete:
     status: pending
 
@@ -199,3 +207,7 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Dual-model validation gate (both read-only; HEAD unchanged). Gemini PASS (no findings beyond LOW confirmations; all 9 ACs met). Codex FAIL with 3 findings, each validated before applying (receiving-code-review): HIGH (Groq strict:true hardcoded - qwen needs strict:false per the matrix; VALID -> fixed + test), LOW (Provider::name() omitted vs spec 3b; VALID -> restored + used in a GCM_DEBUG line), MEDIUM (per_file_bytes grouping-only - by design, would regress tracer parity; resolved by Codex's own explicit-contract recommendation in the DiffBudget doc). Fix commit 548c1cd; post-fix 105 unit + 161 acceptance green. Codex re-validation: PASS_WITH_NOTES, all 3 RESOLVED, no new findings (only note: read-only sandbox couldn't run cargo test, which we did). Converged. Advancing to PR; will stop at the PR checkpoint for the owner merge decision (AFK)."
+  - timestamp: 2026-06-21T20:40:00Z
+    action: pr_created
+    phase: pr
+    details: "Branch feat/clo-489-provider pushed (new upstream); PR #10 opened against main: https://github.com/maxkulish/gcm/pull/10 (26 files, +2666/-932, 3 commits). Body covers the trait/registry, the 3 backends, the validation gate (Gemini PASS; Codex FAIL->fixed->PASS_WITH_NOTES), and the egress note. Pre-flight clean (fmt/clippy/test 105). CI kicked off (run 27915293436); MERGEABLE. Stopping at the PR checkpoint for the owner merge decision (AFK)."
