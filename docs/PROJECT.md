@@ -62,7 +62,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
-| [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | Provider trait + Gemini + OpenAI backends | In Progress | Spec | - |
+| [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | Provider trait + Gemini + OpenAI backends | In Progress | PR | - |
 
 ## Up Next (Ready - no open blockers)
 
