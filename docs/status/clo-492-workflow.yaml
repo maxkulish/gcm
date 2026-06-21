@@ -1,0 +1,175 @@
+# Workflow state for CLO-492
+# Managed by /task:orchestrate
+
+task: CLO-492
+title: "Harden grouping with full plan validation and safe fallback"
+linear_url: https://linear.app/cloud-ai/issue/CLO-492/harden-grouping-with-full-plan-validation-and-safe-fallback
+branch: feat/clo-492-validation
+task_type: specification          # user-selected at the classification checkpoint (no flag); recommended=specification, HIGH confidence
+slice: S5
+labels: [AFK]                     # agent may implement and merge without human input
+priority: High
+covers_fr: [23, 24, 46, 47]       # FR-23 full (bijective plan validation), FR-24 full (empty-group/message-placement), FR-46 (warn-why fallback), FR-47 (index transaction on decline/failure)
+partial_fr: []
+
+# Reference material for spec/implementation
+references:
+  adr: docs/adrs/001-foundational-architecture-decisions.md
+  prd: docs/prds/prd-gcm.md
+  prior_spec_487: docs/specs/2026-06-20-clo-487-semantic-grouping.md   # the grouping slice this hardens (validate_basic + Fallback flow)
+  prior_spec_488: docs/specs/2026-06-20-clo-488-typed-errors.md        # retries this gates the fallback on; explicitly defers FR-23 full + fallback policy to CLO-492
+  prior_design_491: docs/design-docs/2026-06-20-clo-491-plan-cache.md  # CommitOutcome gate + snapshot_index/restore_index usage
+  bash_validator: docs/tmp/git-commit-ai.sh   # line 382 (validator rejects only unknown files), line 129 (fallback `git add -A` before confirming -> abort leaves a fully staged index)
+  code_seams:
+    - "src/plan.rs:243 validate_basic (FR-23 basic) + PlanError enum:31 - extend to full bijective validation"
+    - "src/main.rs:124 build_plan + BuildError::Fallback:117 - 'CLO-492 owns richer fallback policy' (main.rs:130)"
+    - "src/git.rs:197 snapshot_index / :203 restore_index (FR-47 primitives already built)"
+    - "src/main.rs:172 commit_first_group snapshot/restore + :225 single_commit snapshot/restore"
+
+depends_on:
+  blocked_by: []                  # CLO-487 (PR #5, Done) + CLO-488 (PR #6, merged 9052a7e) both satisfied
+  blocks: [CLO-497]               # cross-platform releases + alias cutover (waits on the whole feature set)
+
+classification:
+  recommended: specification
+  chosen: specification           # user accepted the recommendation at the checkpoint
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:         { lean: spec, note: "plan.rs (extend validate_basic), main.rs (fallback policy + warn), ui.rs (warn prompt); 2-4 existing files, no new module" }
+    architecture_novelty: { lean: spec, note: "no new dep/data-model/interface; snapshot_index/restore_index (FR-47), BuildError::Fallback->single_commit, validate_basic all already built; code carries explicit 'CLO-492 owns' seams (plan.rs:241, main.rs:130)" }
+    prior_art:            { lean: spec, note: "validate_basic + PlanError enum are a direct template for bijective validation; bash defects line-pinpointed (validator :382, fallback :129); siblings CLO-486/487/488 all shipped as specs" }
+    requirement_clarity:  { lean: spec, note: "4 scope items, 3 ACs, FR-23/24/46/47 enumerated; acceptance criteria derivable now; no open trade-offs" }
+    scope_signal:         { lean: spec, note: "bounded: bijective validation + post-retry fallback policy + one new pre-staged-index warning; S/M" }
+  rationale: "CLO-492 hardens code that already exists (validate_basic, Fallback path, snapshot/restore primitives all in place with CLO-492-tagged seams); directly extends CLO-487/488 (both specs) and matches the established spec precedent for the grouping/provider family. 5/5 signals lean spec -> HIGH."
+
+workflow:
+  current_phase: pr
+  status: in_progress
+
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design:    { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-21-clo-492-validation.md
+    approved: true
+    approved_by: "Max Kulish (owner)"
+    approved_at: 2026-06-21T18:25:00Z
+    scope: M
+    sub_tasks: 5
+    review_gemini: docs/reviews/clo-492-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-492-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-492-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS   # both reviewers; no NEEDS_REVISION; no ADR contradictions
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "P1.1 made the validate_basic->validate rename explicit incl. all existing test refs (accepts_a_valid_plan, rejects_*) + the one build_plan caller"
+      - "P1.2 made the EmptyFirstGroup->EmptyGroup(usize) migration explicit (0-based store / 1-based render, Display arm, construction + test sites)"
+      - "P1.3 added same-group duplicate test (['a.rs','a.rs']->DuplicateFile) eval row 17; AC-2 already names the duplicated file"
+      - "P1.4 added combined curated-index + forced-fallback test (eval row 18) asserting both warnings fire and their order"
+      - "P2.6 AC-7 pinned warning timing (after unmerged guard, before plan-gen/staging/fallback warning) + required testable substrings ('curated index','reset','hunk-level staging is not preserved')"
+      - "P2.7 AC-5 relaxed 'byte-identical' -> 'same staged state' = identical git write-tree SHA + identical git status -z (not a .git/index byte-compare)"
+      - "P3.8 documented unmerged->is_staged interception (warning only fires on clean repos), --plan-only future-proofing (gate on will-mutate not literally --dry-run), and --reset interaction (clears cache not index -> still warns)"
+      - "P3.9 added EGRESS_DISCLOSURE wording-consistency check to the docs sub-task; noted CLO-488 retries are upstream + ADR-001 Decision 9 binds FR-46 (already cited); clarified is_staged reads index-side char x"
+      - "edge cases: deterministic first-offender; deliberate --dry-run silence (no 'would reset' note)"
+    flagged_suggestions:
+      - "P2.5 (reviewer split, owner decision): curated-index warning under --yes. Resolved toward PRINT (non-blocking stderr) on FR-46 'not silent' grounds (Gemini position over Ollama's suppress-under-automation). RATIFIED by owner at the spec checkpoint: print even under --yes."
+    ratified_decisions:
+      - "Curated-index warning prints even under --yes (owner-confirmed at checkpoint)"
+      - "Later-group commit_messages tolerated/ignored, not rejected (placement check = groups[0] has a usable message)"
+      - "Curated-index warning is informational (print + proceed), not a hard stop"
+      - "Validation failures fall back immediately - no grouping re-request; only CLO-488 transient errors retry (upstream)"
+  implement:
+    status: complete
+    plan_phase: "skipped - spec decomposition IS the plan (specification task)"
+    approach: "TDD-first on the two pure-logic units (validate partition + ChangedFile staged-state helpers + curated_index_warning), each stub->RED->impl->GREEN; then wiring in main.rs; then acceptance harness. No new deps."
+    sub_tasks:
+      - { n: 1, name: "plan.rs: PlanError {EmptyGroup,DuplicateFile,OmittedFile}; validate_basic->validate full partition (omission/duplicate/empty-any/unknown/message)", status: complete }
+      - { n: 2, name: "git.rs: ChangedFile::is_staged + is_partially_staged (pure x/y helpers)", status: complete }
+      - { n: 3, name: "main.rs: build_plan calls plan::validate (warn-why via PlanError Display)", status: complete }
+      - { n: 4, name: "ui.rs curated_index_warning + main.rs execute() FR-46 warning (post-unmerged, pre-branch, !dry_run, prints under --yes)", status: complete }
+      - { n: 5, name: "scripts/acceptance.sh: AC-V1..V6 (omission/duplicate/empty -> fallback; curated-index warning grouping+--all; dry-run silent; decline leaves index unchanged + warning ordering)", status: complete }
+    test_fixture_fix: "AC-G13 (CLO-487 glob-literal staging) plan covered only a*.txt while both a*.txt and ab.txt changed -> now correctly trips the new omission check. Updated the fixture to a valid 2-group partition (group1=a*.txt literal, group2=ab.txt); the glob-no-leak assertion is preserved. This is the new validation working, not a regression."
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "99 passed (27 plan incl. omission/dup/empty/display-distinct; 2 git staged-state; 2 ui curated-warning; 68 pre-existing)"
+      cargo_build_release: ok
+      acceptance_sh: "167 PASS / 0 FAIL / 1 SKIP (pre-existing manual $EDITOR skip). New: AC-V1 omission->fallback+not-dropped+not-retried+2-request-sequence, AC-V2 duplicate->fallback, AC-V3 empty-group->fallback, AC-V4 curated-index warning grouping + dry-run silent, AC-V5 --all warns, AC-V6 decline-leaves-index + warning ordering (PTY), AC-V7 invalid-cached-plan->re-validate->fallback (isolated cache dir + jq tamper)."
+      new_deps: none
+    commits:
+      - { sha: 1a87a4c, summary: "feat(CLO-492): full plan validation + safe fallback with curated-index warning" }
+      - { sha: f3e6387, summary: "fix(CLO-492): re-validate cached plans + always name both staged counts (Codex gate)" }
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-492-gemini-validation.md
+        verdict: PASS
+        mode: "--model gemini-3.1-pro-preview -y --sandbox --skip-trust (read-only)"
+        notes: "No defects. Confirmed validate bijection, is_staged/is_partially_staged XY parsing, FR-46 warning placement, FR-47 intact. Two LOW notes were sandbox artifacts (Operation not permitted on /tmp; clippy+test clean)."
+      codex:
+        report: docs/reviews/clo-492-codex-validation.md
+        verdict: FAIL
+        mode: "-m gpt-5.4 reasoning.effort=high -s read-only; HEAD unchanged"
+        findings_applied:
+          - "HIGH (cache-hit validation bypass): VERIFIED against cache.rs:117 (read_cache_file only screens groups.is_empty/empty groups[0]) + main.rs cache-hit arm (Some(plan)=>plan, no validate). A pre-CLO-492 cached plan with an omission/duplicate replayed unchecked. Fixed: new plan::validate_cached (partition-only, NO groups[0] message check - an advanced entry has a null first message by design; the full validate would wrongly reject the normal next-group flow). Wired into the cache-hit arm: on failure clear cache + announced single-commit fallback. +2 unit tests + AC-V7."
+          - "MEDIUM (warning omits partial count at 0): VERIFIED against the spec ('naming ... how many are partially staged'). Fixed: curated_index_warning always names both counts incl. '0 partially'. Test updated."
+        findings_pushback: []   # both findings real; no pushback
+        gate_setup_fix: "First run: codex hung on open stdin (-> timeout 124) and gemini failed on workspace trust (exit 55). Re-ran with codex stdin </dev/null and gemini --skip-trust."
+      fix_commit: f3e6387
+      revalidation:
+        report: docs/reviews/clo-492-codex-revalidation.md
+        verdict: PASS_WITH_NOTES   # no findings; confirms HIGH + MEDIUM both resolved (only note: read-only sandbox couldn't run tests, which I ran: 101 unit + 167 acceptance green)
+      converged: true   # Gemini PASS; Codex FAIL -> fixed (f3e6387) -> PASS_WITH_NOTES (no findings)
+    codex_validated: true
+    codex_verdict: "FAIL -> fixed -> PASS_WITH_NOTES (converged)"
+    gemini_verdict: PASS
+  pr:        { status: pending }
+  complete:  { status: pending }
+
+# Scope checklist (from the Linear task)
+scope:
+  - "Full plan validation: no omitted files, no file in more than one group, no empty groups, message placement per contract"
+  - "Single-commit fallback only after retries (CLO-488); warn why grouping failed"
+  - "Stage only after the user confirms the lumped commit; restore the pre-run index on decline/failure"
+  - "Warn before resetting a user-curated (partially staged) index"
+
+acceptance_criteria:
+  - "A plan that omits a changed file or duplicates one is rejected to fallback, not committed"
+  - "On a forced grouping failure, declining the fallback leaves the index exactly as before the run"
+  - "Running with pre-staged hunks warns before the index is reset"
+
+history:
+  - timestamp: 2026-06-21T18:02:13Z
+    action: workflow_started
+    phase: spec
+    details: "New workflow for CLO-492 (harden grouping with full plan validation + safe fallback). Blockers CLO-487 (PR #5, Done) and CLO-488 (PR #6, merged 9052a7e) both satisfied -> unblocked. Branch feat/clo-492-validation already checked out."
+  - timestamp: 2026-06-21T18:02:13Z
+    action: task_classified
+    phase: spec
+    details: "Recommended=specification (HIGH confidence, 5/5 signals aligned, method=probe). Codebase probe found CLO-492's architecture fully scaffolded with explicit CLO-492 seams: plan.rs:241 'Full bijective validation is CLO-492', main.rs:130 'CLO-492 owns richer fallback policy', git.rs snapshot_index/restore_index (FR-47) already built. Siblings CLO-486/487/488 all spec'd. User accepted the recommendation at the checkpoint -> chosen=specification."
+  - timestamp: 2026-06-21T18:02:13Z
+    action: project_sync_start
+    phase: spec
+    details: "WIP under limit (CLO-488 listed In Progress but PR #6 merged 9052a7e -> effectively 0 real active; CLO-492 makes 1). CLO-492 unblocked: CLO-487 (Done) + CLO-488 (merged) both satisfied. PROJECT.md: master table CLO-492 Backlog->In Progress, added to Active Work (Phase: Spec), removed from Blocked, Up Next note rewritten. ROADMAP.md: inserted CLO-492 row -> In Progress (was missing from Phase 1 table). DEPENDENCIES.md: removed CLO-492 from Current Blockers, footer note updated. Last-Updated bumped to 2026-06-21 across all three. Left CLO-488's own stale rows for its workflow's post-merge sync."
+  - timestamp: 2026-06-21T18:18:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "Spec drafted (docs/specs/2026-06-21-clo-492-validation.md): 5 sections, 10 ACs, 19 eval rows, 5 sub-tasks, scope M. Dual-model review ran via lok (.lok/workflows/spec-review.toml) - Gemini + Ollama both succeeded, both APPROVE_WITH_SUGGESTIONS (no NEEDS_REVISION, no ADR contradictions). Reviews + synthesis in docs/reviews/clo-492-spec-review-{gemini,ollama,synthesis}.md. One genuine reviewer disagreement (curated-index warning under --yes); everything else additive/refinement."
+  - timestamp: 2026-06-21T18:20:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "All P1-P3 suggestions auto-applied (refinements/additive; none contradicted ADR-001 -> zero REVIEW CONFLICT prompts). Key edits: validate_basic->validate rename made explicit (all test refs); EmptyFirstGroup->EmptyGroup(usize) migration spelled out; AC-5 'byte-identical'->same write-tree SHA + git status -z; AC-7 pinned warning timing + testable substrings; same-group duplicate + combined curated-index-and-fallback eval rows (17,18); unmerged->is_staged interception, --plan-only future-proof, --reset interaction documented. The --yes warning decision resolved toward PRINT (FR-46 'not silent') and flagged for the checkpoint. At spec checkpoint."
+  - timestamp: 2026-06-21T18:25:00Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved the spec at the checkpoint ('Approve'). Flagged --yes decision RATIFIED: curated-index warning prints even under --yes (FR-46 not-silent). Plan phase skipped (spec decomposition is the plan). Advancing to implement; will run autonomously under the AFK label (TDD-first on the pure validator + staged-state helpers, then wiring + acceptance harness, dual-model validation gate) and stop at the PR checkpoint."
+  - timestamp: 2026-06-21T19:30:00Z
+    action: implementation_complete
+    phase: implement
+    details: "TDD-first across 3 pure units (plan::validate partition; ChangedFile::is_staged/is_partially_staged; ui::curated_index_warning), each stub->RED->impl->GREEN, then main.rs wiring + acceptance harness AC-V1..V7. Commit 1a87a4c. AC-G13 fixture updated (its single-group plan now correctly trips the omission check -> made a valid 2-group partition; glob-no-leak assertion preserved). 99 unit + 163 acceptance green at feat time."
+  - timestamp: 2026-06-21T19:45:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Dual-model gate (both read-only, HEAD unchanged). Gemini PASS (no defects; sandbox-only LOW notes). Codex round 1 FAIL: HIGH (cache-hit path replayed cached plans WITHOUT FR-23 validation - a pre-CLO-492 cache could drive an omission/duplicate) + MEDIUM (curated_index_warning omitted the partial count at 0). Both VERIFIED against the code/spec and fixed in f3e6387: plan::validate_cached (partition-only, skips the groups[0] message check so the advance flow's null first message isn't wrongly rejected) wired into the cache-hit arm with clear+fallback on failure; warning always names both counts. +4 unit tests + AC-V7 (isolated-cache jq tamper) + AC-V1 request-count. Post-fix: 101 unit + 167 acceptance green, clippy/fmt clean. Codex re-validation: PASS_WITH_NOTES (no findings; confirms both resolved). Converged."

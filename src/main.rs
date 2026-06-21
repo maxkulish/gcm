@@ -67,6 +67,23 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
         return Err(GcmError::UnmergedConflicts);
     }
 
+    // FR-46: warn before resetting a user-curated index. Both real commit paths
+    // discard the user's staging (grouping resets via `clear_staged`; `--all`
+    // overrides via `git add -A`), so a pre-existing curated/partial index is
+    // about to be lost. Gate on "will the index actually be mutated": today that
+    // is `!dry_run`; when CLO-493 adds a no-mutation `--plan-only`, extend this
+    // gate (do not duplicate it). Prints even under `--yes` (FR-46: documented,
+    // not silent - it is stderr, never a prompt). Placed after the `is_unmerged`
+    // guard, so a conflicted entry (whose `x` can read as staged) never reaches
+    // it. `--reset` clears only the cache, not the index, so it still warns.
+    if !args.dry_run {
+        let staged = changed.iter().filter(|c| c.is_staged()).count();
+        if staged > 0 {
+            let partial = changed.iter().filter(|c| c.is_partially_staged()).count();
+            eprintln!("{}", ui::curated_index_warning(staged, partial));
+        }
+    }
+
     // `--all`, or a clean merge-in-progress, bypasses grouping and commits
     // everything as one. A clean `MERGE_HEAD` makes `git commit` finalize the
     // merge as a proper two-parent merge commit. The single-commit path clears
@@ -83,7 +100,26 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
     // failure) is returned as-is.
     let model = groq::resolved_model();
     let plan = match cache::load(&repo, &changed, &model) {
-        Some(plan) => plan,
+        Some(plan) => {
+            // Defense in depth (CLO-492, FR-23): a cached plan must still
+            // partition the CURRENT change set before it drives grouped commits.
+            // A plan written by a pre-CLO-492 binary (which only screened unknown
+            // files) - or any future advance defect - could otherwise replay an
+            // omission/duplicate and silently drop a file. `validate_cached` skips
+            // the groups[0] message check (an advanced entry has a null first
+            // message by design, regenerated per group). On failure, drop the
+            // stale entry and take the same announced fallback as a fresh-plan
+            // validation failure.
+            let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
+            if let Err(reason) = plan::validate_cached(&plan, &change_set) {
+                eprintln!(
+                    "gcm: cached plan invalid ({reason}). Falling back to single-commit mode."
+                );
+                cache::clear(&repo);
+                return single_commit(&repo, args);
+            }
+            plan
+        }
         None => match build_plan(&repo, &changed) {
             Ok(plan) => {
                 // Save the full plan even on a `--dry-run` (FR-7: dry-run
@@ -134,7 +170,7 @@ fn build_plan(repo: &Repo, changed: &[ChangedFile]) -> Result<Plan, BuildError> 
         other => BuildError::Fallback(other.to_string()),
     })?;
     let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
-    plan::validate_basic(&plan, &change_set).map_err(|e| BuildError::Fallback(e.to_string()))?;
+    plan::validate(&plan, &change_set).map_err(|e| BuildError::Fallback(e.to_string()))?;
     Ok(plan)
 }
 
