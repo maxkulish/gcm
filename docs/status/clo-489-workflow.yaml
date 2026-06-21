@@ -30,8 +30,8 @@ depends_on:
   blocks: [CLO-494, CLO-495, CLO-496, CLO-497]   # Anthropic provider, Ollama provider, onboarding wizard, release cutover all need the trait+registry
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   classification_rationale: "Auto-probe verdict SPECIFICATION (medium confidence, 3/5 lean spec), user-confirmed at the classification checkpoint. ADR-001 pre-locks the architecture: the Provider trait signature is written verbatim (fn generate(&self, req: PlanRequest) -> Result<Plan, ProviderError>, synchronous, no tokio), the 'Provider trait shape (FR-11)' section enumerates the 3 structured-output mechanisms to abstract, and Appendix A records verified per-provider request shapes (Gemini responseSchema OpenAPI-3.0 subset; OpenAI response_format strict json_schema) with reasoning controls and constraints. PRD FR-11/12/14/17/18 are explicit with testable ACs (precedence flag>env>default specified). src/groq.rs (generate_plan/generate_commit_message/RetryConfig/GroqError) is a working template the new backends follow. AFK label authorizes autonomous run through the PR checkpoint. Blast radius (6-8 files) and L scope lean development, but the decisive architecture-novelty + prior-art rows favor spec and a design doc would be near-empty given ADR-001 - same profile as CLO-486/487/488 (all specifications). Medium (not high) because this is the largest, most central slice and a trait refactor carries more integration risk."
 
 classification:
@@ -146,11 +146,13 @@ phases:
     codex_report: docs/reviews/clo-489-codex-validation.md
     gemini_validation_report: docs/reviews/clo-489-gemini-validation.md
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/10
     pr_number: 10
     base: main
     head: feat/clo-489-provider
+    merged: true
+    merge_commit: ca1db75   # squash-merged to main as "feat(CLO-489): provider trait + Gemini and OpenAI backends (#10)"
     files_changed: 26
     diff: "+2666 / -932"
     commits: [2ecf754, 548c1cd, 79169d8]
@@ -172,7 +174,10 @@ phases:
         commit: 341ae58
         details: "Docs-only conflicts (PROJECT/ROADMAP/DEPENDENCIES): CLO-492 now Done (Recently Completed); CLO-489 stays at PR #10. No code conflicts. Up to date with main (0 behind); PR #10 MERGEABLE/CLEAN; CI green on merge commit 341ae58."
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: 2026-06-21T21:30:00Z
+    unblocked: [CLO-494, CLO-495, CLO-496]
 
 # Scope checklist (from the Linear task)
 scope:
@@ -231,3 +236,15 @@ history:
     action: review_addressed
     phase: pr
     details: "Resolved merge conflicts after main advanced twice while at the PR checkpoint. Round 1: merged CLO-492 (#9 full plan validation + safe fallback, commit c328431) - real code conflicts in plan.rs (kept gemini_schema + took validate()/validate_cached, dropped validate_basic) and main.rs (combined provider dispatch with validate/validate_cached + FR-46 warning; threaded provider into all single_commit calls); merge commit aec62ca, 118 unit + 188 acceptance green. Round 2: merged CLO-492 post-merge sync (7aac21b) - docs-only (CLO-492->Done/Recently Completed, CLO-489 stays PR); merge commit 341ae58. PR #10 now MERGEABLE/CLEAN, 0 behind main, CI green on 341ae58. Back at the PR checkpoint awaiting the owner merge decision."
+  - timestamp: 2026-06-21T21:30:00Z
+    action: pr_merged
+    phase: pr
+    details: "PR #10 squash-merged to main as ca1db75 (feat(CLO-489): provider trait + Gemini and OpenAI backends (#10)). provider/ module present on main; CI green. Linear CLO-489 -> Done."
+  - timestamp: 2026-06-21T21:30:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Main repo (/Users/mk/Code/gcm) pulled. PROJECT.md: CLO-489 moved Active Work -> Recently Completed, master table -> Done, CLO-494/495/496 moved Blocked -> Up Next (unblocked). ROADMAP.md: CLO-489 -> Done, Phase 1 completed 5 -> 6. DEPENDENCIES.md: CLO-494/495/496 moved Current Blockers -> Unblocked & Ready (CLO-489 + CLO-485 satisfied). Linear CLO-489 -> Done + final comment posted."
+  - timestamp: 2026-06-21T21:30:00Z
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-489 fully completed (specification workflow: spec -> implement -> PR -> complete). Provider trait + Gemini/OpenAI backends shipped; unblocked CLO-494 (Anthropic), CLO-495 (Ollama), CLO-496 (onboarding). Worktree cleanup (gd) left to the owner."
