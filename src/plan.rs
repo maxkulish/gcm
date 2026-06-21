@@ -268,6 +268,33 @@ pub fn schema() -> Value {
 /// change set. The validator is pure: no git calls, `change_set` is supplied by
 /// the caller (`changed.iter().map(|c| c.path)`).
 pub fn validate(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
+    check_structure(plan)?;
+    // FR-45 message placement: a freshly generated plan must carry the group-0
+    // message. (Not checked on the cache-hit path - see `validate_cached`.)
+    match &plan.groups[0].commit_message {
+        Some(m) if !m.trim().is_empty() => {}
+        _ => return Err(PlanError::MissingFirstMessage),
+    }
+    validate_partition(plan, change_set)
+}
+
+/// Partition-only re-validation for a **cached** plan, safe to run on the
+/// cache-hit path: it enforces the same bijection (no empty groups, no unknowns,
+/// no duplicates, no omissions) but **skips the `groups[0]` message check**. An
+/// advanced cache entry legitimately carries a null first message (regenerated
+/// per group, ADR-001 Decision 6), so checking it would wrongly reject the normal
+/// "commit the next group" flow. This is defense in depth: a plan written by a
+/// pre-CLO-492 binary (which only screened unknown files) - or any future
+/// advance defect - must still partition the current change set, or grouping
+/// would silently drop/duplicate a file (the FR-23 bug this slice fixes).
+pub fn validate_cached(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
+    check_structure(plan)?;
+    validate_partition(plan, change_set)
+}
+
+/// Structural checks shared by [`validate`] and [`validate_cached`]: at least one
+/// group, and no empty group (first offender, 0-based).
+fn check_structure(plan: &Plan) -> Result<(), PlanError> {
     if plan.groups.is_empty() {
         return Err(PlanError::NoGroups);
     }
@@ -276,10 +303,13 @@ pub fn validate(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanErr
             return Err(PlanError::EmptyGroup(i));
         }
     }
-    match &plan.groups[0].commit_message {
-        Some(m) if !m.trim().is_empty() => {}
-        _ => return Err(PlanError::MissingFirstMessage),
-    }
+    Ok(())
+}
+
+/// The bijection check shared by [`validate`] and [`validate_cached`]: every plan
+/// path is known (in the change set) and unique (no file in two groups, or twice
+/// in one), and every changed file is covered by some group.
+fn validate_partition(plan: &Plan, change_set: &HashSet<String>) -> Result<(), PlanError> {
     // Single walk over every plan path: reject the first unknown (outside the
     // change set) or duplicate (already seen in any group). `seen` doubles as the
     // coverage set for the omission check below.
@@ -482,6 +512,55 @@ mod tests {
         assert_eq!(unique.len(), msgs.len(), "all 7 Display strings distinct");
         // 0-based store, 1-based render.
         assert!(PlanError::EmptyGroup(1).to_string().contains("group 2"));
+    }
+
+    #[test]
+    fn validate_cached_tolerates_null_first_message() {
+        // An advanced cache entry has a null groups[0] message (regenerated per
+        // group). The full `validate` rejects that (MissingFirstMessage), but
+        // `validate_cached` must accept it as long as the partition holds.
+        let p = parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null}]}"#);
+        assert_eq!(
+            validate(&p, &change_set(&["a.rs"])),
+            Err(PlanError::MissingFirstMessage),
+            "full validate still requires the group-0 message"
+        );
+        assert_eq!(
+            validate_cached(&p, &change_set(&["a.rs"])),
+            Ok(()),
+            "validate_cached tolerates the null first message"
+        );
+    }
+
+    #[test]
+    fn validate_cached_still_enforces_the_partition() {
+        // Omission, duplicate, empty group, and unknown file are all rejected on
+        // the cache-hit path too - the bijection is enforced regardless of source.
+        let omit = parse(r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null}]}"#);
+        assert_eq!(
+            validate_cached(&omit, &change_set(&["a.rs", "b.md"])),
+            Err(PlanError::OmittedFile("b.md".to_string()))
+        );
+        let dup = parse(
+            r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null},{"files":["a.rs"],"summary":"s2","commit_message":null}]}"#,
+        );
+        assert_eq!(
+            validate_cached(&dup, &change_set(&["a.rs"])),
+            Err(PlanError::DuplicateFile("a.rs".to_string()))
+        );
+        let empty = parse(
+            r#"{"groups":[{"files":["a.rs"],"summary":"s","commit_message":null},{"files":[],"summary":"e","commit_message":null}]}"#,
+        );
+        assert_eq!(
+            validate_cached(&empty, &change_set(&["a.rs"])),
+            Err(PlanError::EmptyGroup(1))
+        );
+        let ghost =
+            parse(r#"{"groups":[{"files":["ghost.rs"],"summary":"s","commit_message":null}]}"#);
+        assert_eq!(
+            validate_cached(&ghost, &change_set(&["a.rs"])),
+            Err(PlanError::UnknownFile("ghost.rs".to_string()))
+        );
     }
 
     #[test]

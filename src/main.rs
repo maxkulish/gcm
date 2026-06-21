@@ -100,7 +100,26 @@ fn execute(args: &Cli) -> Result<(), GcmError> {
     // failure) is returned as-is.
     let model = groq::resolved_model();
     let plan = match cache::load(&repo, &changed, &model) {
-        Some(plan) => plan,
+        Some(plan) => {
+            // Defense in depth (CLO-492, FR-23): a cached plan must still
+            // partition the CURRENT change set before it drives grouped commits.
+            // A plan written by a pre-CLO-492 binary (which only screened unknown
+            // files) - or any future advance defect - could otherwise replay an
+            // omission/duplicate and silently drop a file. `validate_cached` skips
+            // the groups[0] message check (an advanced entry has a null first
+            // message by design, regenerated per group). On failure, drop the
+            // stale entry and take the same announced fallback as a fresh-plan
+            // validation failure.
+            let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
+            if let Err(reason) = plan::validate_cached(&plan, &change_set) {
+                eprintln!(
+                    "gcm: cached plan invalid ({reason}). Falling back to single-commit mode."
+                );
+                cache::clear(&repo);
+                return single_commit(&repo, args);
+            }
+            plan
+        }
         None => match build_plan(&repo, &changed) {
             Ok(plan) => {
                 // Save the full plan even on a `--dry-run` (FR-7: dry-run

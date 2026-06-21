@@ -111,18 +111,14 @@ pub fn needs_terminal_but_absent(auto_yes: bool, dry_run: bool) -> bool {
 /// the user excluded would be committed. Consistent with the static `--help`
 /// disclosure (`EGRESS_DISCLOSURE`, `src/cli.rs`).
 pub fn curated_index_warning(staged: usize, partial: usize) -> String {
-    let mut s = format!(
-        "gcm: warning: {staged} file(s) already staged - gcm will reset the curated index and re-stage by group."
-    );
-    s.push('\n');
-    s.push_str("gcm: warning: hunk-level staging is not preserved in v1");
-    if partial > 0 {
-        s.push_str(&format!(
-            " ({partial} file(s) partially staged via `git add -p`; their excluded hunks will be committed)"
-        ));
-    }
-    s.push('.');
-    s
+    // Always name both counts (FR-46): the staged total and how many of those are
+    // partially staged (the data-loss case). A `0 partially` makes explicit that
+    // no hunk-level work is at risk while still flagging that the curated index
+    // (which files, what grouping) is overridden.
+    format!(
+        "gcm: warning: {staged} file(s) already staged ({partial} partially via `git add -p`) - gcm will reset the curated index and re-stage by group.\n\
+         gcm: warning: hunk-level staging is not preserved in v1; excluded hunks would be committed."
+    )
 }
 
 /// `--dry-run` preview of the grouping plan: group 1's message plus a note of
@@ -161,13 +157,17 @@ mod tests {
     }
 
     #[test]
-    fn curated_index_warning_omits_partial_detail_when_zero() {
+    fn curated_index_warning_always_names_both_counts() {
         let w = curated_index_warning(2, 0);
         assert!(w.contains("curated index"));
         assert!(w.contains("hunk-level staging is not preserved"));
         assert!(
-            !w.contains("git add -p"),
-            "no partial-staging detail when partial == 0: {w}"
+            w.contains("2 file(s) already staged"),
+            "names staged count: {w}"
+        );
+        assert!(
+            w.contains("0 partially"),
+            "names the partial count even when zero: {w}"
         );
     }
 }

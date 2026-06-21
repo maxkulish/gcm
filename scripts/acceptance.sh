@@ -454,6 +454,8 @@ if [ "$SIGNING_OK" -eq 1 ]; then
   [ "$(git -C "$d" log --oneline | wc -l | tr -d ' ')" = "2" ] && ok "single fallback commit" || bad "fallback commit count"
   plan_reqs=$(grep -c 'response_format' "$CAPTURE")
   [ "$plan_reqs" = "1" ] && ok "validation fallback not retried (1 grouping request)" || bad "grouping retried ($plan_reqs requests)"
+  total_reqs=$(grep -c 'messages' "$CAPTURE")
+  [ "$total_reqs" = "2" ] && ok "exactly 2 provider requests (1 plan + 1 fallback message)" || bad "request count $total_reqs (want 2: plan + fallback message)"
   : > "$PLAN_FILE"; rm -rf "$d"
 else
   skip "AC-V1 needs signing"
@@ -507,7 +509,7 @@ grep -qi "curated index" /tmp/gcm-dry && bad "dry-run warned (nothing is reset o
 grep -qi "curated index" /tmp/gcm-out && ok "real run warns about the curated index" || bad "no curated-index warning"
 grep -qi "reset" /tmp/gcm-out && ok "warning says the index will be reset" || bad "warning missing 'reset'"
 grep -qi "hunk-level staging is not preserved" /tmp/gcm-out && ok "warning states the v1 limitation" || bad "hunk-level note missing"
-grep -qi "partially staged" /tmp/gcm-out && ok "warning flags the partial staging" || bad "partial-staging note missing"
+grep -qi "1 partially" /tmp/gcm-out && ok "warning names the partial-staging count" || bad "partial-staging count missing"
 : > "$PLAN_FILE"; rm -rf "$d"
 
 note "AC-V5 (CLO-492): --all also warns before resetting a curated index"
@@ -554,6 +556,40 @@ if command -v expect >/dev/null 2>&1; then
   : > "$PLAN_FILE"; rm -rf "$d"
 else
   skip "AC-V6 PTY decline needs 'expect' (index-restore covered by AC-13; staging is post-confirm)"
+fi
+
+note "AC-V7 (CLO-492): an invalid CACHED plan is re-validated on a hit -> fallback (not replayed)"
+# Covers the cache-hit path: a plan written by an older binary (or any advance
+# defect) must still partition the current change set. Build a real cache via a
+# valid first group, then tamper the cached plan (keeping the fingerprint) so the
+# next run gets a cache HIT with an invalid plan.
+if [ "$SIGNING_OK" -eq 1 ] && command -v jq >/dev/null 2>&1; then
+  d="$(new_repo)"; printf 'v1\n' > "$d/a.txt"; printf 'v1\n' > "$d/b.txt"
+  git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+  git -C "$d" -c commit.gpgsign=false commit -qm init
+  printf 'v2\n' > "$d/a.txt"; printf 'v2\n' > "$d/b.txt"
+  # Isolated cache dir so the tamper targets exactly THIS repo's cache file (the
+  # suite's shared GCM_CACHE_DIR accumulates other repos' caches).
+  v7cache="$(mktemp -d)"
+  # First run: valid 2-group plan -> commits group 1 (a.txt), caches group 2 (b.txt).
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"},{"files":["b.txt"],"summary":"b","commit_message":null}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_CACHE_DIR="$v7cache" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+  cf=$(ls "$v7cache"/plan-*.json 2>/dev/null | head -1)
+  if [ -n "$cf" ]; then
+    ok "cache file written after committing group 1"
+    # Tamper: point the cached group at an unknown path (fingerprint untouched, so
+    # the pending {b.txt} still yields a cache HIT on the next run).
+    jq '.plan.groups[0].files = ["ghost.txt"]' "$cf" > "$cf.tmp" && mv "$cf.tmp" "$cf"
+    : > "$PLAN_FILE"   # if validation wrongly passes, a stale plan would be replayed
+    ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_CACHE_DIR="$v7cache" "$BIN" --yes >/tmp/gcm-out 2>&1 )
+    grep -qi "cached plan invalid" /tmp/gcm-out && ok "invalid cached plan detected -> fallback" || bad "cached plan not re-validated"
+    git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'b.txt' && ok "fallback committed the pending file (not dropped)" || bad "b.txt not committed by fallback"
+  else
+    bad "no cache file found to tamper"
+  fi
+  rm -rf "$v7cache"; : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-V7 needs signing + jq (validate_cached logic covered by unit tests)"
 fi
 
 note "AC-G8: --dry-run previews the plan and commits nothing"
