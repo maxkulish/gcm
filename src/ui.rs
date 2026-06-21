@@ -152,8 +152,16 @@ mod tests {
             w.contains("hunk-level staging is not preserved"),
             "states the v1 limitation: {w}"
         );
-        assert!(w.contains('3'), "names the staged count: {w}");
-        assert!(w.contains('1'), "names the partial count: {w}");
+        assert!(
+            w.contains("3 file(s) already staged"),
+            "names the staged count: {w}"
+        );
+        // Specific substring, not a bare `contains('1')` - the text always carries
+        // "v1", so a digit check would pass regardless of the partial count.
+        assert!(
+            w.contains("(1 partially"),
+            "names the partial count specifically: {w}"
+        );
     }
 
     #[test]
