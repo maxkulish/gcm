@@ -30,7 +30,7 @@ depends_on:
   blocks: [CLO-494, CLO-495, CLO-496, CLO-497]   # Anthropic provider, Ollama provider, onboarding wizard, release cutover all need the trait+registry
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   classification_rationale: "Auto-probe verdict SPECIFICATION (medium confidence, 3/5 lean spec), user-confirmed at the classification checkpoint. ADR-001 pre-locks the architecture: the Provider trait signature is written verbatim (fn generate(&self, req: PlanRequest) -> Result<Plan, ProviderError>, synchronous, no tokio), the 'Provider trait shape (FR-11)' section enumerates the 3 structured-output mechanisms to abstract, and Appendix A records verified per-provider request shapes (Gemini responseSchema OpenAPI-3.0 subset; OpenAI response_format strict json_schema) with reasoning controls and constraints. PRD FR-11/12/14/17/18 are explicit with testable ACs (precedence flag>env>default specified). src/groq.rs (generate_plan/generate_commit_message/RetryConfig/GroqError) is a working template the new backends follow. AFK label authorizes autonomous run through the PR checkpoint. Blast radius (6-8 files) and L scope lean development, but the decisive architecture-novelty + prior-art rows favor spec and a design doc would be near-empty given ADR-001 - same profile as CLO-486/487/488 (all specifications). Medium (not high) because this is the largest, most central slice and a trait refactor carries more integration risk."
 
@@ -93,7 +93,7 @@ phases:
       pushback: "none required - all 6 points technically correct (pt6 was already largely handled by the existing harness design; framed as an explicit note rather than a new mechanism). No conflict with ADR-001 (o-series support is best-effort for --model overrides; gpt-4o-mini remains the locked, tested default)."
       eval_rows_added: "22-26 (o-series payload, Gemini safety block, Gemini env alias, HTTP timeout, post_json auth tuple)"
   implement:
-    status: in_progress
+    status: complete
     approach: "Direct implementation from the spec decomposition (specification workflow - no separate plan file; the 9 sub-tasks ARE the plan). TDD on pure-logic units (RID parse, selection/model resolution incl. empty/alias, each backend payload builder + extractor, ProviderError Display, ported shared retry, diff-budget, gemini_schema) stub->RED->impl->GREEN; scripts/acceptance.sh for integration via the mock harness extended with Gemini :generateContent + OpenAI-compatible routes. Sub-task order 1->2->3->4 (parity anchor)->5->6->7->8->9. AFK: runs through implementation + dual-model validation gate (Gemini + Codex), stops at PR checkpoint."
     sub_tasks:
       - { n: 1, name: "src/provider/mod.rs: Provider trait, ProviderId(+ValueEnum/alias/unknown), ProviderError{provider,kind}+ErrorKind(+Config)+Display, is_retryable/retry_after_hint; error.rs Provider variant+From", status: complete }
@@ -115,6 +115,36 @@ phases:
       cargo_build_release: ok
       acceptance_sh: "161 PASS / 0 FAIL / 1 SKIP (AC-7 manual $EDITOR). New CLO-489: default-is-groq parity, unknown-provider (GCM_PROVIDER + clap exit 2), per-provider missing-key naming, per-provider auth headers (Bearer vs x-goog-api-key), --model override, Gemini safety-block, openai grouped commit (strict json_schema), google grouped commit (responseSchema + thinkingLevel)."
     egress_note: "Real Gemini/OpenAI HTTP not exercised in-sandbox (same egress limit as CLO-486/487/488); per-provider request/parse shapes proven by unit tests + the mock harness (Gemini :generateContent route + OpenAI-compatible route). Binary reaches the real APIs in the user's environment. ADR confidence caveats (smoke-test gpt-oss; validate Gemini output) carried to the user."
+    validation_gate:
+      gemini:
+        report: docs/reviews/clo-489-gemini-validation.md
+        verdict: PASS
+        mode: "--sandbox -y read-only (GEMINI_CLI_TRUST_WORKSPACE=true); no working-tree mutation"
+        notes: "No findings beyond LOW confirmations; all 9 ACs fulfilled; 'extremely clean, strictly conforms to ADR-001'."
+      codex:
+        report: docs/reviews/clo-489-codex-validation.md
+        verdict: FAIL
+        mode: "-s read-only (GPT-5.4 high effort); HEAD unchanged"
+        findings_applied:
+          - "HIGH: Groq plan request always sent strict:true; strict json_schema is gpt-oss-only on Groq (capability matrix), so qwen would 400. Fixed: build_plan_payload sets strict = model.contains(\"gpt-oss\"); else false. +unit test qwen_plan_uses_best_effort_strict_false. Commit 548c1cd."
+          - "LOW: Provider trait omitted name() vs spec 3b. Restored name() on the trait + 3 impls; used in a GCM_DEBUG line in main.rs (no dead code). Commit 548c1cd."
+        findings_resolved_by_clarification:
+          - "MEDIUM: per_file_bytes only applied on the grouping path. By design - gather()/gather_for_files() (single-commit + per-group message) never did per-file truncation (CLO-486/491); the per-provider TOTAL budget IS applied on every path via total_bytes. Adding per-file truncation to the tracer paths would change behavior (O3 parity regression). Resolved by making the contract explicit in the DiffBudget doc (Codex's own recommended option). Commit 548c1cd."
+        findings_declined: []   # HIGH+LOW applied; MEDIUM resolved by the explicit-contract option Codex offered
+      post_fix_quality_gate:
+        cargo_test: "105 passed (+qwen_plan_uses_best_effort_strict_false)"
+        cargo_clippy: "clean (-D warnings)"
+        cargo_fmt: clean
+        acceptance_sh: "161 PASS / 0 FAIL / 1 SKIP (unchanged)"
+      fix_commit: 548c1cd
+      codex_revalidation:
+        report: docs/reviews/clo-489-codex-revalidation.md
+        verdict: "PASS_WITH_NOTES (all 3 findings RESOLVED; no new findings; only note = read-only sandbox could not run cargo test, which we did: 105 unit + 161 acceptance green)"
+      converged: true   # Gemini PASS; Codex FAIL -> fixed -> PASS_WITH_NOTES
+    codex_validated: true
+    codex_verdict: "FAIL -> PASS_WITH_NOTES (converged)"
+    codex_report: docs/reviews/clo-489-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-489-gemini-validation.md
   pr:
     status: pending
   complete:
@@ -164,4 +194,8 @@ history:
   - timestamp: 2026-06-21T20:05:00Z
     action: implementation_complete
     phase: implement
-    details: "All 9 sub-tasks done TDD-first (RED via cargo test -> impl -> GREEN for every pure-logic unit). New src/provider/ module (mod trait+registry+error taxonomy, http shared transport, groq/openai/gemini backends); src/groq.rs moved+refactored onto the Provider trait (GroqError->ProviderError; retry engine->http.rs); plan::gemini_schema(); diff::DiffBudget; cli --provider/--model; main.rs provider::select + trait dispatch + kind routing; cache.rs dropped the hardcoded provider fold (FINGERPRINT_VERSION->2). All 6 round-2 review points implemented (o-series payload, 60s timeout, Gemini safety/finishReason, GCM_GEMINI_*/GCM_GOOGLE_* dual env, auth tuple, cache isolation note). 104 unit + 161 acceptance green; fmt + clippy clean; no new crate deps; no async (ADR-001 Decision 2). Behavioral parity: bare gcm still Groq + same grouping/cache/commit/fallback."
+    details: "All 9 sub-tasks done TDD-first (RED via cargo test -> impl -> GREEN for every pure-logic unit). New src/provider/ module (mod trait+registry+error taxonomy, http shared transport, groq/openai/gemini backends); src/groq.rs moved+refactored onto the Provider trait (GroqError->ProviderError; retry engine->http.rs); plan::gemini_schema(); diff::DiffBudget; cli --provider/--model; main.rs provider::select + trait dispatch + kind routing; cache.rs dropped the hardcoded provider fold (FINGERPRINT_VERSION->2). All 6 round-2 review points implemented (o-series payload, 60s timeout, Gemini safety/finishReason, GCM_GEMINI_*/GCM_GOOGLE_* dual env, auth tuple, cache isolation note). 104 unit + 161 acceptance green; fmt + clippy clean; no new crate deps; no async (ADR-001 Decision 2). Behavioral parity: bare gcm still Groq + same grouping/cache/commit/fallback. Commit 2ecf754."
+  - timestamp: 2026-06-21T20:30:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Dual-model validation gate (both read-only; HEAD unchanged). Gemini PASS (no findings beyond LOW confirmations; all 9 ACs met). Codex FAIL with 3 findings, each validated before applying (receiving-code-review): HIGH (Groq strict:true hardcoded - qwen needs strict:false per the matrix; VALID -> fixed + test), LOW (Provider::name() omitted vs spec 3b; VALID -> restored + used in a GCM_DEBUG line), MEDIUM (per_file_bytes grouping-only - by design, would regress tracer parity; resolved by Codex's own explicit-contract recommendation in the DiffBudget doc). Fix commit 548c1cd; post-fix 105 unit + 161 acceptance green. Codex re-validation: PASS_WITH_NOTES, all 3 RESOLVED, no new findings (only note: read-only sandbox couldn't run cargo test, which we did). Converged. Advancing to PR; will stop at the PR checkpoint for the owner merge decision (AFK)."
