@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-22 (CLO-494 Anthropic provider merged PR #11, Done — CLO-497 still waits on CLO-488/490/496; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-496 First-run onboarding wizard started; CLO-494 Done — CLO-497 still waits on CLO-488/490/496; CLO-495 Done; CLO-493 Done; CLO-489 Done; CLO-492 Done; CLO-488 PR #6; CLO-491 Done)
 
 ## Current Blockers
 
@@ -12,7 +12,6 @@
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| CLO-496 | CLO-489 + CLO-485 complete | 2026-06-21 |
 | CLO-490 | CLO-486 (tracer merged) | 2026-06-19 |
 
 ## Recently Resolved Blockers

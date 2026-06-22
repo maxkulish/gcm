@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-494 Anthropic provider via forced tool-use merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-496 First-run onboarding wizard started; CLO-494 Done; CLO-495 Done; CLO-493 Done; CLO-489 Done; CLO-492 Done; CLO-488 PR #6; CLO-491 Done)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -30,7 +30,7 @@
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Done | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Done | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Done | CLO-489 | 56 |
-| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Backlog | CLO-485, CLO-489 | 40,53,54,55 |
+| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | In Progress | CLO-485, CLO-489 | 40,53,54,55 |
 | [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Backlog | CLO-487…CLO-496 | 42,43,44 |
 
 All 58 functional requirements are allocated; `a`/`b`/`c` mark partial → full progressions across slices.
@@ -62,12 +62,12 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
+| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | Add first-run onboarding wizard for provider setup | In Progress | Discovery | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| High | CLO-496 | First-run onboarding wizard | CLO-485 (done), CLO-489 (done) | provider setup (HITL) |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
 > **CLO-494** (Anthropic provider, forced tool-use) merged 2026-06-22 (PR #11) — Done. **CLO-495** (Ollama local provider, zero-egress) merged 2026-06-22 (PR #14) — Done. CLO-491 (plan cache, PR #7), **CLO-492** (validation, PR #9), **CLO-493** (automation surface, PR #12), **CLO-489** (provider trait, PR #10) all Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. Ready: **CLO-496** (onboarding), **CLO-490**. CLO-497 waits on CLO-488/490/496.
