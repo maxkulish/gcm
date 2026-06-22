@@ -47,7 +47,7 @@ impl Groq {
             provider: NAME,
             auth_env_var: API_KEY_ENV,
             endpoint: format!("{}/chat/completions", self.base_url().trim_end_matches('/')),
-            auth: ("Authorization", format!("Bearer {key}")),
+            auth: Some(("Authorization", format!("Bearer {key}"))),
             payload,
         }
     }

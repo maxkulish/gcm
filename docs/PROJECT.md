@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-21 (CLO-489 provider trait + Gemini/OpenAI merged PR #10, Done — unblocks CLO-494/495/496; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-495 Ollama local provider started — Spec phase, Active Work; CLO-489 provider trait + Gemini/OpenAI merged PR #10, Done — unblocks CLO-494/495/496; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -29,7 +29,7 @@
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Backlog | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Backlog | CLO-489, CLO-485 | 13b,18c |
-| [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Backlog | CLO-489 | 56 |
+| [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | In Progress | CLO-489 | 56 |
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Backlog | CLO-485, CLO-489 | 40,53,54,55 |
 | [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Backlog | CLO-487…CLO-496 | 42,43,44 |
 
@@ -62,18 +62,18 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
+| [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | Ollama local provider (zero-egress) | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
 | Medium | CLO-494 | Anthropic provider via forced tool-use | CLO-489 (done), CLO-485 (done) | direct Messages API, forced tool-use |
-| Medium | CLO-495 | Ollama local provider (zero-egress) | CLO-489 (done) | local endpoint provider |
 | High | CLO-496 | First-run onboarding wizard | CLO-485 (done), CLO-489 (done) | provider setup (HITL) |
 | Medium | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | CLO-487 (done) | automation flags on the grouping path |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> CLO-491 (plan cache) merged (PR #7). **CLO-492** (validation + fallback) merged (PR #9). **CLO-489** (provider trait + Gemini + OpenAI) merged (PR #10, `ca1db75`) — Done; **unblocks CLO-494/495/496** (now ready). **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. **CLO-490**, **CLO-493** also ready. CLO-497 waits on the rest of the feature set.
+> **CLO-495** (Ollama local provider) started 2026-06-22 — Spec phase, in Active Work. CLO-491 (plan cache) merged (PR #7). **CLO-492** (validation + fallback) merged (PR #9). **CLO-489** (provider trait + Gemini + OpenAI) merged (PR #10, `ca1db75`) — Done; **unblocked CLO-494/495/496**. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. **CLO-494**, **CLO-496**, **CLO-490**, **CLO-493** ready. CLO-497 waits on the rest of the feature set.
 
 ## Blocked
 

@@ -1,0 +1,135 @@
+# Workflow state for CLO-495
+# Managed by /task:orchestrate
+
+task: CLO-495
+title: "Add Ollama local provider for zero-egress commits"
+linear_url: https://linear.app/cloud-ai/issue/CLO-495/add-ollama-local-provider-for-zero-egress-commits
+branch: feat/clo-495-ollama
+task_type: specification          # user-selected at the classification checkpoint (no flag); recommended=specification, HIGH confidence
+slice: S8
+labels: [AFK]                     # agent may implement and merge without human input
+priority: Medium
+covers_fr: [56]                   # FR-56 (local/self-hosted Ollama provider, zero-egress, no key, user-selected model, clear unreachable error)
+partial_fr: []
+
+# Reference material for spec/implementation
+references:
+  adr: docs/adrs/001-foundational-architecture-decisions.md   # Decision 8 (Ollama in v1): PREFER native /api/chat `format`=schema, read message.content, ignore message.thinking; honor OLLAMA_HOST; clear unreachable error. alias gcml.
+  prd: docs/prds/prd-gcm.md                                    # FR-56 (line 131), FR-18 (local needs no key, line 129), capability matrix + gcml row (line 383)
+  prior_spec_489: docs/specs/2026-06-21-clo-489-provider-trait.md   # the Provider trait + registry this implements another backend against
+  code_seams:
+    - "src/provider/mod.rs:148 ProviderId enum (add Ollama variant + `gcml`/local consideration), :157 default_model, :168 model_env_vars, :186 select() match arm, :225 unknown-provider error list"
+    - "src/provider/gemini.rs - DIVERGENT-SHAPE TEMPLATE (own endpoint, own response parser, own payload, own diff_budget); closest analog for native /api/chat (ADR-001 #8)"
+    - "src/provider/openai.rs + groq.rs - OpenAI-COMPATIBLE alternative shape (shared extract_openai_content) if /v1/chat/completions chosen over native /api/chat"
+    - "src/provider/http.rs:35 HttpRequest.auth is a MANDATORY (header,value) pair - Ollama needs NO key; resolve the no-auth path (dummy bearer vs optional auth)"
+    - "src/provider/http.rs:227 map_ureq_error / :107 classify_status + mod.rs:114 ErrorKind::Transport - the 'Ollama unreachable' (connection-refused) AC routes here; decide if Transport message is actionable enough"
+    - "src/cli.rs:53 --provider help (groq, google, openai) + :14 EGRESS_DISCLOSURE PROVIDER line - add ollama"
+
+depends_on:
+  blocked_by: []                  # CLO-489 (provider trait, PR #10 merged ca1db75, Done) satisfied -> unblocked
+  blocks: [CLO-497]               # cross-platform releases + alias cutover (waits on the whole feature set)
+
+classification:
+  recommended: specification
+  chosen: specification           # user accepted the recommendation at the checkpoint
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:         { lean: spec, note: "one new module src/provider/ollama.rs + ~4-line registration in mod.rs (enum/default_model/model_env_vars/select) + cli.rs help/disclosure; single top-level `provider` module" }
+    architecture_novelty: { lean: neutral, note: "new backend but implements the existing Provider trait (CLO-489); genuine wrinkles are pre-decided by ADR-001 #8 (native /api/chat format=schema, ignore thinking) - the no-auth transport path + OLLAMA_HOST normalization are the only open micro-decisions; no new dep/data-model" }
+    prior_art:            { lean: spec, note: "gemini.rs is a near-complete divergent-shape template (own endpoint/parser/payload/budget); groq.rs+openai.rs cover the OpenAI-compatible alternative; siblings CLO-486/487/488/489/492 all shipped as specs" }
+    requirement_clarity:  { lean: spec, note: "2 ACs concrete (gcm --provider=ollama commits zero-egress; unreachable -> clear actionable error); 3 scope items; FR-56 + ADR-001 #8 pin endpoint/default-host/format path/no-key; remaining decisions (native-vs-OpenAI-compatible shape, default model or none, no-auth handling) bounded" }
+    scope_signal:         { lean: spec, note: "no estimate; clearly S/M - one provider module following an established template" }
+  rationale: "CLO-495 adds a fourth backend behind the CLO-489 Provider trait following the gemini.rs divergent-shape template; the only architectural decisions (native /api/chat format=schema, ignore thinking, OLLAMA_HOST, no-key) are already locked in ADR-001 Decision 8, so the spec follows a recorded decision rather than making one. 4/5 signals lean spec (1 neutral) -> HIGH. Matches the spec precedent for the whole provider/grouping family."
+
+workflow:
+  current_phase: implement
+  status: in_progress
+
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design:    { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-22-clo-495-ollama.md
+    scope: M
+    sub_tasks: 6
+    approved: true
+    approved_by: "Max Kulish (owner)"
+    approved_at: 2026-06-22T08:31:52Z
+    review_gemini: docs/reviews/clo-495-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-495-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-495-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS   # both reviewers (Gemini + Codex/glm-5:cloud); no NEEDS_REVISION; no ADR violations
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "Agreement#1 (HIGH): OLLAMA_HOST port defaulting - scheme-less/port-less host appends :11434 (localhost -> http://localhost:11434), explicit-scheme host left as-is. AC-5 + Constraints + eval row 10 + edge case."
+      - "Agreement#2 (MED): auth_env_var: \"\" placeholder for Ollama; send_once references auth/auth_env_var only on the Some path. Constraints + Task 2."
+      - "Disagreement#1 RESOLVED via Display-impl inspection (mod.rs:84): 404 missing-model -> ErrorKind::Config (verbatim, no prefix/suffix - Http(404) carries no string, BadRequest appends 'report it'); unreachable daemon -> Transport (enriched, natural 'could not reach the Ollama API:' prefix). Both non-retryable. Constraints + Task 4 + eval row 13. (Gemini favored Config, Ollama favored in-place enrichment; chose the cleaner-rendering variant per case.)"
+      - "Novel#1 (MED): 404 actionable message built from self.model + endpoint (no daemon body needed); parsing the daemon's '{error: model ... not found}' body noted as a future enhancement (would need surfacing the 404 body through shared http.rs). AC-7 + Task 4."
+      - "Novel#2 (MED): timeout - shared GCM_HTTP_TIMEOUT_SECS (60s) applies; local MLX may need it raised for large diffs. Constraints + edge case + README note."
+      - "Novel#3 (MED): explicit 'no Authorization header' assertion. AC-8 + AC-O1 (mock captures headers)."
+      - "Novel#4 (MED): response missing the `message` key -> ErrorKind::Deserialize naming the key (distinct from empty content -> EmptyResponse). AC-6 + Constraints + eval row 9b + edge case."
+      - "Novel#6 (LOW): :cloud non-zero-egress disclosure surface = CLI EGRESS_DISCLOSURE + README (required); optional runtime stderr warning on a :cloud model added as a Prefer for the checkpoint."
+      - "Novel#7 (LOW): stream:false reaffirmed as a critical must-not-regress (NDJSON otherwise). Edge cases."
+      - "Novel#8 (LOW): added eval rows - thinking-present-still-parses (8), trailing-slash + empty OLLAMA_HOST (10), missing-message (9b); case-insensitive parse already covered (test 1)."
+      - "Novel#9 (LOW): per-task effort revised - Task 3 ~3-4h, Task 6 ~2-3h, total ~9-12h (M)."
+      - "Novel#10 (LOW): CI has no Ollama daemon -> AC-O* run vs the mock; end-to-end AC-1/AC-6 is a manual real-Ollama check; format-rejected(400) surfaces via the shared BadRequest detail (FR-20)."
+    flagged_suggestions: []   # no ADR contradictions -> zero REVIEW CONFLICT prompts; the one reviewer disagreement was resolved with code evidence (see applied_suggestions Disagreement#1)
+  implement:
+    status: in_progress
+    plan_phase: "skipped - spec decomposition IS the plan (specification task)"
+    approach: "TDD-first on the pure-logic units (OLLAMA_HOST normalization, response parser, error remap), each stub->RED->impl->GREEN; then the Provider wiring + registry + Option<auth> shared change; then CLI surface; then the mock-server acceptance harness. No new deps."
+    sub_tasks:
+      - { n: 1, name: "mod.rs registry: ProviderId::Ollama + default_model gemma4:e4b-mlx + model_env_vars GCM_OLLAMA_MODEL + select arm + unknown-provider list + mod ollama", status: complete }
+      - { n: 2, name: "http.rs: HttpRequest.auth -> Option; send_once gates header/auth_env_var on Some; groq/openai/gemini pass Some(...)", status: complete }
+      - { n: 3, name: "ollama.rs core: base_url (precedence + OLLAMA_HOST scheme/port normalization), request (auth None), plan/message payloads (stream:false, format=schema), extract_content (message.content, missing-message->Deserialize), Provider impl", status: complete }
+      - { n: 4, name: "ollama.rs remap_error: Transport enriched (unreachable), Http(404)->Config (pull model)", status: complete }
+      - { n: 5, name: "cli.rs: --provider help + EGRESS_DISCLOSURE PROVIDER/PRIVACY (ollama, no key, OLLAMA_HOST, :cloud not zero-egress)", status: complete }
+      - { n: 6, name: "acceptance.sh: /api/chat mock route + AC-O1..O4 (key-free + no-Authorization, dead-port, OLLAMA_HOST normalize, 404 pull-hint); README + workflow YAML", status: complete }
+    quality_gate:
+      cargo_fmt: clean
+      cargo_clippy: "clean (-D warnings)"
+      cargo_test: "129 passed (11 new: 11 ollama unit incl. payloads/extract/normalize/remap/cache_model_id; + registry assertions folded into existing provider tests)"
+      cargo_build_release: ok
+      acceptance_sh: "198 PASS / 0 FAIL / 1 SKIP (pre-existing manual $EDITOR skip). New: AC-O1 (ollama key-free dry-run + native format=schema + NO Authorization header + real signed grouped commit), AC-O2 (dead daemon -> exit 1 + 'is Ollama running'/OLLAMA_HOST, index untouched), AC-O3 (scheme-less OLLAMA_HOST normalized + reaches mock), AC-O4 (404 -> exit 1 + 'ollama pull')."
+      new_deps: none
+  pr:        { status: pending }
+  complete:  { status: pending }
+
+# Scope checklist (from the Linear task)
+scope:
+  - "Ollama backend hitting the local endpoint (ADR-001 #8: native /api/chat `format`=schema preferred over the OpenAI-compatible envelope); no key required"
+  - "Endpoint config (default http://localhost:11434, overridable via OLLAMA_HOST / config) + a clear, actionable error when unreachable"
+  - "User-selected local model"
+
+acceptance_criteria:
+  - "With Ollama running, `gcm --provider=ollama` (gcml) produces a commit with no outbound traffic to third parties"
+  - "With Ollama not running, the tool reports a clear, actionable error"
+
+history:
+  - timestamp: 2026-06-22T07:47:47Z
+    action: workflow_started
+    phase: spec
+    details: "New workflow for CLO-495 (Add Ollama local provider for zero-egress commits, FR-56). Blocker CLO-489 (provider trait, PR #10 merged ca1db75, Done) satisfied -> unblocked. Branch feat/clo-495-ollama already checked out (worktree /Users/mk/Code/gcm--feat-clo-495-ollama)."
+  - timestamp: 2026-06-22T07:47:47Z
+    action: task_classified
+    phase: spec
+    details: "Recommended=specification (HIGH confidence, 4/5 signals aligned, 1 neutral, method=probe). Probe: src/provider/ already has the CLO-489 Provider trait + 3 backends (groq/openai OpenAI-compatible, gemini divergent-shape); Ollama = one new module + tiny registration. ADR-001 Decision 8 pre-decides the architecture (native /api/chat `format`=schema, ignore message.thinking, honor OLLAMA_HOST, no key, alias gcml), so the spec follows a recorded decision. gemini.rs is a near-complete template. Siblings CLO-486/487/488/489/492 all spec'd. User accepted the recommendation at the checkpoint -> chosen=specification."
+  - timestamp: 2026-06-22T07:47:47Z
+    action: project_sync_start
+    phase: spec
+    details: "WIP under limit (CLO-488 listed In Progress/PR but PR #6 merged 9052a7e -> ~0 real active; CLO-495 makes 1-2). CLO-495 unblocked: blocker CLO-489 (PR #10, ca1db75, Done) satisfied; was in DEPENDENCIES Unblocked & Ready, not Current Blockers. PROJECT.md: master table CLO-495 Backlog->In Progress, added to Active Work (Phase: Spec), removed from Up Next, Up Next note refreshed. ROADMAP.md: inserted CLO-494/495/496/497 rows (were missing from Phase 1 table) -> CLO-495 In Progress, CLO-494/496 Ready, CLO-497 Backlog. DEPENDENCIES.md: removed CLO-495 from Unblocked & Ready. Last-Updated bumped to 2026-06-22 across all three. Left CLO-488's stale Active Work row for its own workflow's post-merge sync."
+  - timestamp: 2026-06-22T10:16:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "Spec drafted (docs/specs/2026-06-22-clo-495-ollama.md): 5 sections, 8 ACs (7 + no-auth-header), 18 eval rows, 6 sub-tasks, scope M. Owner default-model decision captured at the /spec step: gemma4:e4b-mlx (local/zero-egress) default; deepseek-v4-flash:cloud via override (documented NOT zero-egress). Dual-model review via lok (.lok/workflows/spec-review.toml): Gemini (gemini-3.5-flash via opencode) + Ollama-slot (Codex/glm-5:cloud) both succeeded, both APPROVE_WITH_SUGGESTIONS (no NEEDS_REVISION, no ADR violations). Reviews in docs/reviews/clo-495-spec-review-{gemini,ollama,synthesis}.md. One reviewer disagreement (which ErrorKind carries the actionable messages); everything else additive/refinement."
+  - timestamp: 2026-06-22T10:25:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "All 12 review items applied (additive/refinement; none contradicted ADR-001 -> zero REVIEW CONFLICT prompts). Key edits: OLLAMA_HOST port-defaulting to :11434 for scheme-less/port-less hosts (AC-5 + eval + edge); auth_env_var: \"\" + Some/None-gated send_once (Task 2); missing-message -> Deserialize (AC-6 + eval 9b); no-Authorization assertion (AC-8 + AC-O1); GCM_HTTP_TIMEOUT_SECS local-inference note; :cloud disclosure surface (CLI+README) + optional stderr warning (Prefer); effort + CI-no-daemon notes. Disagreement#1 resolved by inspecting the real Display impls (mod.rs:84): 404 -> Config (verbatim), unreachable -> Transport (enriched) - documented in Constraints/Task 4. At spec checkpoint."
+  - timestamp: 2026-06-22T08:31:52Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved the spec at the checkpoint ('Approve - implement'). The resolved reviewer disagreement (404->Config / unreachable->Transport) was surfaced and accepted. Plan phase skipped (spec decomposition is the plan). Advancing to implement; running autonomously under the AFK label (TDD-first on the pure units, then Provider wiring + Option<auth> shared change, then CLI + mock-server acceptance harness, then the Codex+Gemini validation gate), stopping at the PR checkpoint."

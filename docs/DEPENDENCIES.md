@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-21 (CLO-489 merged PR #10, Done — unblocked CLO-494/495/496; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-495 Ollama local provider started — removed from Unblocked & Ready; CLO-489 merged PR #10, Done — unblocked CLO-494/495/496; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
 
 ## Current Blockers
 
@@ -13,7 +13,6 @@
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
 | CLO-494 | CLO-489 + CLO-485 complete | 2026-06-21 |
-| CLO-495 | CLO-489 complete | 2026-06-21 |
 | CLO-496 | CLO-489 + CLO-485 complete | 2026-06-21 |
 | CLO-493 | CLO-487 (grouping merged) | 2026-06-20 |
 | CLO-490 | CLO-486 (tracer merged) | 2026-06-19 |

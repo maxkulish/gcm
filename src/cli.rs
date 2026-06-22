@@ -11,14 +11,17 @@ run it again to commit the next group. Grouping operates on whole files over the
 working tree, so it overrides any manual hunk-level (git add -p) staging: group 1's files\n\
 are staged in full, later groups are left unstaged (their changes are never lost).\n\
 \n\
-PROVIDER: select with --provider (groq, google, openai) or GCM_PROVIDER (precedence\n\
-flag > env > default groq); override the model with --model or the per-provider env\n\
-(GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL). Keys: GROQ_API_KEY,\n\
-GEMINI_API_KEY, OPENAI_API_KEY.\n\
+PROVIDER: select with --provider (groq, google, openai, ollama) or GCM_PROVIDER\n\
+(precedence flag > env > default groq); override the model with --model or the\n\
+per-provider env (GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL / GCM_OLLAMA_MODEL).\n\
+Keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY. Ollama is local and needs NO key -\n\
+it talks to http://localhost:11434 (override with OLLAMA_HOST / GCM_OLLAMA_BASE_URL).\n\
 \n\
 PRIVACY: gcm sends your working-tree diff and the content of untracked, non-gitignored\n\
 files to the configured LLM provider to generate the plan and commit messages.\n\
-Gitignored files (e.g. .env) are never sent. See the README for each provider's data policy.\n\
+Gitignored files (e.g. .env) are never sent. With --provider=ollama and a local model,\n\
+nothing leaves the machine (zero-egress); an Ollama `:cloud` model routes through Ollama\n\
+Cloud and is NOT zero-egress. See the README for each provider's data policy.\n\
 \n\
 RESILIENCE: transient provider failures (HTTP 429 rate limit, 5xx) are retried with\n\
 bounded exponential backoff; 400/auth errors fail fast. Set GCM_DEBUG=1 to print the\n\
@@ -50,8 +53,8 @@ pub struct Cli {
     #[arg(long, visible_alias = "no-input")]
     pub yes: bool,
 
-    /// LLM provider: groq (default), google (Gemini), or openai. Overrides
-    /// GCM_PROVIDER (precedence: flag > env > default).
+    /// LLM provider: groq (default), google (Gemini), openai, or ollama (local,
+    /// no key, zero-egress). Overrides GCM_PROVIDER (precedence: flag > env > default).
     #[arg(long, value_enum)]
     pub provider: Option<ProviderId>,
 
