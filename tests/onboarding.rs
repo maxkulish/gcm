@@ -64,9 +64,15 @@ fn first_run_non_tty_prints_instructions_and_exits_nonzero() {
     let out = run_gcm(repo.path(), cfg.path(), &[]);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    assert!(!out.status.success(), "first run must exit non-zero: {stderr}");
+    assert!(
+        !out.status.success(),
+        "first run must exit non-zero: {stderr}"
+    );
     // the human instructions (template + an export line) land on stderr
-    assert!(stderr.contains("[[providers]]"), "TOML template on stderr: {stderr}");
+    assert!(
+        stderr.contains("[[providers]]"),
+        "TOML template on stderr: {stderr}"
+    );
     assert!(
         stderr.contains("export GROQ_API_KEY="),
         "export line on stderr: {stderr}"
@@ -86,10 +92,13 @@ fn first_run_json_non_tty_emits_envelope_not_prompts() {
     assert!(!out.status.success(), "exit non-zero: {stdout} / {stderr}");
     // stdout is exactly one JSON error envelope - no prompt text
     let trimmed = stdout.trim();
-    let parsed: serde_json::Value =
-        serde_json::from_str(trimmed).unwrap_or_else(|e| panic!("stdout is one JSON object ({e}): {trimmed}"));
+    let parsed: serde_json::Value = serde_json::from_str(trimmed)
+        .unwrap_or_else(|e| panic!("stdout is one JSON object ({e}): {trimmed}"));
     assert_eq!(parsed["status"], "error", "envelope: {trimmed}");
-    assert_eq!(parsed["error"]["code"], "OnboardingRequired", "code: {trimmed}");
+    assert_eq!(
+        parsed["error"]["code"], "OnboardingRequired",
+        "code: {trimmed}"
+    );
     // the human instructions go to stderr, never stdout
     assert!(
         !stdout.contains("[[providers]]"),
@@ -124,7 +133,10 @@ fn existing_env_user_is_not_interrupted() {
 
     let parsed: serde_json::Value =
         serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("json ({e}): {stdout}"));
-    assert_eq!(parsed["status"], "noop", "env user proceeds to noop: {stdout}");
+    assert_eq!(
+        parsed["status"], "noop",
+        "env user proceeds to noop: {stdout}"
+    );
     assert!(out.status.success(), "noop exits 0");
 }
 

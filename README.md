@@ -61,11 +61,38 @@ gcm --provider=google            # use Gemini (also: --provider=openai, --provid
 gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
+gcm config                       # run the interactive provider setup wizard and exit
+gcm --reconfigure                # re-run the wizard (update keys/selection), then continue
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
 At the prompt: `Y`/Enter commits group 1, `n` aborts (exit 0, nothing staged), `e` opens
 `$EDITOR` (default `vim`) to edit group 1's message first.
+
+### First-run setup
+
+On an unconfigured first run - no `config.toml`, no provider hint in the environment
+(`--provider`, a non-blank `GCM_PROVIDER`, or any cloud key) - `gcm` launches an
+interactive wizard. It lets you enable one or more providers, captures each cloud key
+(reused from the environment when already exported, otherwise typed with echo disabled),
+probes the Ollama daemon when selected, and picks a default. The result is written to
+`config.toml` in your OS config dir with `0600` permissions.
+
+Re-run setup anytime to rotate keys or change selections: `gcm config` (wizard then
+exit) or `gcm --reconfigure` (wizard then continue with the commit flow). The wizard is
+idempotent - it overwrites the existing file cleanly.
+
+Config is a fallback layer between the environment and the built-in default: precedence
+is `--flag` > env var > `config.toml` > default, and a value already in the environment
+is never overwritten. A cloud key you export is recorded by reference (the env var name),
+not copied into the file; a key you type at the prompt is stored inline in the `0600`
+file - so treat `config.toml` as a secret.
+
+In a non-TTY context (CI, pipes) where setup would be required, `gcm` does **not** hang
+on the wizard: it prints the `export` lines and a `config.toml` template to stderr and
+exits non-zero (in `--json` mode, a `status: error`, `code: OnboardingRequired` envelope
+on stdout, instructions on stderr). Export a key and set `GCM_PROVIDER`, or write the
+config file, to proceed unattended.
 
 ### Machine-readable mode (`--json`)
 
@@ -124,13 +151,20 @@ large diffs. A `*:cloud` model is proxied to Ollama Cloud and is **not** zero-eg
 | `GCM_RETRY_BASE_MS` | `500` | Base backoff in ms (doubles per attempt) |
 | `GCM_RETRY_MAX_MS` | `8000` | Per-attempt backoff cap in ms |
 | `GCM_HTTP_TIMEOUT_SECS` | `60` | Per-request client timeout (raise for slow reasoning models) |
+| `GCM_CONFIG` | OS config dir | Directory holding `config.toml` (overrides the default location; useful for tests/relocation) |
+
+The persisted config lives in `config.toml` (TOML, `0600`) inside the OS config dir -
+`~/.config/gcm/config.toml` (Linux, honoring `XDG_CONFIG_HOME`) or
+`~/Library/Application Support/gcm/config.toml` (macOS) - or under `$GCM_CONFIG` when set.
+It records the enabled providers, the default, optional inline keys, and the Ollama
+endpoint. See [First-run setup](#first-run-setup).
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success, or user aborted at the prompt, or no changes to commit |
-| 1 | Runtime error (not a repo, missing key, HTTP failure, signing/commit failure) |
+| 1 | Runtime error (not a repo, missing key, HTTP failure, signing/commit failure, onboarding required in a non-TTY) |
 | 2 | CLI usage error |
 
 In a non-interactive context (no TTY) without `--yes`/`--no-input`, `gcm` exits non-zero
