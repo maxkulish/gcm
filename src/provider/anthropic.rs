@@ -496,9 +496,14 @@ mod tests {
 
     #[test]
     fn base_url_defaults_to_production() {
+        let prev = std::env::var("GCM_ANTHROPIC_BASE_URL").ok();
+        std::env::remove_var("GCM_ANTHROPIC_BASE_URL");
         let a = Anthropic::new("claude-haiku-4-5".to_string());
-        // base_url() reads env; with no env set, returns default
         assert_eq!(a.base_url(), "https://api.anthropic.com");
+        // Restore
+        if let Some(u) = prev {
+            std::env::set_var("GCM_ANTHROPIC_BASE_URL", u);
+        }
     }
 
     #[test]

@@ -23,10 +23,10 @@ linear:
   priority: Medium
   branch_actual: feat/clo-494-anthropic
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: active
   created_at: '2026-06-22T07:16:39.555Z'
-  updated_at: '2026-06-22T08:13:50.470Z'
+  updated_at: '2026-06-22T08:31:49.251Z'
 phases:
   discovery:
     status: complete
@@ -104,7 +104,7 @@ phases:
     plan_file: docs/plans/clo-494-anthropic-provider.md
     approved: true
   implement:
-    status: validating
+    status: complete
     commits:
       - '7149670'
       - 3ebd305
@@ -155,8 +155,34 @@ phases:
         outcome: untested
         text: 'max_tokens: 4096 is sufficient for the grouping plan response (plan JSON is typically 200-2000 tokens).'
     assumptions_revalidated: true
+    codex_report: docs/reviews/clo-494-codex-validation.md
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-494-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-494-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    token_usage:
+      - recorded_at: '2026-06-22T08:22:33.634Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-06-22T08:22:33.634Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-06-22T08:22:33.634Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis
   pr:
-    status: pending
+    status: in_progress
   complete:
     status: pending
 history:
@@ -271,5 +297,19 @@ history:
     details: >-
       All 5 sub-tasks landed. 6 commits. fmt+clippy+test green (133 tests). 1 assumption held, 6 untested (require live
       API key).
+  - timestamp: '2026-06-22T08:22:33.634Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: PASS_WITH_NOTES. Gemini: PASS_WITH_NOTES. Synthesis: PASS_WITH_NOTES. 1 fix iteration applied: 3 cheap
+      tests added, PROJECT.md phase fixed, README updated with Anthropic.
+  - timestamp: '2026-06-22T08:31:03.547Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-06-22T08:31:49.251Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'Pre-merge gate green: fmt + clippy + clippy --tests + test all pass (135 tests)'
 task_title: Add Anthropic provider via forced tool-use
 task_url: https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use
