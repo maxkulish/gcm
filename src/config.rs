@@ -344,11 +344,14 @@ pub fn run_wizard() -> Result<Config, GcmError> {
 /// daemon, and return `Some(endpoint)` when non-default (so the file stays
 /// minimal) or `None` for the default.
 fn prompt_ollama_endpoint() -> Result<Option<String>, GcmError> {
+    // Seed the default + probe from the effective runtime endpoint so an
+    // existing OLLAMA_HOST / GCM_OLLAMA_BASE_URL is honored (not ignored).
+    let effective = effective_ollama_endpoint();
     let url = loop {
-        let input = wizard_read_line(&format!("  Ollama endpoint [{DEFAULT_OLLAMA_ENDPOINT}]: "))?;
+        let input = wizard_read_line(&format!("  Ollama endpoint [{effective}]: "))?;
         let raw = input.trim();
         if raw.is_empty() {
-            break DEFAULT_OLLAMA_ENDPOINT.to_string();
+            break effective.clone();
         }
         match validate_endpoint_url(raw) {
             Ok(u) => break u,
@@ -443,9 +446,13 @@ fn sample_toml_template() -> &'static str {
 
 // ── secret entry (echo-suppressed) ──────────────────────────────────────────
 
-/// RAII guard that disables terminal echo on creation and always restores it on
-/// drop (so echo returns even on Ctrl+C or a panic, mirroring `ui`'s shell-out
-/// idiom). Best-effort: if `stty` is unavailable the guard is a no-op.
+/// RAII guard that disables terminal echo on creation and restores it on drop -
+/// covering the normal return path and an unwinding panic (mirroring `ui`'s
+/// shell-out idiom). Best-effort: if `stty` is unavailable the guard is a no-op.
+/// A hard kill that bypasses destructors (a default `SIGINT`/`SIGTERM`, or a
+/// panic under `panic = "abort"`) can still leave echo off; recover with
+/// `stty echo` or `reset`. gcm installs no signal handler (lean-deps; out of
+/// scope for v1).
 struct EchoGuard;
 
 impl EchoGuard {
@@ -490,24 +497,63 @@ fn set_echo(on: bool) -> io::Result<()> {
 }
 
 /// Read one line from stdin with terminal echo disabled (best-effort). Echo is
-/// always restored via the RAII guard; a trailing newline is printed (the user's
-/// Enter was not echoed). An empty/whitespace-only input returns `String::new()`,
-/// which the wizard interprets as "use the env var, do not store inline".
+/// restored via the RAII guard (see [`EchoGuard`] for the SIGINT caveat); a
+/// trailing newline is printed (the user's Enter was not echoed). End-of-input
+/// is an error; an empty/whitespace-only line returns `String::new()`, which the
+/// wizard interprets as "use the env var, do not store inline".
 fn read_secret(prompt: &str) -> io::Result<String> {
     eprint!("{prompt}");
     io::stderr().flush().ok();
-    let line = {
+    let (line, n) = {
         let _guard = EchoGuard::new();
         let mut buf = String::new();
-        io::stdin().read_line(&mut buf)?;
-        buf
+        let n = io::stdin().read_line(&mut buf)?;
+        (buf, n)
         // guard drops here, restoring echo before the newline below
     };
     eprintln!();
+    if n == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "reached end of input during setup",
+        ));
+    }
     Ok(line.trim().to_string())
 }
 
 // ── Ollama probe ────────────────────────────────────────────────────────────
+
+/// The effective Ollama base URL the backend would use, so the wizard seeds its
+/// default + probe from it instead of always assuming `localhost`. Precedence
+/// `GCM_OLLAMA_BASE_URL` > `OLLAMA_HOST` (normalized) > default - mirrors
+/// `provider::ollama`'s resolution.
+fn effective_ollama_endpoint() -> String {
+    if let Some(u) = env_value("GCM_OLLAMA_BASE_URL") {
+        return u;
+    }
+    if let Some(h) = env_value("OLLAMA_HOST") {
+        return normalize_ollama_host(&h);
+    }
+    DEFAULT_OLLAMA_ENDPOINT.to_string()
+}
+
+/// Normalize an `OLLAMA_HOST` value into a base URL: a value with no scheme gets
+/// `http://` (and the default `:11434` port if none); a value with a scheme is
+/// taken as-is. Mirrors `provider::ollama::normalize_host`.
+fn normalize_ollama_host(host: &str) -> String {
+    let h = host.trim();
+    if h.contains("://") {
+        return h.to_string();
+    }
+    let has_port = h
+        .rsplit_once(':')
+        .is_some_and(|(_, p)| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
+    if has_port {
+        format!("http://{h}")
+    } else {
+        format!("http://{h}:11434")
+    }
+}
 
 /// Probe the Ollama daemon with the bounded [`PROBE_TIMEOUT`] (does not hang on
 /// an unresponsive endpoint). Any response (even non-2xx) counts as reachable.
@@ -525,18 +571,26 @@ fn probe_url(url: &str, timeout: Duration) -> bool {
 }
 
 /// Validate an Ollama endpoint URL (no `url` dependency): must be `http(s)://`
-/// with a non-empty host. Returns the trimmed URL on success.
+/// with a non-empty host (the authority before any `:port` or `/path`). Returns
+/// the trimmed URL on success.
 fn validate_endpoint_url(raw: &str) -> Result<String, String> {
     let s = raw.trim();
-    let host = s
+    let rest = s
         .strip_prefix("http://")
         .or_else(|| s.strip_prefix("https://"));
-    match host {
-        Some(h) if !h.is_empty() && !h.starts_with('/') => Ok(s.to_string()),
-        _ => Err(format!(
+    let invalid = || {
+        Err(format!(
             "'{raw}' is not a valid http(s) URL (expected e.g. {DEFAULT_OLLAMA_ENDPOINT})"
-        )),
+        ))
+    };
+    let Some(rest) = rest else { return invalid() };
+    // the host is everything up to the first ':' (port) or '/' (path); it must
+    // be non-empty, so `http://:1234` and `http:///x` are rejected.
+    let host = rest.split([':', '/']).next().unwrap_or("");
+    if host.is_empty() {
+        return invalid();
     }
+    Ok(s.to_string())
 }
 
 // ── small shared helpers ────────────────────────────────────────────────────
@@ -583,18 +637,31 @@ fn provider_token(id: ProviderId) -> String {
 
 /// Read a non-empty, trimmed env var as a bool "is set".
 fn env_nonblank(name: &str) -> bool {
-    std::env::var(name)
-        .ok()
-        .map(|v| !v.trim().is_empty())
-        .unwrap_or(false)
+    env_value(name).is_some()
 }
 
-/// Print a prompt to stderr and read one raw line from stdin.
+/// Read a non-empty, trimmed env var value, else `None`.
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// Print a prompt to stderr and read one raw line from stdin. End-of-input (a
+/// closed/empty stdin) is an error, not an empty line - otherwise a re-prompt
+/// loop on EOF would spin forever (the "never hang on a closed stdin" rule).
 fn read_line(prompt: &str) -> io::Result<String> {
     eprint!("{prompt}");
     io::stderr().flush().ok();
     let mut s = String::new();
-    io::stdin().read_line(&mut s)?;
+    let n = io::stdin().read_line(&mut s)?;
+    if n == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "reached end of input during setup",
+        ));
+    }
     Ok(s)
 }
 
@@ -912,6 +979,9 @@ mod tests {
         assert!(validate_endpoint_url("not-a-url").is_err());
         assert!(validate_endpoint_url("ftp://x").is_err());
         assert!(validate_endpoint_url("http://").is_err());
+        // empty host (port/path only) is rejected
+        assert!(validate_endpoint_url("http://:1234").is_err());
+        assert!(validate_endpoint_url("http:///path").is_err());
         assert_eq!(
             validate_endpoint_url("http://localhost:11434").unwrap(),
             "http://localhost:11434"
@@ -920,6 +990,52 @@ mod tests {
             validate_endpoint_url("  https://h.example:8080  ").unwrap(),
             "https://h.example:8080"
         );
+        // host with a path is fine
+        assert_eq!(
+            validate_endpoint_url("http://host/api").unwrap(),
+            "http://host/api"
+        );
+    }
+
+    #[test]
+    fn normalize_ollama_host_matches_backend() {
+        assert_eq!(normalize_ollama_host("localhost"), "http://localhost:11434");
+        assert_eq!(
+            normalize_ollama_host("127.0.0.1:8080"),
+            "http://127.0.0.1:8080"
+        );
+        assert_eq!(
+            normalize_ollama_host("https://remote.example"),
+            "https://remote.example"
+        );
+    }
+
+    #[test]
+    fn save_to_overwrites_without_duplicating_providers() {
+        // reconfigure idempotency: a second save replaces the file cleanly, no
+        // duplicate [[providers]] tables, and load reflects the new config.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(CONFIG_FILE_NAME);
+        let first = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Groq,
+            providers: vec![pc(ProviderId::Groq, Some("k1"), None)],
+        };
+        save_to(&path, &first).unwrap();
+        let second = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pc(ProviderId::Openai, Some("k2"), None)],
+        };
+        save_to(&path, &second).unwrap();
+
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text.matches("[[providers]]").count(),
+            1,
+            "no duplicate provider tables: {text}"
+        );
+        assert_eq!(load_from(&path).unwrap(), second);
     }
 
     #[test]

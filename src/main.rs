@@ -59,6 +59,13 @@ fn run(args: &Cli) -> i32 {
 /// return the process exit code (0 on success, 1 on failure). Interactive; all
 /// output goes to stderr.
 fn run_config_subcommand() -> i32 {
+    // The wizard is interactive; without a terminal it cannot prompt. Fail fast
+    // with guidance instead of erroring on the first EOF read.
+    if !std::io::stdin().is_terminal() {
+        eprintln!("gcm: `gcm config` needs an interactive terminal to run the setup wizard.");
+        eprintln!("{}", config::non_tty_instructions());
+        return 1;
+    }
     match config::run_wizard() {
         Ok(cfg) => {
             if let Err(e) = config::save(&cfg) {
