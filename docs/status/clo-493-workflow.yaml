@@ -22,10 +22,10 @@ linear:
   branch_suggested: kmamemo/clo-493-add-automation-surface-json-non-interactive-flags-structured
   branch_actual: feat/clo-493-add-automation-surface-json-non-interactive-flags-structured
 workflow:
-  current_phase: pr
+  current_phase: complete
   status: active
   created_at: '2026-06-22T07:58:35.361Z'
-  updated_at: '2026-06-22T08:49:07.186Z'
+  updated_at: '2026-06-22T09:04:18.979Z'
 phases:
   discovery:
     status: pending
@@ -81,8 +81,16 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-06-22T08:49:30Z'
     pre_merge_refetch_passed: true
+    merge_commit: e1b07a9d119be67592c3f2b077eae0b3a3f2d7d6
+    merged_at: '2026-06-22T08:49:28Z'
   complete:
     status: pending
+    merge_commit: e1b07a9d119be67592c3f2b077eae0b3a3f2d7d6
+    merged_at: '2026-06-22T08:49:28Z'
+    aggregation_files_updated: true
+    lessons_learned:
+      - L1 - Keep automation JSON mode stdout strictly machine-readable
+    lessons_file: .pi/lessons/clo-493-add-automation-surface-json-non-interactive-flags-structured-lessons.md
   spec:
     status: complete
     spec_file: docs/specs/2026-06-22-clo-493-add-automation-surface-json-non-interactive-flags-structured-logging.md
@@ -241,5 +249,29 @@ history:
     action: pre_merge_refetch_passed
     phase: pr
     details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
+  - timestamp: '2026-06-22T08:49:14.670Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-06-22T08:49:41.885Z'
+    action: pr_merged
+    phase: pr
+    details: 'PR #12 merged. Merge commit e1b07a9d119be67592c3f2b077eae0b3a3f2d7d6.'
+  - timestamp: '2026-06-22T08:49:44.524Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #12 merged. Merge commit e1b07a9d119be67592c3f2b077eae0b3a3f2d7d6.'
+  - timestamp: '2026-06-22T08:51:24.395Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced after CLO-493 merge. CLO-493 marked Done; removed from Up Next;
+      CLO-497 blocker list updated to CLO-488/490/494/495/496. Sync commit 4a7f0ac pushed to main.
+  - timestamp: '2026-06-22T09:04:18.979Z'
+    action: lessons_extracted
+    phase: complete
+    details: >-
+      1 lesson recorded. File:
+      .pi/lessons/clo-493-add-automation-surface-json-non-interactive-flags-structured-lessons.md
 task_title: 'Add automation surface: --json, non-interactive flags, structured logging'
 task_url: https://linear.app/cloud-ai/issue/CLO-493/add-automation-surface-json-non-interactive-flags-structured-logging
