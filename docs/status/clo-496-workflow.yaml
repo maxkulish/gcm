@@ -18,10 +18,10 @@ linear:
   priority: High
   branch_actual: feat/clo-496-onboarding-wizard
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-06-22T12:11:21.594Z'
-  updated_at: '2026-06-22T17:20:00.000Z'
+  updated_at: '2026-06-22T15:27:30.000Z'
 phases:
   discovery:
     status: complete
@@ -167,14 +167,21 @@ phases:
       - sha: f853fe3
         summary: document first-run setup and mark plan complete
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/17
     pr_number: 17
-    ci_passed: false
+    ci_passed: true
     mergeable: true
+    merge_state: CLEAN
     reviews_addressed: 0
+    approved: true
+    merged_at: '2026-06-22T15:26:11Z'
+    merge_commit: 84fed02b3ffd7f180b6ee6e9d35ba882b14d6255
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-06-22T15:26:11Z'
+    linear_done: true
 history:
   - timestamp: '2026-06-22T12:11:21.594Z'
     action: workflow_started
@@ -311,5 +318,23 @@ history:
     action: pr_created
     phase: pr
     details: 'PR #17 created (https://github.com/maxkulish/gcm/pull/17). Mergeability gate PASS (mergeable, UNSTABLE=CI pending). Linear set to In Review + comment posted.'
+  - timestamp: '2026-06-22T15:26:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: 'CI green on ubuntu-latest + macos-latest; mergeStateStatus CLEAN.'
+  - timestamp: '2026-06-22T15:26:11.000Z'
+    action: pr_merged
+    phase: pr
+    details: 'PR #17 squash-merged by owner. Merge commit 84fed02.'
+  - timestamp: '2026-06-22T15:27:11.000Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      Linear set to Done + completion comment. PROJECT.md/ROADMAP.md/DEPENDENCIES.md updated: CLO-496 moved to Recently
+      Completed, status Done; CLO-497 unblocked (last dependency cleared), moved to Up Next/Ready. v1 feature set complete.
+  - timestamp: '2026-06-22T15:27:30.000Z'
+    action: workflow_complete
+    phase: complete
+    details: 'Task CLO-496 fully completed. Worktree pending cleanup (gd).'
 task_title: Add first-run onboarding wizard for provider setup
 task_url: https://linear.app/cloud-ai/issue/clo-496/add-first-run-onboarding-wizard-for-provider-setup

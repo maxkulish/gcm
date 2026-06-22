@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard implemented → In Progress (PR pending); CLO-488 finalized to Done in Linear + docs — PR #6 merged 2026-06-21, `9052a7e`; CLO-490 optional secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-496 first-run onboarding wizard merged PR #17, Done — CLO-497 now the only open slice, unblocked; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -30,8 +30,8 @@
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Done | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Done | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Done | CLO-489 | 56 |
-| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | In Progress | CLO-485, CLO-489 | 40,53,54,55 |
-| [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Backlog | CLO-487…CLO-496 | 42,43,44 |
+| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Done | CLO-485, CLO-489 | 40,53,54,55 |
+| [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Ready | CLO-487…CLO-496 | 42,43,44 |
 
 All 58 functional requirements are allocated; `a`/`b`/`c` mark partial → full progressions across slices.
 
@@ -61,26 +61,27 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | Add first-run onboarding wizard for provider setup | In Progress | PR | - |
+| — | None active | — | — | — |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| — | — | None ready — CLO-496 is the last open feature slice (in progress); CLO-497 follows it | — | — |
+| Medium | [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | Cross-platform releases + alias cutover | CLO-487…CLO-496 (all done) | v1 ship |
 
-> **CLO-496** (first-run onboarding wizard) started 2026-06-22 — In Progress, the last open feature slice. All other feature work is Done: **CLO-488** (typed errors + retries) merged PR #6 (`9052a7e`) and finalized to Done; **CLO-490** (secret scanning + `gcmignore`) PR #16; **CLO-494** (Anthropic, forced tool-use) PR #11; **CLO-495** (Ollama, zero-egress) PR #14; CLO-491 (plan cache, PR #7), **CLO-492** (validation, PR #9), **CLO-493** (automation surface, PR #12), **CLO-489** (provider trait, PR #10). CLO-497 (release + cutover) now waits only on CLO-496.
+> **CLO-496** (first-run onboarding wizard) merged PR #17 (squash) 2026-06-22 — the entire v1 feature set is now Done. **CLO-497** (cross-platform releases + alias cutover) is the only remaining slice and is unblocked. All feature work Done: **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
 
 ## Blocked
 
 | Task | Title | Blocked By | Notes |
 |------|-------|------------|-------|
-| CLO-497 | Release + cutover | CLO-496 | Ships after the v1 feature set (CLO-487/488/489/490/491/492/493/494/495 done; waits only on CLO-496) |
+| — | None blocked | — | CLO-497 unblocked by CLO-496 (2026-06-22) |
 
 ## Recently Completed
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-496 | First-run onboarding wizard | 2026-06-22 | FR-40/53/54/55. New `src/config.rs`: TOML `0600` `config.toml` (atomic load/save mirroring `cache.rs`), first-run detection, interactive wizard (enable providers, echo-suppressed key entry with RAII echo restore, 3s Ollama daemon probe honoring `OLLAMA_HOST`, choose default), `apply_to_env` bridge that preserves `flag > env > config > default` by only setting unset vars (provider layer untouched). `ProviderId` serde + `key_env_var()`; `GcmError::OnboardingRequired`; `gcm config` subcommand + `--reconfigure`; `ensure_configured` pre-step. Non-TTY first run prints a config template + `export` lines and exits non-zero (JSON `OnboardingRequired` envelope on stdout, instructions on stderr per CLO-493 L1). Inline keys stored only at `0600`, never copied from env (FR-55, ADR-001 Decision 4). 194 unit/bin + 6 integration tests; acceptance 241 pass/1 skip incl. PTY-driven `--reconfigure`. Gemini PASS + Codex FAIL→fixed (EOF hang, OLLAMA_HOST seeding, URL validation, Ctrl+C doc)→PASS_WITH_NOTES. Merged `main` (CLO-490) at the implement checkpoint. PR #17 (squash) merged. Unblocks CLO-497 (now the last slice). |
 | CLO-488 | Resilient provider calls: typed errors + retries | 2026-06-22 | FR-20/21/22. Typed provider-error taxonomy (rate-limit/bad-request/server/timeout/auth/parse) with bounded exponential backoff on 429/5xx, never on 400/auth; defensive parsing fallback when structured output is unavailable; distinct actionable message per error type, error kind visible in debug logs. PR #6 (`9052a7e`) merged 2026-06-21; its retry engine was later moved into shared `http.rs` by CLO-489. Linear/aggregation finalize had lagged the merge (issue sat Backlog) — reconciled to Done 2026-06-22. Unblocks CLO-497 (now waits only on CLO-496). |
 | CLO-490 | Optional secret scanning + `gcmignore` | 2026-06-22 | Opt-in privacy layer before provider egress (FR-50). New `src/privacy.rs` parses `.gcmignore`/`gcmignore` + glob-matches paths, filtering changed files before cache/validation/display/staging; provider-bound grouping/single diffs rebuilt from the filtered path set so ignored tracked files can't leak via whole-tree `git diff` (rename/copy excluded if either path matches). Pre-send secret scan via `--secret-scan`/`GCM_SECRET_SCAN` (`off`/`redact`/`abort`): redact strips credential spans, abort exits before any request; ignore files excluded from prompts by default. Also de-raced a pre-existing flaky CLO-494 env-var test (merged two racing `GCM_ANTHROPIC_BASE_URL` tests). 161 unit + 237 acceptance (0 FAIL); CI green (ubuntu+macos). PR #16 (squash) merged. Unblocks CLO-497 (now waits only on CLO-496). |
 | CLO-494 | Anthropic provider via forced tool-use | 2026-06-22 | Anthropic backend behind the CLO-489 `Provider` trait (FR-13b/18c): direct Messages API (`/v1/messages`) with forced tool-use (`tool_choice:{type:tool,name:commit_plan}`, `input_schema` from `plan::schema()`) for the typed grouping plan. `x-api-key` + `anthropic-version: 2023-06-01` via the new `HttpRequest.extra_headers` Vec; adaptive-thinking content blocks skipped + `<think>` backstop (no CoT into plan/message); `max_tokens` stop_reason guard; default `claude-haiku-4-5`. 15 unit tests (156 total); Codex + Gemini pre-PR validation PASS_WITH_NOTES. Merged origin/main (CLO-495 Ollama + CLO-493 automation) at the PR checkpoint, reconciling `HttpRequest.auth`→`Option` (key-free Ollama) with the new `extra_headers` field. PR #11 merged. |
