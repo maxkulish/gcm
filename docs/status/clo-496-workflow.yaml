@@ -18,10 +18,10 @@ linear:
   priority: High
   branch_actual: feat/clo-496-onboarding-wizard
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-06-22T12:11:21.594Z'
-  updated_at: '2026-06-22T13:33:30.000Z'
+  updated_at: '2026-06-22T17:20:00.000Z'
 phases:
   discovery:
     status: complete
@@ -142,9 +142,17 @@ phases:
     phases: 8
     approved: true
   implement:
-    status: in_progress
-    last_phase_completed: documentation
+    status: complete
+    last_phase_completed: validation_gate
     pushed: true
+    codex_validated: true
+    codex_verdict: pass_with_notes
+    codex_report: docs/reviews/clo-496-codex-validation.md
+    codex_revalidation_report: docs/reviews/clo-496-codex-revalidation.md
+    gemini_validation_report: docs/reviews/clo-496-gemini-validation.md
+    gemini_verdict: pass
+    validation_findings_addressed: 'HIGH EOF hang, OLLAMA_HOST seeding, URL validation, Ctrl+C doc honesty, +tests (config/reconfigure/inline-key)'
+    merged_main: 'c197f85 (CLO-490 secret-scan integrated, conflicts resolved)'
     test_summary: '187 unit/integration tests pass; 4 onboarding integration tests pass; acceptance 232 pass / 1 skip'
     gates: 'cargo fmt --check OK; cargo clippy -D warnings OK; cargo test OK; scripts/acceptance.sh OK'
     commits:
@@ -267,5 +275,28 @@ history:
     action: validation_gate_started
     phase: implement
     details: Codex (gpt-5.4, high) + Gemini (3.1-pro) read-only validation against design + plan, running in background.
+  - timestamp: '2026-06-22T16:30:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Gemini 3.1-pro PASS; Codex gpt-5.4 FAIL (1 HIGH gcm-config EOF hang, 3 MEDIUM: OLLAMA_HOST ignored, weak URL
+      validation, Ctrl+C echo over-claim; + missing config/reconfigure + inline-key tests). All findings verified real.
+  - timestamp: '2026-06-22T16:45:00.000Z'
+    action: review_addressed
+    phase: implement
+    details: >-
+      Merged main (CLO-490 secret-scan) resolving conflicts in cli/error/output/main + docs. Fixed all Codex findings:
+      read_line/read_secret EOF-safe + gcm-config non-TTY guard; wizard honors OLLAMA_HOST via effective_ollama_endpoint;
+      URL validation rejects empty host; EchoGuard SIGINT caveat documented; added integration + unit + PTY tests.
+  - timestamp: '2026-06-22T17:15:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex re-validation: PASS_WITH_NOTES (findings 1-4 RESOLVED; remaining note = no end-to-end --reconfigure test).
+      Closed by AC-ONB3 (PTY-driven wizard). Final gates: cargo fmt/clippy clean, 194+6 tests, acceptance 241 pass/1 skip.
+  - timestamp: '2026-06-22T17:20:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: Implementation + validation complete. Transitioning to PR phase.
 task_title: Add first-run onboarding wizard for provider setup
 task_url: https://linear.app/cloud-ai/issue/clo-496/add-first-run-onboarding-wizard-for-provider-setup
