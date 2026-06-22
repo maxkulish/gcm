@@ -142,7 +142,22 @@ phases:
     phases: 8
     approved: true
   implement:
-    status: pending
+    status: in_progress
+    last_phase_completed: documentation
+    pushed: true
+    test_summary: '187 unit/integration tests pass; 4 onboarding integration tests pass; acceptance 232 pass / 1 skip'
+    gates: 'cargo fmt --check OK; cargo clippy -D warnings OK; cargo test OK; scripts/acceptance.sh OK'
+    commits:
+      - sha: 3b2954a
+        summary: finalize onboarding wizard design
+      - sha: dfe46be
+        summary: add implementation plan and approve
+      - sha: 4f4d249
+        summary: add config module, onboarding wizard, and CLI wiring
+      - sha: 107669d
+        summary: add onboarding integration tests and acceptance checks
+      - sha: f853fe3
+        summary: document first-run setup and mark plan complete
   pr:
     status: pending
   complete:
@@ -237,5 +252,20 @@ history:
     action: plan_approved
     phase: plan
     details: 'Plan approved by user at checkpoint. Transitioning from plan to implement.'
+  - timestamp: '2026-06-22T14:05:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 8 plan phases implemented across commits 4f4d249 (config module + wizard + CLI wiring), 107669d (integration
+      tests + acceptance), f853fe3 (README). Gates green: cargo fmt --check, cargo clippy -D warnings, 187 lib/bin tests
+      + 4 onboarding integration tests, scripts/acceptance.sh 232 pass / 1 skip (live-network).
+  - timestamp: '2026-06-22T14:05:30.000Z'
+    action: pushed_to_remote
+    phase: implement
+    details: Pushed feat/clo-496-onboarding to origin.
+  - timestamp: '2026-06-22T14:06:00.000Z'
+    action: validation_gate_started
+    phase: implement
+    details: Codex (gpt-5.4, high) + Gemini (3.1-pro) read-only validation against design + plan, running in background.
 task_title: Add first-run onboarding wizard for provider setup
 task_url: https://linear.app/cloud-ai/issue/clo-496/add-first-run-onboarding-wizard-for-provider-setup
