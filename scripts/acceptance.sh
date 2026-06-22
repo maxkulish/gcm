@@ -246,6 +246,41 @@ else
 fi
 rm -rf "$d"
 
+note "AC-S1 (CLO-490): .gcmignore path never reaches the provider"
+d="$(new_repo)"
+printf 'SECRET_SHOULD_NOT_LEAK\n' > "$d/secret.txt"
+printf 'public change\n' > "$d/public.txt"
+printf 'secret.txt\n' > "$d/.gcmignore"
+printf '%s' '{"groups":[{"files":["public.txt"],"summary":"public","commit_message":"feat: public"}]}' > "$PLAN_FILE"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run >/tmp/gcm-out 2>&1 )
+if grep -q "SECRET_SHOULD_NOT_LEAK" "$CAPTURE" || grep -q '"secret.txt"' "$CAPTURE" || grep -q '+++ b/secret.txt' "$CAPTURE" || grep -q '.gcmignore' "$CAPTURE"; then
+  bad "gcmignore-filtered path reached the request body"
+else
+  ok "gcmignore-filtered path excluded from request body"
+fi
+grep -q "public.txt" "$CAPTURE" && ok "nonignored path still analyzed" || bad "nonignored path missing"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-S2 (CLO-490): --secret-scan=redact strips credential values before egress"
+d="$(new_repo)"
+printf 'API_KEY=supersecretvalue12345\n' > "$d/creds.txt"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run --secret-scan=redact >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "redact mode exits 0" || bad "redact mode rc=$rc"
+grep -q "supersecretvalue12345" "$CAPTURE" && bad "secret value reached provider in redact mode" || ok "secret value redacted"
+grep -Fq "[REDACTED: secret]" "$CAPTURE" && ok "redaction marker present" || bad "redaction marker missing"
+rm -rf "$d"
+
+note "AC-S3 (CLO-490): --secret-scan=abort blocks egress"
+d="$(new_repo)"
+printf 'API_KEY=supersecretvalue12345\n' > "$d/creds.txt"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run --secret-scan=abort >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && grep -qi "secret scan detected" /tmp/gcm-out && ok "abort mode surfaces secret scan error" || bad "abort mode rc=$rc: $(cat /tmp/gcm-out)"
+[ ! -s "$CAPTURE" ] && ok "abort mode sent no provider request" || bad "abort mode still sent provider request"
+rm -rf "$d"
+
 note "AC-safe-files: untracked symlink/FIFO are name-only (no follow, no freeze)"
 outside="$(mktemp -d)"; printf 'SENSITIVE_OUTSIDE_CONTENT_xyz\n' > "$outside/secret"
 d="$(new_repo)"; printf 'real\n' > "$d/real.txt"

@@ -27,6 +27,14 @@ pub enum GcmError {
     /// (CLO-496). The caller prints `config::non_tty_instructions()` to stderr
     /// and exits non-zero; it occurs before any staging.
     OnboardingRequired,
+    /// User/configuration input outside provider selection (provider config
+    /// errors are represented by `ProviderError::Config`).
+    Config(String),
+    /// The optional pre-send secret scan found credential-looking content and
+    /// was configured to abort before provider egress (CLO-490, FR-50).
+    SecretDetected {
+        count: usize,
+    },
 }
 
 impl GcmError {
@@ -69,6 +77,12 @@ impl fmt::Display for GcmError {
                  Run `gcm config` interactively, or export a provider key (e.g. \
                  GROQ_API_KEY) and set GCM_PROVIDER, then retry."
             ),
+            GcmError::Config(msg) => write!(f, "{msg}"),
+            GcmError::SecretDetected { count } => write!(
+                f,
+                "secret scan detected {count} credential-like value(s); no provider request was sent. \
+                 Remove the secret, add the path to .gcmignore, or re-run with --secret-scan=redact."
+            ),
         }
     }
 }
@@ -93,6 +107,7 @@ mod tests {
         assert!(!GcmError::NotARepo.leaves_staged());
         // CLO-496: onboarding-required occurs before staging, so nothing is kept.
         assert!(!GcmError::OnboardingRequired.leaves_staged());
+        assert!(!GcmError::SecretDetected { count: 1 }.leaves_staged());
     }
 
     #[test]
@@ -104,5 +119,12 @@ mod tests {
             msg.contains("left staged"),
             "tells the user the group is kept"
         );
+    }
+
+    #[test]
+    fn secret_detected_mentions_no_provider_request() {
+        let msg = GcmError::SecretDetected { count: 2 }.to_string();
+        assert!(msg.contains("no provider request was sent"));
+        assert!(msg.contains("--secret-scan=redact"));
     }
 }

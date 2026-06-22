@@ -193,6 +193,8 @@ fn gcm_error_code(err: &GcmError) -> String {
         GcmError::UnmergedConflicts => "UnmergedConflicts".to_string(),
         GcmError::CommitFailed(_) => "CommitFailed".to_string(),
         GcmError::OnboardingRequired => "OnboardingRequired".to_string(),
+        GcmError::Config(_) => "Config".to_string(),
+        GcmError::SecretDetected { .. } => "SecretDetected".to_string(),
     }
 }
 
@@ -304,6 +306,8 @@ mod tests {
     fn error_maps_gcm_codes() {
         let env = error(None, None, None, &GcmError::NonInteractive);
         assert_eq!(env.error.as_ref().unwrap().code, "NonInteractive");
+        let env = error(None, None, None, &GcmError::SecretDetected { count: 1 });
+        assert_eq!(env.error.as_ref().unwrap().code, "SecretDetected");
     }
 
     #[test]
