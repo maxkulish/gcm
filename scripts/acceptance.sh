@@ -1431,6 +1431,43 @@ else
 fi
 rm -rf "$d" "$onb_cfg"
 
+note "AC-ONB3 (CLO-496): --reconfigure drives the wizard via a PTY, saves config, then continues (dry-run)"
+if command -v expect >/dev/null 2>&1; then
+  onb_cfg="$(mktemp -d)"; d="$(new_repo)"; printf 'r\n' > "$d/r.txt"
+  printf '%s' '{"groups":[{"files":["r.txt"],"summary":"r","commit_message":"chore: r"}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  # GROQ_API_KEY unset so the wizard prompts for the key; entering "dummy" stores
+  # it inline (0600) and hydrates GROQ_API_KEY for the following dry-run, which
+  # reaches the mock. Answers: enable provider 1 (groq), key "dummy", default 1.
+  # Sequential expect/send (not a brace-block) so a non-matching prompt times
+  # out and returns instead of hanging; no `catch wait` (it would block on a
+  # stdin-blocked child). On expect exit the PTY closes -> gcm sees EOF -> exits.
+  GCM_GROQ_BASE_URL="$MOCK_URL" GCM_CONFIG="$onb_cfg" GCM_BIN="$BIN" GCM_DIR="$d" \
+    expect -c '
+    set timeout 20
+    spawn -noecho sh -c "cd $env(GCM_DIR) && env -u GROQ_API_KEY -u GCM_PROVIDER GCM_CONFIG=$env(GCM_CONFIG) GCM_GROQ_BASE_URL=$env(GCM_GROQ_BASE_URL) $env(GCM_BIN) --reconfigure --dry-run"
+    expect -re {numbers}
+    send "1\r"
+    expect -re {API key}
+    send "dummy\r"
+    expect -re {Default}
+    send "1\r"
+    expect eof
+  ' >/tmp/gcm-onb3 2>&1
+  if [ -f "$onb_cfg/config.toml" ] && grep -q 'id = "groq"' "$onb_cfg/config.toml" && [ -s "$CAPTURE" ]; then
+    ok "--reconfigure: wizard saved config + continued to dry-run (reached mock)"
+  else
+    bad "--reconfigure PTY: cfg=$(cat "$onb_cfg/config.toml" 2>/dev/null); $(tail -3 /tmp/gcm-onb3)"
+  fi
+  if [ -f "$onb_cfg/config.toml" ]; then
+    perms=$(stat -f '%Lp' "$onb_cfg/config.toml" 2>/dev/null || stat -c '%a' "$onb_cfg/config.toml" 2>/dev/null)
+    [ "$perms" = "600" ] && ok "saved config is 0600" || bad "config perms = $perms (expected 600)"
+  fi
+  : > "$PLAN_FILE"; rm -rf "$d" "$onb_cfg"
+else
+  skip "AC-ONB3 needs expect (PTY-driven wizard)"
+fi
+
 stop_mock
 
 # --- optional real-network smoke test --------------------------------------
