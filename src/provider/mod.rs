@@ -20,7 +20,7 @@ use std::fmt;
 use std::time::Duration;
 
 use clap::ValueEnum;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
 use crate::plan::Plan;
@@ -147,11 +147,13 @@ fn env_u64(name: &str) -> Option<u64> {
 
 /// The selectable providers. `--provider` accepts the lower-case names; `google`
 /// also accepts the alias `gemini` (its API key is `GEMINI_API_KEY`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[value(rename_all = "lower")]
+#[serde(rename_all = "lowercase")]
 pub enum ProviderId {
     Groq,
     #[value(alias = "gemini")]
+    #[serde(alias = "gemini")]
     Google,
     Openai,
     Anthropic,
@@ -159,6 +161,19 @@ pub enum ProviderId {
 }
 
 impl ProviderId {
+    /// The provider's API key env var, or `None` for key-free Ollama. Centralizes
+    /// the per-backend key mapping so config onboarding (CLO-496) and the
+    /// backends agree on one source of truth.
+    pub fn key_env_var(self) -> Option<&'static str> {
+        match self {
+            ProviderId::Groq => Some("GROQ_API_KEY"),
+            ProviderId::Google => Some("GEMINI_API_KEY"),
+            ProviderId::Openai => Some("OPENAI_API_KEY"),
+            ProviderId::Anthropic => Some("ANTHROPIC_API_KEY"),
+            ProviderId::Ollama => None,
+        }
+    }
+
     /// Default model id (ADR-001 Decisions 5/7 + capability matrix).
     fn default_model(self) -> &'static str {
         match self {
@@ -391,6 +406,52 @@ mod tests {
         assert_eq!(ProviderId::parse("ANTHROPIC"), Some(ProviderId::Anthropic));
         // unknown
         assert_eq!(ProviderId::parse("foo"), None);
+    }
+
+    #[test]
+    fn provider_id_key_env_var_mapping() {
+        // CLO-496: each cloud provider maps to its key env var; Ollama is key-free.
+        assert_eq!(ProviderId::Groq.key_env_var(), Some("GROQ_API_KEY"));
+        assert_eq!(ProviderId::Google.key_env_var(), Some("GEMINI_API_KEY"));
+        assert_eq!(ProviderId::Openai.key_env_var(), Some("OPENAI_API_KEY"));
+        assert_eq!(
+            ProviderId::Anthropic.key_env_var(),
+            Some("ANTHROPIC_API_KEY")
+        );
+        assert_eq!(ProviderId::Ollama.key_env_var(), None);
+    }
+
+    #[test]
+    fn provider_id_serde_round_trip_with_alias() {
+        // serde renders lowercase canonical names...
+        assert_eq!(
+            serde_json::to_string(&ProviderId::Google).unwrap(),
+            "\"google\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ProviderId::Ollama).unwrap(),
+            "\"ollama\""
+        );
+        // ...and parses both the canonical name and the `gemini` alias to Google.
+        assert_eq!(
+            serde_json::from_str::<ProviderId>("\"google\"").unwrap(),
+            ProviderId::Google
+        );
+        assert_eq!(
+            serde_json::from_str::<ProviderId>("\"gemini\"").unwrap(),
+            ProviderId::Google
+        );
+        // round-trips for every variant
+        for id in [
+            ProviderId::Groq,
+            ProviderId::Google,
+            ProviderId::Openai,
+            ProviderId::Anthropic,
+            ProviderId::Ollama,
+        ] {
+            let s = serde_json::to_string(&id).unwrap();
+            assert_eq!(serde_json::from_str::<ProviderId>(&s).unwrap(), id);
+        }
     }
 
     #[test]

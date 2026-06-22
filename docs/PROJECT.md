@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard started → In Progress; CLO-488 finalized to Done in Linear + docs — PR #6 merged 2026-06-21, `9052a7e`; CLO-490 optional secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard implemented → In Progress (PR pending); CLO-488 finalized to Done in Linear + docs — PR #6 merged 2026-06-21, `9052a7e`; CLO-490 optional secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -61,7 +61,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | First-run onboarding wizard | In Progress | - | - |
+| [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | Add first-run onboarding wizard for provider setup | In Progress | PR | - |
 
 ## Up Next (Ready - no open blockers)
 

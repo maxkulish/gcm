@@ -1,0 +1,315 @@
+task_id: clo-496
+task_type: development
+classification_reason: Title starts with "Add" and acceptance criteria are mechanical.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Todo
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-496-add-first-run-onboarding-wizard-for-provider-setup
+  priority: High
+  branch_actual: feat/clo-496-onboarding-wizard
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-06-22T12:11:21.594Z'
+  updated_at: '2026-06-22T17:20:00.000Z'
+phases:
+  discovery:
+    status: complete
+    discovery:
+      status: in_progress
+    approach_chosen: TOML config in OS config dir with interactive std::io prompts
+    approaches_identified: 3
+    approved: true
+    baseline_score: 7
+    discovery_debt: []
+    discovery_report: docs/discovery/clo-496.md
+    prd_created: true
+    prd_exists: true
+    prd_file: docs/prds/clo-496-first-run-onboarding.md
+    problem_framed: true
+  design:
+    status: complete
+    finalized: true
+    design_doc: docs/designs/clo-496-onboarding-wizard.md
+    discovery_context_used: true
+    draft_ready: true
+    draft_source: lok-design-draft
+    assumptions:
+      - confidence: high
+        text: >-
+          directories::ProjectDirs::from("", "", "gcm").config_dir() yields a writable per-user config directory on
+          macOS and Linux.
+        verification: >-
+          src/cache.rs already uses the sibling cache_dir() the same way; mirror it and cover with a GCM_CONFIG override
+          test.
+      - confidence: high
+        text: >-
+          Honoring the discovery-chosen TOML format requires adding the toml crate; serde + serde_json cannot parse
+          TOML.
+        verification: Cargo.toml lists no toml dependency. See Open question 1.
+      - confidence: high
+        text: >-
+          Echo suppression via stty -echo / stty echo works on the supported platforms because the codebase already
+          shells out to sh for the editor.
+        verification: The platform comment and Command::new("sh") pattern in src/ui.rs::edit_in_editor.
+      - confidence: medium
+        text: >-
+          std::env::set_var is sound for the env-hydration bridge: the crate is edition 2021 and hydration runs once at
+          startup, before any provider call or thread spawn.
+        verification: >-
+          Cargo.toml edition = 2021. If the crate moves to edition 2024, set_var becomes unsafe and this bridge must be
+          wrapped.
+      - confidence: high
+        text: >-
+          Clap accepts an optional #[command(subcommand)] Option<Commands> alongside the existing top-level flags, so
+          gcm with no subcommand still runs the commit flow.
+        verification: cargo build + a no-args parse test.
+      - confidence: medium
+        text: >-
+          Storing an inline key in a 0600 file satisfies the team's security bar for v1 (PRD permits 0600 or env-only).
+          Tension with ADR-001 Decision 4 which says keys are referenced by env-var name, never stored as plaintext.
+        verification: PRD requirement 10; wizard defaults to env-only. See Open question 6.
+      - confidence: high
+        text: >-
+          In --json mode, the onboarding-required early exit must emit a JSON error envelope on stdout, not prompt text;
+          all interactive prompts and human-facing diagnostics go to stderr.
+        verification: >-
+          Existing output::error envelope pattern; add a --json non-TTY first-run integration test. Per
+          .pi/lessons/clo-493-... § L1.
+    assumptions_surfaced: true
+    applied_suggestions:
+      - Ollama probe timeout (3s) added to run_wizard signature
+      - 'Race condition documented: atomic rename = first-to-write wins'
+      - 'Empty key input treated as env-only (key: None) not Some("")'
+      - 'Malformed config recovery: parse errors trigger onboarding with warning'
+      - 'Permission check on load: warn if file not 0600'
+      - 'Ctrl+C echo restoration: RAII guard for stty -echo/echo'
+      - 'Wizard input validation: re-prompt on invalid selections'
+      - 'Key rotation UX: documented in README rollout step'
+      - Ollama endpoint URL validation before persisting
+      - Hand-edited config default-not-in-providers returns None
+    review_applied: true
+    flagged_suggestions:
+      - id: adr-001-inline-key-conflict
+        reason: >-
+          Gemini recommends strict ADR-001 adherence (no inline keys); design allows 0600 inline fallback per PRD.
+          Already Open Question 6. Needs human decision, not auto-applied.
+        resolution: keep_0600_inline_fallback
+        resolved_by: user
+        resolved_at: '2026-06-22T13:30:37.629Z'
+    resolved_decisions:
+      - id: open-question-1-config-format
+        decision: toml_plus_toml_crate
+        resolved_by: user
+        resolved_at: '2026-06-22T13:30:37.629Z'
+      - id: open-question-6-inline-key-storage
+        decision: keep_0600_inline_fallback
+        resolved_by: user
+        resolved_at: '2026-06-22T13:30:37.629Z'
+    review_completed: true
+    review_gemini: docs/reviews/clo-496-review-gemini.md
+    review_ollama: docs/reviews/clo-496-review-ollama.md
+    review_synthesis: docs/reviews/clo-496-review-synthesis.md
+    review_verdict: approve_with_changes
+    token_usage:
+      - recorded_at: '2026-06-22T12:40:43.816Z'
+        provider: gemini
+        model: gemini-2.5-pro
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: design-review-gemini
+      - recorded_at: '2026-06-22T12:40:43.816Z'
+        provider: ollama
+        model: glm-5:cloud
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: design-review-ollama
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-496-onboarding-wizard.md
+    total_tasks: 20
+    total_checkboxes: 41
+    phases: 8
+    approved: true
+  implement:
+    status: complete
+    last_phase_completed: validation_gate
+    pushed: true
+    codex_validated: true
+    codex_verdict: pass_with_notes
+    codex_report: docs/reviews/clo-496-codex-validation.md
+    codex_revalidation_report: docs/reviews/clo-496-codex-revalidation.md
+    gemini_validation_report: docs/reviews/clo-496-gemini-validation.md
+    gemini_verdict: pass
+    validation_findings_addressed: 'HIGH EOF hang, OLLAMA_HOST seeding, URL validation, Ctrl+C doc honesty, +tests (config/reconfigure/inline-key)'
+    merged_main: 'c197f85 (CLO-490 secret-scan integrated, conflicts resolved)'
+    test_summary: '187 unit/integration tests pass; 4 onboarding integration tests pass; acceptance 232 pass / 1 skip'
+    gates: 'cargo fmt --check OK; cargo clippy -D warnings OK; cargo test OK; scripts/acceptance.sh OK'
+    commits:
+      - sha: 3b2954a
+        summary: finalize onboarding wizard design
+      - sha: dfe46be
+        summary: add implementation plan and approve
+      - sha: 4f4d249
+        summary: add config module, onboarding wizard, and CLI wiring
+      - sha: 107669d
+        summary: add onboarding integration tests and acceptance checks
+      - sha: f853fe3
+        summary: document first-run setup and mark plan complete
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/17
+    pr_number: 17
+    ci_passed: false
+    mergeable: true
+    reviews_addressed: 0
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-06-22T12:11:21.594Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-496 as development
+  - timestamp: '2026-06-22T12:11:47.942Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: Title starts with "Add" and acceptance criteria are mechanical (interactive wizard
+      implementation).
+  - timestamp: '2026-06-22T12:12:09.087Z'
+    action: project_sync_start
+    phase: init
+    details: PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-496 --start
+  - timestamp: '2026-06-22T12:12:10.940Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-06-22T12:12:31.673Z'
+    action: discovery_started
+    phase: discovery
+    details: Discovery phase started for clo-496
+  - timestamp: '2026-06-22T12:13:05.135Z'
+    action: problem_framing_presented
+    phase: discovery
+    details: Presented problem framing to user; awaiting confirmation before solution-space exploration.
+  - timestamp: '2026-06-22T12:13:22.117Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-496-onboarding-wizard already checked out
+  - timestamp: '2026-06-22T12:14:00.549Z'
+    action: discovery_report_written
+    phase: discovery
+    details: Wrote docs/prds/clo-496-first-run-onboarding.md and docs/discovery/clo-496.md
+  - timestamp: '2026-06-22T12:14:03.628Z'
+    action: discovery_approved
+    phase: discovery
+    details: 'Approach: TOML config in OS config dir with interactive std::io prompts. Baseline 7/10. 3 approaches considered.'
+  - timestamp: '2026-06-22T12:14:09.260Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-06-22T12:34:51.074Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft generated by lok design-draft workflow at docs/designs/clo-496-onboarding-wizard.md (365 lines). Soft-gate
+      reviewed and corrected: aligned GCM_CONFIG override name with ADR-001 Decision 4, added Ollama daemon probe per
+      Decision 8, added --json stdout discipline per CLO-493 L1 lesson, flagged inline-key vs ADR tension as Open
+      Question 6.
+  - timestamp: '2026-06-22T12:35:13.572Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: >-
+      7 assumptions surfaced (high: 5, medium: 2, low: 0). See design doc § Assumptions. Includes ADR-001 Decision 4
+      tension on inline keys (medium) and CLO-493 L1 JSON stdout discipline (high).
+  - timestamp: '2026-06-22T12:40:43.816Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: approve_with_changes. 10 applied, 1 flagged. Gemini 2.5 Pro + Codex/Ollama both
+      APPROVE_WITH_SUGGESTIONS. Applied: Ollama probe timeout, race condition doc, empty key input, malformed config
+      recovery, permission check on load, Ctrl+C echo restoration, wizard input validation, key rotation UX, endpoint
+      URL validation, hand-edited config validation. Flagged: ADR-001 Decision 4 inline-key conflict (already Open
+      Question 6, needs human decision).
+  - timestamp: '2026-06-22T13:30:37.629Z'
+    action: review_conflicts_resolved
+    phase: design
+    details: >-
+      User resolved the two open design decisions at the checkpoint. Open Question 1 (config format) -> TOML + toml
+      crate. Open Question 6 / ADR-001 inline-key conflict -> keep 0600 inline fallback (env-var references by default,
+      inline 0600 only when the user types a key not already in env, per FR-55). Both recorded in design doc Resolved
+      decisions.
+  - timestamp: '2026-06-22T13:30:37.629Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Design approved and finalized. Status set to Finalized in docs/designs/clo-496-onboarding-wizard.md. Linear comment
+      posted. Transitioning from design to plan.
+  - timestamp: '2026-06-22T13:32:56.203Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      Implementation plan written to docs/plans/clo-496-onboarding-wizard.md from the finalized design. 20 tasks / 41
+      checkboxes across 8 phases. Linear comment posted. Awaiting plan checkpoint approval.
+  - timestamp: '2026-06-22T13:33:30.000Z'
+    action: plan_approved
+    phase: plan
+    details: 'Plan approved by user at checkpoint. Transitioning from plan to implement.'
+  - timestamp: '2026-06-22T14:05:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 8 plan phases implemented across commits 4f4d249 (config module + wizard + CLI wiring), 107669d (integration
+      tests + acceptance), f853fe3 (README). Gates green: cargo fmt --check, cargo clippy -D warnings, 187 lib/bin tests
+      + 4 onboarding integration tests, scripts/acceptance.sh 232 pass / 1 skip (live-network).
+  - timestamp: '2026-06-22T14:05:30.000Z'
+    action: pushed_to_remote
+    phase: implement
+    details: Pushed feat/clo-496-onboarding to origin.
+  - timestamp: '2026-06-22T14:06:00.000Z'
+    action: validation_gate_started
+    phase: implement
+    details: Codex (gpt-5.4, high) + Gemini (3.1-pro) read-only validation against design + plan, running in background.
+  - timestamp: '2026-06-22T16:30:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Gemini 3.1-pro PASS; Codex gpt-5.4 FAIL (1 HIGH gcm-config EOF hang, 3 MEDIUM: OLLAMA_HOST ignored, weak URL
+      validation, Ctrl+C echo over-claim; + missing config/reconfigure + inline-key tests). All findings verified real.
+  - timestamp: '2026-06-22T16:45:00.000Z'
+    action: review_addressed
+    phase: implement
+    details: >-
+      Merged main (CLO-490 secret-scan) resolving conflicts in cli/error/output/main + docs. Fixed all Codex findings:
+      read_line/read_secret EOF-safe + gcm-config non-TTY guard; wizard honors OLLAMA_HOST via effective_ollama_endpoint;
+      URL validation rejects empty host; EchoGuard SIGINT caveat documented; added integration + unit + PTY tests.
+  - timestamp: '2026-06-22T17:15:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex re-validation: PASS_WITH_NOTES (findings 1-4 RESOLVED; remaining note = no end-to-end --reconfigure test).
+      Closed by AC-ONB3 (PTY-driven wizard). Final gates: cargo fmt/clippy clean, 194+6 tests, acceptance 241 pass/1 skip.
+  - timestamp: '2026-06-22T17:20:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: Implementation + validation complete. Transitioning to PR phase.
+  - timestamp: '2026-06-22T17:22:00.000Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'cargo fmt --check, cargo clippy -D warnings, cargo test (194+6), acceptance 241/1 — all pass.'
+  - timestamp: '2026-06-22T17:23:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #17 created (https://github.com/maxkulish/gcm/pull/17). Mergeability gate PASS (mergeable, UNSTABLE=CI pending). Linear set to In Review + comment posted.'
+task_title: Add first-run onboarding wizard for provider setup
+task_url: https://linear.app/cloud-ai/issue/clo-496/add-first-run-onboarding-wizard-for-provider-setup

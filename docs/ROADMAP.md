@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard started → In Progress; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard implemented → In Progress (PR pending); CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-491 merged on main)
 
 ## Summary
 

@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard started → In Progress; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e` — so CLO-497 now waits only on CLO-496; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-496 onboarding wizard implemented → In Progress (PR pending); CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e` — so CLO-497 now waits only on CLO-496; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 ## Current Blockers
 

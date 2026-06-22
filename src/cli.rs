@@ -47,6 +47,10 @@ GCM_LOG_LEVEL=debug) to print the typed error and retry attempts to stderr.";
     after_long_help = EGRESS_DISCLOSURE
 )]
 pub struct Cli {
+    /// Optional subcommand. With none, gcm runs the normal commit flow.
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     /// Preview the grouping plan (or the single-commit message with --all) and
     /// exit without staging or committing.
     #[arg(long)]
@@ -85,8 +89,56 @@ pub struct Cli {
     #[arg(long)]
     pub model: Option<String>,
 
+    /// Re-run the interactive provider setup wizard (updating keys/selections),
+    /// then continue with the normal commit flow.
+    #[arg(long)]
+    pub reconfigure: bool,
+
     /// Optional pre-send secret scan: off (default), redact detected values, or abort
     /// before any provider request. Overrides GCM_SECRET_SCAN.
     #[arg(long, value_enum)]
     pub secret_scan: Option<SecretScanMode>,
+}
+
+/// Top-level subcommands. `gcm` with no subcommand runs the commit flow.
+#[derive(clap::Subcommand, Debug)]
+pub enum Commands {
+    /// Run the interactive provider setup wizard and exit.
+    Config,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        // catches subcommand/flag conflicts at test time
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn no_subcommand_parses_to_commit_flow() {
+        let cli = Cli::try_parse_from(["gcm"]).unwrap();
+        assert!(cli.command.is_none(), "no subcommand -> commit flow");
+        assert!(!cli.reconfigure);
+        // existing flags still parse alongside the optional subcommand
+        let cli = Cli::try_parse_from(["gcm", "--dry-run", "--provider", "ollama"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(cli.dry_run);
+    }
+
+    #[test]
+    fn config_subcommand_parses() {
+        let cli = Cli::try_parse_from(["gcm", "config"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Config)));
+    }
+
+    #[test]
+    fn reconfigure_flag_parses() {
+        let cli = Cli::try_parse_from(["gcm", "--reconfigure"]).unwrap();
+        assert!(cli.reconfigure);
+        assert!(cli.command.is_none());
+    }
 }

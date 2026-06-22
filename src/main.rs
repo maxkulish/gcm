@@ -1,5 +1,6 @@
 mod cache;
 mod cli;
+mod config;
 mod debug;
 mod diff;
 mod error;
@@ -11,10 +12,11 @@ mod provider;
 mod ui;
 
 use std::collections::HashSet;
+use std::io::IsTerminal;
 
 use clap::Parser;
 
-use cli::Cli;
+use cli::{Cli, Commands};
 use error::GcmError;
 use git::{ChangedFile, Repo};
 use output::Envelope;
@@ -31,6 +33,12 @@ fn main() {
 /// Returns the process exit code: 0 = success/noop/abort, 1 = runtime error
 /// (usage errors exit 2 via clap before we get here). See FR-9, FR-39.
 fn run(args: &Cli) -> i32 {
+    // The `config` subcommand is a standalone interactive action (CLO-496): run
+    // the wizard, persist, and exit without touching the repo or the commit flow.
+    if matches!(args.command, Some(Commands::Config)) {
+        return run_config_subcommand();
+    }
+
     let env = execute(args);
     let is_error = env.status == output::STATUS_ERROR;
 
@@ -44,6 +52,83 @@ fn run(args: &Cli) -> i32 {
         1
     } else {
         0
+    }
+}
+
+/// Run the `gcm config` subcommand: launch the wizard, persist the result, and
+/// return the process exit code (0 on success, 1 on failure). Interactive; all
+/// output goes to stderr.
+fn run_config_subcommand() -> i32 {
+    // The wizard is interactive; without a terminal it cannot prompt. Fail fast
+    // with guidance instead of erroring on the first EOF read.
+    if !std::io::stdin().is_terminal() {
+        eprintln!("gcm: `gcm config` needs an interactive terminal to run the setup wizard.");
+        eprintln!("{}", config::non_tty_instructions());
+        return 1;
+    }
+    match config::run_wizard() {
+        Ok(cfg) => {
+            if let Err(e) = config::save(&cfg) {
+                eprintln!("gcm: error: could not save configuration: {e}");
+                return 1;
+            }
+            match config::config_path() {
+                Some(p) => eprintln!("gcm: configuration saved to {}", p.display()),
+                None => eprintln!("gcm: configuration saved"),
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("gcm: {e}");
+            1
+        }
+    }
+}
+
+/// Ensure a provider is configured before the commit flow (CLO-496). With
+/// `--reconfigure`, always re-run the wizard. Otherwise: hydrate an existing
+/// config into the environment, or - on an unconfigured first run - launch the
+/// wizard in a TTY, or return [`GcmError::OnboardingRequired`] when there is no
+/// terminal. An env-configured user (key/`GCM_PROVIDER`/`--provider`) is left
+/// untouched, preserving `flag > env > config > default` precedence.
+fn ensure_configured(args: &Cli) -> Result<(), GcmError> {
+    let interactive = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+
+    if args.reconfigure {
+        if !interactive {
+            return Err(GcmError::OnboardingRequired);
+        }
+        let cfg = config::run_wizard()?;
+        save_config_best_effort(&cfg);
+        config::apply_to_env(&cfg);
+        return Ok(());
+    }
+
+    if let Some(cfg) = config::load() {
+        config::apply_to_env(&cfg);
+        return Ok(());
+    }
+
+    if !config::needs_onboarding(args.provider) {
+        // Env-configured (or flag-driven): proceed without interruption.
+        return Ok(());
+    }
+
+    if interactive {
+        let cfg = config::run_wizard()?;
+        save_config_best_effort(&cfg);
+        config::apply_to_env(&cfg);
+        Ok(())
+    } else {
+        Err(GcmError::OnboardingRequired)
+    }
+}
+
+/// Persist the config, warning (not failing the run) if the write fails - the
+/// in-memory config is still hydrated into the environment for this run.
+fn save_config_best_effort(cfg: &config::Config) {
+    if let Err(e) = config::save(cfg) {
+        eprintln!("gcm: warning: could not save configuration: {e}");
     }
 }
 
@@ -64,6 +149,18 @@ fn execute(args: &Cli) -> Envelope {
     // no-changes check so it clears even when the tree is currently clean.
     if args.reset {
         cache::clear(&repo);
+    }
+
+    // First-run onboarding (CLO-496): load + hydrate config, or launch the wizard
+    // on an unconfigured first run. Runs before the no-changes and non-TTY guards
+    // so an unconfigured non-TTY user gets actionable setup instructions (and a
+    // JSON error envelope in `--json` mode) rather than a generic NonInteractive
+    // error. An env-configured user is never interrupted.
+    if let Err(e) = ensure_configured(args) {
+        if matches!(e, GcmError::OnboardingRequired) {
+            eprintln!("{}", config::non_tty_instructions());
+        }
+        return output::error(None, None, Some(mode_from_args(args)), &e);
     }
 
     if let Err(e) = repo.has_changes() {

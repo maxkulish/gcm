@@ -35,6 +35,10 @@ MOCK_PY="$(mktemp).py"
 # and never pollutes the real OS cache. Scratch repos have unique paths -> unique
 # cache keys, so a single shared dir is collision-free across cases.
 GCM_CACHE_DIR="$(mktemp -d)"; export GCM_CACHE_DIR
+# Redirect the config (CLO-496) to an empty throwaway dir so the suite is
+# hermetic: no real ~/.config/gcm leaks in, and first-run onboarding fires
+# deterministically only where a case leaves the provider truly unconfigured.
+GCM_CONFIG="$(mktemp -d)"; export GCM_CONFIG
 cat > "$MOCK_PY" <<'PY'
 import http.server, json, os, sys
 CAP = os.environ["CAPTURE_FILE"]
@@ -189,9 +193,12 @@ note "AC-8/AC-10: egress disclosure + no LLM CLI subprocess"
 grep -qiE "egress|sends your working-tree" "$ROOT/README.md" && ok "README discloses egress" || bad "README egress"
 if grep -REn 'Command::new\("(mods|crush|claude)"' "$ROOT/src" >/dev/null 2>&1; then bad "found LLM CLI subprocess"; else ok "no mods/crush/claude subprocess in src"; fi
 
-note "AC-6: missing GROQ_API_KEY -> exit 1, index untouched"
+note "AC-6: provider selected but key missing -> exit 1, index untouched"
+# GCM_PROVIDER=groq makes this a configured-but-keyless run (the surviving
+# MissingKey path); without an explicit provider it would be an unconfigured
+# first run and onboard instead (see AC-ONB / CLO-496).
 d="$(new_repo)"; echo hi > "$d/a.txt"
-( cd "$d" && env -u GROQ_API_KEY GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+( cd "$d" && env -u GROQ_API_KEY GCM_PROVIDER=groq GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
 [ $rc -eq 1 ] && grep -q "GROQ_API_KEY" /tmp/gcm-out && ok "missing key -> exit 1 + names var" || bad "missing key (rc=$rc)"
 [ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after missing-key" || bad "index mutated"
 rm -rf "$d"
@@ -1398,6 +1405,68 @@ else
   bad ":cloud egress warning (rc=$rc): $(cat /tmp/gcm-out)"
 fi
 : > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
+note "AC-ONB: unconfigured first run in a non-TTY -> instructions + exit 1 (CLO-496)"
+# Empty per-case config dir, no key env vars, no provider hint, stdin from
+# /dev/null (non-TTY): onboarding must print actionable setup instructions to
+# stderr and exit non-zero rather than hang on the wizard.
+onb_cfg="$(mktemp -d)"; d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && env -u GROQ_API_KEY -u GEMINI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u GCM_PROVIDER \
+    GCM_CONFIG="$onb_cfg" "$BIN" </dev/null >/tmp/gcm-out 2>&1 ); rc=$?
+if [ $rc -ne 0 ] && grep -q "\[\[providers\]\]" /tmp/gcm-out && grep -q "export GROQ_API_KEY=" /tmp/gcm-out; then
+  ok "non-TTY first run -> instructions + exit $rc"
+else
+  bad "non-TTY first run (rc=$rc): $(cat /tmp/gcm-out)"
+fi
+note "AC-ONB2: same first run with --json -> error envelope on stdout, instructions on stderr"
+( cd "$d" && env -u GROQ_API_KEY -u GEMINI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u GCM_PROVIDER \
+    GCM_CONFIG="$onb_cfg" "$BIN" --json </dev/null >/tmp/gcm-onb-out 2>/tmp/gcm-onb-err ); rc=$?
+if [ $rc -ne 0 ] \
+   && grep -q '"code":"OnboardingRequired"' /tmp/gcm-onb-out \
+   && ! grep -q "\[\[providers\]\]" /tmp/gcm-onb-out \
+   && grep -q "\[\[providers\]\]" /tmp/gcm-onb-err; then
+  ok "--json first run -> envelope on stdout, instructions on stderr"
+else
+  bad "--json first run (rc=$rc): out=$(cat /tmp/gcm-onb-out) err=$(cat /tmp/gcm-onb-err)"
+fi
+rm -rf "$d" "$onb_cfg"
+
+note "AC-ONB3 (CLO-496): --reconfigure drives the wizard via a PTY, saves config, then continues (dry-run)"
+if command -v expect >/dev/null 2>&1; then
+  onb_cfg="$(mktemp -d)"; d="$(new_repo)"; printf 'r\n' > "$d/r.txt"
+  printf '%s' '{"groups":[{"files":["r.txt"],"summary":"r","commit_message":"chore: r"}]}' > "$PLAN_FILE"
+  : > "$CAPTURE"
+  # GROQ_API_KEY unset so the wizard prompts for the key; entering "dummy" stores
+  # it inline (0600) and hydrates GROQ_API_KEY for the following dry-run, which
+  # reaches the mock. Answers: enable provider 1 (groq), key "dummy", default 1.
+  # Sequential expect/send (not a brace-block) so a non-matching prompt times
+  # out and returns instead of hanging; no `catch wait` (it would block on a
+  # stdin-blocked child). On expect exit the PTY closes -> gcm sees EOF -> exits.
+  GCM_GROQ_BASE_URL="$MOCK_URL" GCM_CONFIG="$onb_cfg" GCM_BIN="$BIN" GCM_DIR="$d" \
+    expect -c '
+    set timeout 20
+    spawn -noecho sh -c "cd $env(GCM_DIR) && env -u GROQ_API_KEY -u GCM_PROVIDER GCM_CONFIG=$env(GCM_CONFIG) GCM_GROQ_BASE_URL=$env(GCM_GROQ_BASE_URL) $env(GCM_BIN) --reconfigure --dry-run"
+    expect -re {numbers}
+    send "1\r"
+    expect -re {API key}
+    send "dummy\r"
+    expect -re {Default}
+    send "1\r"
+    expect eof
+  ' >/tmp/gcm-onb3 2>&1
+  if [ -f "$onb_cfg/config.toml" ] && grep -q 'id = "groq"' "$onb_cfg/config.toml" && [ -s "$CAPTURE" ]; then
+    ok "--reconfigure: wizard saved config + continued to dry-run (reached mock)"
+  else
+    bad "--reconfigure PTY: cfg=$(cat "$onb_cfg/config.toml" 2>/dev/null); $(tail -3 /tmp/gcm-onb3)"
+  fi
+  if [ -f "$onb_cfg/config.toml" ]; then
+    perms=$(stat -f '%Lp' "$onb_cfg/config.toml" 2>/dev/null || stat -c '%a' "$onb_cfg/config.toml" 2>/dev/null)
+    [ "$perms" = "600" ] && ok "saved config is 0600" || bad "config perms = $perms (expected 600)"
+  fi
+  : > "$PLAN_FILE"; rm -rf "$d" "$onb_cfg"
+else
+  skip "AC-ONB3 needs expect (PTY-driven wizard)"
+fi
 
 stop_mock
 
