@@ -35,6 +35,10 @@ MOCK_PY="$(mktemp).py"
 # and never pollutes the real OS cache. Scratch repos have unique paths -> unique
 # cache keys, so a single shared dir is collision-free across cases.
 GCM_CACHE_DIR="$(mktemp -d)"; export GCM_CACHE_DIR
+# Redirect the config (CLO-496) to an empty throwaway dir so the suite is
+# hermetic: no real ~/.config/gcm leaks in, and first-run onboarding fires
+# deterministically only where a case leaves the provider truly unconfigured.
+GCM_CONFIG="$(mktemp -d)"; export GCM_CONFIG
 cat > "$MOCK_PY" <<'PY'
 import http.server, json, os, sys
 CAP = os.environ["CAPTURE_FILE"]
@@ -189,9 +193,12 @@ note "AC-8/AC-10: egress disclosure + no LLM CLI subprocess"
 grep -qiE "egress|sends your working-tree" "$ROOT/README.md" && ok "README discloses egress" || bad "README egress"
 if grep -REn 'Command::new\("(mods|crush|claude)"' "$ROOT/src" >/dev/null 2>&1; then bad "found LLM CLI subprocess"; else ok "no mods/crush/claude subprocess in src"; fi
 
-note "AC-6: missing GROQ_API_KEY -> exit 1, index untouched"
+note "AC-6: provider selected but key missing -> exit 1, index untouched"
+# GCM_PROVIDER=groq makes this a configured-but-keyless run (the surviving
+# MissingKey path); without an explicit provider it would be an unconfigured
+# first run and onboard instead (see AC-ONB / CLO-496).
 d="$(new_repo)"; echo hi > "$d/a.txt"
-( cd "$d" && env -u GROQ_API_KEY GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
+( cd "$d" && env -u GROQ_API_KEY GCM_PROVIDER=groq GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
 [ $rc -eq 1 ] && grep -q "GROQ_API_KEY" /tmp/gcm-out && ok "missing key -> exit 1 + names var" || bad "missing key (rc=$rc)"
 [ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after missing-key" || bad "index mutated"
 rm -rf "$d"
@@ -1363,6 +1370,31 @@ else
   bad ":cloud egress warning (rc=$rc): $(cat /tmp/gcm-out)"
 fi
 : > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
+note "AC-ONB: unconfigured first run in a non-TTY -> instructions + exit 1 (CLO-496)"
+# Empty per-case config dir, no key env vars, no provider hint, stdin from
+# /dev/null (non-TTY): onboarding must print actionable setup instructions to
+# stderr and exit non-zero rather than hang on the wizard.
+onb_cfg="$(mktemp -d)"; d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && env -u GROQ_API_KEY -u GEMINI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u GCM_PROVIDER \
+    GCM_CONFIG="$onb_cfg" "$BIN" </dev/null >/tmp/gcm-out 2>&1 ); rc=$?
+if [ $rc -ne 0 ] && grep -q "\[\[providers\]\]" /tmp/gcm-out && grep -q "export GROQ_API_KEY=" /tmp/gcm-out; then
+  ok "non-TTY first run -> instructions + exit $rc"
+else
+  bad "non-TTY first run (rc=$rc): $(cat /tmp/gcm-out)"
+fi
+note "AC-ONB2: same first run with --json -> error envelope on stdout, instructions on stderr"
+( cd "$d" && env -u GROQ_API_KEY -u GEMINI_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u GCM_PROVIDER \
+    GCM_CONFIG="$onb_cfg" "$BIN" --json </dev/null >/tmp/gcm-onb-out 2>/tmp/gcm-onb-err ); rc=$?
+if [ $rc -ne 0 ] \
+   && grep -q '"code":"OnboardingRequired"' /tmp/gcm-onb-out \
+   && ! grep -q "\[\[providers\]\]" /tmp/gcm-onb-out \
+   && grep -q "\[\[providers\]\]" /tmp/gcm-onb-err; then
+  ok "--json first run -> envelope on stdout, instructions on stderr"
+else
+  bad "--json first run (rc=$rc): out=$(cat /tmp/gcm-onb-out) err=$(cat /tmp/gcm-onb-err)"
+fi
+rm -rf "$d" "$onb_cfg"
 
 stop_mock
 
