@@ -10,8 +10,8 @@ task_profile:
   has_external_deps: false
   skip_probe: false
 pending_human_action: >-
-  Copilot installed but no review within 10 min. PR #11 has no reviews or comments. CI green. Proceed without bot review
-  or wait longer?
+  Merge conflict resolved (merge commit a947e11 pushed); PR #11 is now MERGEABLE with CI re-running on the merge commit.
+  Waiting on CI to go green on the new head, then owner squash-merges PR #11 on GitHub.
 linear:
   team: Cloud-ai
   project: Personal-health
@@ -26,9 +26,9 @@ linear:
   branch_actual: feat/clo-494-anthropic
 workflow:
   current_phase: pr
-  status: blocked
+  status: in_progress
   created_at: '2026-06-22T07:16:39.555Z'
-  updated_at: '2026-06-22T09:49:48.867Z'
+  updated_at: '2026-06-22T10:15:32.000Z'
 phases:
   discovery:
     status: complete
@@ -184,10 +184,13 @@ phases:
         completion_tokens: 0
         task_label: pre-pr-validation-synthesis
   pr:
-    status: blocked
+    status: in_progress
     pr_number: 11
     pr_url: https://github.com/maxkulish/gcm/pull/11
     ci_passed: true
+    mergeable: true
+    merge_conflict_resolved: true
+    merge_commit: a947e11
   complete:
     status: pending
 history:
@@ -360,5 +363,22 @@ history:
       Updated PR phase and pr-review-cycle docs to add a mandatory PR health/mergeability gate before CI/bot-review
       waits. Current PR #11 is blocked by merge conflicts (mergeable=CONFLICTING, mergeStateStatus=DIRTY), so bot-review
       absence is no longer the primary blocker.
+  - timestamp: '2026-06-22T10:15:32.000Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      Merged origin/main into feat/clo-494-anthropic (merge commit a947e11) to clear the merge conflict. main had
+      advanced with CLO-495 (Ollama provider) and CLO-493 (automation surface). Resolved 10 conflicting files:
+      http.rs (auth->Option for key-free Ollama + kept extra_headers Vec for Anthropic's anthropic-version header),
+      mod.rs/cli.rs (registered both Anthropic and Ollama; merged help text to list all five providers),
+      groq/gemini/openai (auth wrapped in Some(...)); semantic fixes to anthropic.rs (Some auth + test) and ollama.rs
+      (extra_headers); README union of both providers; PROJECT/ROADMAP/DEPENDENCIES adopted main's authoritative ledger.
+  - timestamp: '2026-06-22T10:15:32.000Z'
+    action: workflow_unblocked
+    phase: pr
+    details: >-
+      PR #11 mergeable=MERGEABLE after pushing merge commit a947e11 (was CONFLICTING/DIRTY). mergeStateStatus=UNSTABLE
+      reflects CI re-running on the new merge commit, not a conflict. Local gate green post-merge: fmt + clippy -D
+      warnings + cargo test (156 tests) all pass. Merge-conflict blocker cleared.
 task_title: Add Anthropic provider via forced tool-use
 task_url: https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use
