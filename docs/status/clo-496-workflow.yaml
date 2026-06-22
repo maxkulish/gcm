@@ -170,8 +170,9 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/17
     pr_number: 17
-    ci_passed: false
+    ci_passed: true
     mergeable: true
+    merge_state: CLEAN
     reviews_addressed: 0
   complete:
     status: pending
@@ -311,5 +312,9 @@ history:
     action: pr_created
     phase: pr
     details: 'PR #17 created (https://github.com/maxkulish/gcm/pull/17). Mergeability gate PASS (mergeable, UNSTABLE=CI pending). Linear set to In Review + comment posted.'
+  - timestamp: '2026-06-22T17:30:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: 'CI green on ubuntu-latest + macos-latest. mergeStateStatus=CLEAN, mergeable=MERGEABLE. Awaiting owner squash-merge at PR checkpoint.'
 task_title: Add first-run onboarding wizard for provider setup
 task_url: https://linear.app/cloud-ai/issue/clo-496/add-first-run-onboarding-wizard-for-provider-setup
