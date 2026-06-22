@@ -38,6 +38,9 @@ pub(super) struct HttpRequest<'a> {
     pub auth_env_var: &'static str,
     pub endpoint: String,
     pub auth: (&'static str, String),
+    /// Additional headers beyond auth + Content-Type (e.g. Anthropic's
+    /// `anthropic-version`). Sent after the auth header, before `.send()`.
+    pub extra_headers: Vec<(&'static str, String)>,
     pub payload: &'a Value,
 }
 
@@ -63,10 +66,14 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
         .http_status_as_error(false)
         .build();
     let agent = ureq::Agent::new_with_config(config);
-    let mut response = agent
+    let mut request = agent
         .post(&req.endpoint)
         .header(req.auth.0, req.auth.1.as_str())
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    for (name, value) in &req.extra_headers {
+        request = request.header(*name, value.as_str());
+    }
+    let mut response = request
         .send(body.as_str())
         .map_err(|e| wrap(map_ureq_error(e)))?;
 

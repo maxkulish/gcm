@@ -1,0 +1,192 @@
+task_id: clo-494
+task_type: development
+classification_reason: >-
+  Title starts with 'Add' but ACs require architectural decisions (forced tool-use mechanism, auth model per CLO-485
+  ADR) and depend on CLO-489/CLO-485 — not purely mechanical
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks:
+    - CLO-497
+  blocked_by:
+    - CLO-489
+    - CLO-485
+  branch_suggested: kmamemo/clo-494-add-anthropic-provider-via-forced-tool-use
+  priority: Medium
+  branch_actual: feat/clo-494-anthropic
+workflow:
+  current_phase: implement
+  status: active
+  created_at: '2026-06-22T07:16:39.555Z'
+  updated_at: '2026-06-22T08:08:14.157Z'
+phases:
+  discovery:
+    status: complete
+    approach_chosen: Forced tool-use
+    approaches_identified: 2
+    approved: true
+    baseline_score: 8
+    discovery_debt: []
+    discovery_report: docs/discovery/clo-494.md
+    prd_created: true
+    prd_exists: true
+    prd_file: docs/prds/clo-494-anthropic-provider.md
+    problem_framed: true
+  design:
+    status: complete
+    design_doc: docs/designs/clo-494-anthropic-provider.md
+    discovery_context_used: true
+    draft_ready: true
+    draft_source: manual
+    assumptions:
+      - confidence: high
+        text: >-
+          plan::schema() (JSON Schema with type:["string","null"] for commit_message) is accepted as-is by Anthropic's
+          input_schema without modification.
+        verification: Unit test + manual integration test against live API
+      - confidence: high
+        text: >-
+          tool_choice:{type:"tool",name:"commit_plan"} forces the model to call the tool on every request, never
+          producing a plain-text refusal or end_turn without a tool call.
+        verification: 'Integration test: gcm --provider=anthropic --dry-run on sample diff'
+      - confidence: medium
+        text: 'The anthropic-version: 2023-06-01 header value is stable and required for all Messages API calls.'
+        verification: Verified against Anthropic API docs 2026-06-22; if deprecated, surfaces as HTTP 400
+      - confidence: high
+        text: >-
+          Adaptive thinking (default, no explicit thinking param) suppresses visible CoT in response content blocks;
+          strip_think() backstop handles leakage.
+        verification: Unit test skips thinking blocks; integration test confirms no CoT in tool input
+      - confidence: medium
+        text: The default model claude-haiku-4-5 is a valid Anthropic model ID accepted by the Messages API.
+        verification: Integration test; if wrong, API returns HTTP 400 with model-not-found
+      - confidence: high
+        text: 'max_tokens: 4096 is sufficient for the grouping plan response (plan JSON is typically 200-2000 tokens).'
+        verification: Integration test with 20+ file diff; if truncated, stop_reason:max_tokens surfaces as Deserialize error
+      - confidence: high
+        text: >-
+          The existing HttpRequest struct can be extended with extra_headers without breaking the retry/backoff engine
+          or response classification.
+        verification: 'Unit test: all existing HTTP tests pass unchanged'
+    assumptions_surfaced: true
+    applied_suggestions:
+      - max_tokens stop_reason check in extract_tool_use_input (matches Gemini handling)
+      - direct from_value::<Plan> deserialization before parse_defensive fallback
+      - test 18 strategy clarified — header verification via integration test, not mock
+    flagged_suggestions:
+      - id: gemini-s2-builder-pattern
+        reason: >-
+          Builder pattern for HttpRequest adds indirection for marginal benefit; Vec::new() is explicit and consistent
+          with existing codebase style
+    review_completed: true
+    review_gemini: docs/reviews/clo-494-design-gemini.md
+    review_synthesis: docs/reviews/clo-494-design-synthesis.md
+    review_verdict: approve_with_changes
+    token_usage:
+      - recorded_at: '2026-06-22T08:00:56.806Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: design-review-gemini
+    human_review_completed: true
+    finalized: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-494-anthropic-provider.md
+    approved: true
+  implement:
+    status: pending
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-06-22T07:16:39.555Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-494 as development
+  - timestamp: '2026-06-22T07:17:38.899Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: Title starts with 'Add' but ACs require architectural decisions (forced tool-use
+      mechanism, auth model per CLO-485 ADR) and depend on CLO-489/CLO-485 — not purely mechanical
+  - timestamp: '2026-06-22T07:21:20.670Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md created via /project:sync CLO-494 --start. CLO-494 added to Active Work (1/3
+      WIP). Blockers CLO-485 and CLO-489 both Done — task unblocked.
+  - timestamp: '2026-06-22T07:21:46.200Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-06-22T07:22:49.947Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-494-anthropic already checked out from main (includes CLO-489 provider trait)
+  - timestamp: '2026-06-22T07:29:13.468Z'
+    action: discovery_approved
+    phase: discovery
+    details: >-
+      Approach: Forced tool-use. Baseline 8/10. 2 approaches considered. PRD created at
+      docs/prds/clo-494-anthropic-provider.md.
+  - timestamp: '2026-06-22T07:29:22.152Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-06-22T07:51:24.406Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft generated manually (lok timed out) at docs/designs/clo-494-anthropic-provider.md. 8-section structure
+      verified.
+  - timestamp: '2026-06-22T07:51:44.594Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: '7 assumptions surfaced (high: 5, medium: 2, low: 0). See design doc § Assumptions.'
+  - timestamp: '2026-06-22T08:00:56.806Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: approve_with_changes. 3 applied (max_tokens check, direct deserialization, test 18 clarification),
+      1 flagged (builder pattern for HttpRequest — deferred, not worth the indirection for 1 field).
+  - timestamp: '2026-06-22T08:02:07.626Z'
+    action: design_human_review_complete
+    phase: design
+    details: Plannotator annotate session closed with no annotations.
+  - timestamp: '2026-06-22T08:03:07.223Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Design ready for plan phase. 27 test cases enumerated. All open questions resolved. Test numbering fixed (no
+      duplicates). API signatures compile mentally.
+  - timestamp: '2026-06-22T08:03:26.771Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-06-22T08:08:09.941Z'
+    action: plan_created
+    phase: plan
+    details: Plan with 5 sub-tasks (1L + 4S) at docs/plans/clo-494-anthropic-provider.md
+  - timestamp: '2026-06-22T08:08:12.508Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Plan approved. 5 sub-tasks queued: ST1 (HttpRequest extra_headers), ST2 (existing providers Vec::new()), ST3
+      (ProviderId::Anthropic), ST4 (anthropic.rs full module), ST5 (cli.rs help text).
+  - timestamp: '2026-06-22T08:08:14.157Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+task_title: Add Anthropic provider via forced tool-use
+task_url: https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use
