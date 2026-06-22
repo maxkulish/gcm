@@ -6,6 +6,7 @@ mod error;
 mod git;
 mod output;
 mod plan;
+mod privacy;
 mod provider;
 mod ui;
 
@@ -18,6 +19,7 @@ use error::GcmError;
 use git::{ChangedFile, Repo};
 use output::Envelope;
 use plan::Plan;
+use privacy::Privacy;
 use provider::{ErrorKind, Provider};
 use ui::Decision;
 
@@ -87,17 +89,29 @@ fn execute(args: &Cli) -> Envelope {
     // including `--all`: staging a conflicted working tree on *either* path
     // (grouping `add` or single-commit `add -A`) would bake `<<<<<<<` markers
     // into the commit, so an unresolved conflict must abort regardless of flags.
-    let changed = match repo.changed_files() {
+    let raw_changed = match repo.changed_files() {
         Ok(c) => c,
         Err(e) => return output::error(None, None, Some(mode_from_args(args)), &e),
     };
-    if changed.iter().any(|c| c.is_unmerged()) {
+    if raw_changed.iter().any(|c| c.is_unmerged()) {
         return output::error(
             None,
             None,
             Some(mode_from_args(args)),
             &GcmError::UnmergedConflicts,
         );
+    }
+
+    let privacy = match Privacy::load(&repo, args.secret_scan) {
+        Ok(p) => p,
+        Err(e) => return output::error(None, None, Some(mode_from_args(args)), &e),
+    };
+    let changed = privacy.filter_changed(&raw_changed);
+    if changed.is_empty() {
+        if !raw_changed.is_empty() {
+            eprintln!("gcm: all changed paths are excluded by .gcmignore/gcmignore");
+        }
+        return output::noop(None, None, noop_mode(args));
     }
 
     // Select the provider once (FR-12, precedence flag > env > default). Pure
@@ -125,9 +139,12 @@ fn execute(args: &Cli) -> Envelope {
     // about to be lost. Gate on "will the index actually be mutated": skip for
     // `--dry-run` and `--plan-only` (both are no-mutation).
     if !args.dry_run && !args.plan_only {
-        let staged = changed.iter().filter(|c| c.is_staged()).count();
+        let staged = raw_changed.iter().filter(|c| c.is_staged()).count();
         if staged > 0 {
-            let partial = changed.iter().filter(|c| c.is_partially_staged()).count();
+            let partial = raw_changed
+                .iter()
+                .filter(|c| c.is_partially_staged())
+                .count();
             eprintln!("{}", ui::curated_index_warning(staged, partial));
         }
     }
@@ -142,6 +159,7 @@ fn execute(args: &Cli) -> Envelope {
             args,
             provider.as_ref(),
             &changed,
+            &privacy,
             provider_name.as_str(),
             model_id.as_str(),
         );
@@ -166,6 +184,7 @@ fn execute(args: &Cli) -> Envelope {
                     args,
                     provider.as_ref(),
                     &changed,
+                    &privacy,
                     provider_name.as_str(),
                     model_id.as_str(),
                     msg,
@@ -174,7 +193,7 @@ fn execute(args: &Cli) -> Envelope {
             }
             (plan, true)
         }
-        None => match build_plan(&repo, &changed, provider.as_ref()) {
+        None => match build_plan(&repo, &changed, provider.as_ref(), &privacy) {
             Ok(plan) => {
                 if !args.plan_only {
                     // `--dry-run` uses/saves but does not advance (FR-7); `--yes`
@@ -198,6 +217,7 @@ fn execute(args: &Cli) -> Envelope {
                     args,
                     provider.as_ref(),
                     &changed,
+                    &privacy,
                     provider_name.as_str(),
                     model_id.as_str(),
                     reason,
@@ -216,6 +236,7 @@ fn execute(args: &Cli) -> Envelope {
         model_id.as_str(),
         provider.as_ref(),
         provider_name.as_str(),
+        &privacy,
     )
 }
 
@@ -242,8 +263,10 @@ fn build_plan(
     repo: &Repo,
     changed: &[ChangedFile],
     provider: &dyn Provider,
+    privacy: &Privacy,
 ) -> Result<Plan, BuildError> {
     let ctx = diff::gather_for_grouping(repo, changed, &provider.diff_budget())
+        .and_then(|ctx| privacy.prepare_grouping(ctx))
         .map_err(BuildError::Fatal)?;
     let plan = provider.generate_plan(&ctx).map_err(|e| {
         // A missing or rejected key fails the single-commit fallback identically;
@@ -284,6 +307,7 @@ fn commit_first_group(
     model: &str,
     provider: &dyn Provider,
     provider_name: &str,
+    privacy: &Privacy,
 ) -> Envelope {
     if !args.json && (args.dry_run || args.plan_only) {
         display_groups(plan);
@@ -299,7 +323,9 @@ fn commit_first_group(
         Some(m) if !m.trim().is_empty() => m.to_string(),
         _ => {
             let gathered =
-                match diff::gather_for_files(repo, &group1_files, &provider.diff_budget()) {
+                match diff::gather_for_files(repo, &group1_files, &provider.diff_budget())
+                    .and_then(|g| privacy.prepare_diff(g))
+                {
                     Ok(g) => g,
                     Err(e) => {
                         return output::error(
@@ -440,6 +466,7 @@ fn single_commit_path(
     args: &Cli,
     provider: &dyn Provider,
     changed: &[ChangedFile],
+    privacy: &Privacy,
     provider_name: &str,
     model: &str,
 ) -> Envelope {
@@ -457,7 +484,9 @@ fn single_commit_path(
         );
     }
 
-    let gathered = match diff::gather(repo, &provider.diff_budget()) {
+    let gathered = match diff::gather_for_changed(repo, changed, &provider.diff_budget())
+        .and_then(|g| privacy.prepare_diff(g))
+    {
         Ok(g) => g,
         Err(e) => {
             return output::error(
@@ -508,7 +537,7 @@ fn single_commit_path(
             );
         }
     };
-    let result = single_commit_flow(repo, args, &message);
+    let result = single_commit_flow(repo, args, changed, &message);
     if result.is_err() {
         let _ = repo.restore_index(&snapshot);
     }
@@ -552,11 +581,22 @@ enum SingleOutcome {
     Aborted,
 }
 
-fn single_commit_flow(repo: &Repo, args: &Cli, message: &str) -> Result<SingleOutcome, GcmError> {
+fn single_commit_flow(
+    repo: &Repo,
+    args: &Cli,
+    changed: &[ChangedFile],
+    message: &str,
+) -> Result<SingleOutcome, GcmError> {
     match ui::confirm(message, args.yes, args.json)? {
         Decision::Abort => Ok(SingleOutcome::Aborted),
         Decision::Commit(final_message) => {
-            repo.stage_all()?;
+            if repo.is_merging() {
+                repo.stage_all()?;
+            } else {
+                repo.clear_staged()?;
+                let files: Vec<&ChangedFile> = changed.iter().collect();
+                repo.stage_group(&files)?;
+            }
             repo.commit_signed(&final_message)?;
             Ok(SingleOutcome::Committed)
         }
@@ -572,6 +612,7 @@ fn run_fallback(
     args: &Cli,
     provider: &dyn Provider,
     changed: &[ChangedFile],
+    privacy: &Privacy,
     provider_name: &str,
     model: &str,
     reason: String,
@@ -580,7 +621,7 @@ fn run_fallback(
     if !args.json {
         eprintln!("gcm: {reason}. Falling back to single-commit mode.");
     }
-    let env = single_commit_path(repo, args, provider, changed, provider_name, model);
+    let env = single_commit_path(repo, args, provider, changed, privacy, provider_name, model);
     if env.status == output::STATUS_COMMITTED {
         // Re-wrap a successful single commit as a fallback envelope, preserving
         // the reason the grouping path was not used.

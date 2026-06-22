@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-494 Anthropic provider via forced tool-use merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-490 optional secret scanning + gcmignore implementation complete, ready for PR; CLO-494 Anthropic provider via forced tool-use merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -24,7 +24,7 @@
 | [CLO-487](https://linear.app/cloud-ai/issue/CLO-487) | S2 | Semantic grouping → commit first group | AFK | High | Done | CLO-486 | 1,2a,3,7,15,16,19,23a,24a,31,33 |
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | S4 | Resilient provider calls: typed errors + retries | AFK | High | Backlog | CLO-486 | 20,21,22 |
 | [CLO-489](https://linear.app/cloud-ai/issue/CLO-489) | S6 | Provider trait + Gemini + OpenAI backends | AFK | High | Done | CLO-486, CLO-485 | 11,12,13a,14,17,18b,52 |
-| [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
+| [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | In Progress | CLO-486 | 50 |
 | [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Done | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Done | CLO-487 | 37,38,51 |
@@ -62,15 +62,15 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
+| [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | Optional secret scanning + `gcmignore` | In Progress | PR-ready | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
 | High | CLO-496 | First-run onboarding wizard | CLO-485 (done), CLO-489 (done) | provider setup (HITL) |
-| Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> **CLO-494** (Anthropic provider, forced tool-use) merged 2026-06-22 (PR #11) — Done. **CLO-495** (Ollama local provider, zero-egress) merged 2026-06-22 (PR #14) — Done. CLO-491 (plan cache, PR #7), **CLO-492** (validation, PR #9), **CLO-493** (automation surface, PR #12), **CLO-489** (provider trait, PR #10) all Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. Ready: **CLO-496** (onboarding), **CLO-490**. CLO-497 waits on CLO-488/490/496.
+> **CLO-490** (optional secret scanning + `gcmignore`) implementation is complete locally and ready for PR. **CLO-494** (Anthropic provider, forced tool-use) merged 2026-06-22 (PR #11) — Done. **CLO-495** (Ollama local provider, zero-egress) merged 2026-06-22 (PR #14) — Done. CLO-491 (plan cache, PR #7), **CLO-492** (validation, PR #9), **CLO-493** (automation surface, PR #12), **CLO-489** (provider trait, PR #10) all Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. Ready: **CLO-496** (onboarding). CLO-497 waits on CLO-488/490/496.
 
 ## Blocked
 

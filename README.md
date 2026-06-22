@@ -20,6 +20,12 @@ to generate the grouping plan and commit messages. Gitignored files (for example
 are gathered with `git --exclude-standard` and are **never sent**. Review the selected
 provider's data policy before use. This disclosure is also printed by `gcm --help`.
 
+Add repo-local `.gcmignore` or `gcmignore` patterns to exclude additional paths from
+analysis and commits. The ignore files themselves are excluded from provider prompts.
+For best-effort credential scanning before provider egress, use
+`--secret-scan=redact` to replace detected values or `--secret-scan=abort` to stop
+before any provider request. The default is `off`.
+
 **Zero-egress option:** `--provider=ollama` talks to a local Ollama daemon (default
 `http://localhost:11434`), so with a local model **nothing leaves the machine** - the
 privacy anchor. One caveat: an Ollama `*:cloud` model (e.g. `deepseek-v4-flash:cloud`)
@@ -61,6 +67,8 @@ gcm --provider=google            # use Gemini (also: --provider=openai, --provid
 gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
+gcm --secret-scan=redact         # redact common credential-looking values before provider egress
+gcm --secret-scan=abort          # abort before provider egress when a credential-looking value is found
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
@@ -117,6 +125,7 @@ large diffs. A `*:cloud` model is proxied to Ollama Cloud and is **not** zero-eg
 | `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` / `GCM_ANTHROPIC_BASE_URL` / `GCM_OLLAMA_BASE_URL` | per-provider default | Override the API base URL |
 | `OLLAMA_HOST` | `localhost:11434` | Ollama daemon host (scheme/port auto-completed); `GCM_OLLAMA_BASE_URL` takes precedence |
 | `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` | per-provider | Override the diff budget |
+| `GCM_SECRET_SCAN` | `off` | Optional pre-send scan: `off`, `redact`, or `abort` (flag `--secret-scan` wins) |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
 | `GCM_DEBUG` | (unset) | Legacy shortcut: when set to a non-empty, non-`0` value it enables debug-level logging (overridden by `GCM_LOG_LEVEL`) |
 | `GCM_LOG_LEVEL` | `off` | Logging level: `off`, `error`, `warn`, `info`, `debug`, `trace`. Precedence over `GCM_DEBUG`; all logs go to stderr |
@@ -165,7 +174,8 @@ with an actionable message rather than hanging on a prompt.
 - **Safe diff read**: binary files are elided, each file's diff is truncated independently
   with a `[diff omitted: N bytes]` placeholder, untracked content is bounded by a
   file-count and byte cap (so an un-ignored directory of thousands of files cannot freeze
-  the CLI), and gitignored files are excluded.
+  the CLI), gitignored files are excluded, and `.gcmignore`/`gcmignore` patterns exclude
+  additional paths from provider-bound analysis.
 - **Path-safe**: file lists come from `git status --porcelain=v1 -uall -z` (NUL-delimited),
   and staging feeds exact paths to `git` literally, so names with spaces, `->`, unicode, or
   glob characters (`*`, `?`) are handled correctly.

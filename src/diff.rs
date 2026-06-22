@@ -113,18 +113,6 @@ pub struct GroupingContext {
     pub body: String,
 }
 
-/// Build the prompt diff: tracked changes (binary-elided) plus untracked,
-/// non-gitignored file content, bounded by the FR-57 caps. Reads only the
-/// working tree; nothing is staged (FR-47).
-pub fn gather(repo: &Repo, budget: &DiffBudget) -> Result<GatheredDiff, GcmError> {
-    let stat = repo.diff_stat()?;
-    let tracked = repo.diff_full()?;
-    let mut body = elide_binary_diff(&tracked);
-    append_untracked(repo, &mut body, None)?;
-    cap_total(&mut body, budget.total_bytes);
-    Ok(GatheredDiff { stat, body })
-}
-
 /// Build the single-message diff for **one commit group** (CLO-491, FR-45): the
 /// tracked diff and stat scoped to the group's paths, plus the group's own
 /// untracked files (filtered, so other groups' untracked content never leaks
@@ -146,6 +134,18 @@ pub fn gather_for_files(
     Ok(GatheredDiff { stat, body })
 }
 
+/// Build the single-commit diff for a filtered changed-file set (CLO-490). This
+/// is the `--all`/fallback equivalent of [`gather_for_files`], but it takes the
+/// owned changed slice the main flow already filtered.
+pub fn gather_for_changed(
+    repo: &Repo,
+    changed: &[ChangedFile],
+    budget: &DiffBudget,
+) -> Result<GatheredDiff, GcmError> {
+    let files: Vec<&ChangedFile> = changed.iter().collect();
+    gather_for_files(repo, &files, budget)
+}
+
 /// Build the grouping context (CLO-487): the file list and porcelain status are
 /// derived from the already-gathered `changed` set (so they stay byte-identical
 /// to the paths used for validation and staging), the diff `--stat` is the
@@ -160,10 +160,12 @@ pub fn gather_for_grouping(
     let file_list = file_list_json(changed);
     let status = status_json(changed);
 
-    let stat = repo.diff_stat()?;
-    let tracked = repo.diff_full()?;
+    let paths: Vec<&str> = changed.iter().map(|f| f.path.as_str()).collect();
+    let stat = repo.diff_stat_for(&paths)?;
+    let tracked = repo.diff_full_for(&paths)?;
     let mut body = truncate_per_file(&elide_binary_diff(&tracked), budget.per_file_bytes);
-    append_untracked(repo, &mut body, None)?;
+    let allow: HashSet<String> = changed.iter().map(|f| f.path.clone()).collect();
+    append_untracked(repo, &mut body, Some(&allow))?;
     cap_total(&mut body, budget.total_bytes);
 
     Ok(GroupingContext {

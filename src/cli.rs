@@ -1,5 +1,6 @@
 use clap::Parser;
 
+use crate::privacy::SecretScanMode;
 use crate::provider::ProviderId;
 
 /// Build-stamped version: crate version plus the git short SHA from build.rs (AC-1).
@@ -24,9 +25,11 @@ OLLAMA_HOST / GCM_OLLAMA_BASE_URL).\n\
 \n\
 PRIVACY: gcm sends your working-tree diff and the content of untracked, non-gitignored\n\
 files to the configured LLM provider to generate the plan and commit messages.\n\
-Gitignored files (e.g. .env) are never sent. With --provider=ollama and a local model,\n\
-nothing leaves the machine (zero-egress); an Ollama `:cloud` model routes through Ollama\n\
-Cloud and is NOT zero-egress. See the README for each provider's data policy.\n\
+Gitignored files (e.g. .env) are never sent. Repo-local .gcmignore/gcmignore patterns\n\
+exclude matching paths from analysis. Use --secret-scan=redact or abort to opt into\n\
+best-effort credential scanning before provider egress. With --provider=ollama and a\n\
+local model, nothing leaves the machine (zero-egress); an Ollama `:cloud` model routes\n\
+through Ollama Cloud and is NOT zero-egress. See the README for each provider's data policy.\n\
 \n\
 LOGGING: set GCM_LOG_LEVEL=off|error|warn|info|debug|trace (default off). The legacy\n\
 GCM_DEBUG=1 shortcut still enables debug-level output. Logs always go to stderr.\n\
@@ -81,4 +84,9 @@ pub struct Cli {
     /// Overrides the per-provider model env var.
     #[arg(long)]
     pub model: Option<String>,
+
+    /// Optional pre-send secret scan: off (default), redact detected values, or abort
+    /// before any provider request. Overrides GCM_SECRET_SCAN.
+    #[arg(long, value_enum)]
+    pub secret_scan: Option<SecretScanMode>,
 }
