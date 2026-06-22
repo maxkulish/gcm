@@ -28,7 +28,7 @@ workflow:
   current_phase: pr
   status: blocked
   created_at: '2026-06-22T07:16:39.555Z'
-  updated_at: '2026-06-22T09:39:33.517Z'
+  updated_at: '2026-06-22T09:49:48.867Z'
 phases:
   discovery:
     status: complete
@@ -353,5 +353,12 @@ history:
     details: >-
       Re-check at 2026-06-22: no bot reviews or inline comments on PR #11. current-head review count=0; bot reviewer
       installed (copilot-pull-request-reviewer[bot]) remains confirmed in last 5 closed PRs.
+  - timestamp: '2026-06-22T09:49:48.867Z'
+    action: workflow_blocked
+    phase: pr
+    details: >-
+      Updated PR phase and pr-review-cycle docs to add a mandatory PR health/mergeability gate before CI/bot-review
+      waits. Current PR #11 is blocked by merge conflicts (mergeable=CONFLICTING, mergeStateStatus=DIRTY), so bot-review
+      absence is no longer the primary blocker.
 task_title: Add Anthropic provider via forced tool-use
 task_url: https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use

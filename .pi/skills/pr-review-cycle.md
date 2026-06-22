@@ -1,6 +1,6 @@
 ---
 name: pr-review-cycle
-description: Bot-review wait, fetch, address, reply, verify, re-fetch - the 10-step PR review procedure owned by the pi `pr` phase. Enforces the 180s wait, CI/bot independence, mandatory `/gemini review` trailer, and trailer-verification gate.
+description: Bot-review wait, fetch, address, reply, verify, re-fetch - the 11-step PR review procedure owned by the pi `pr` phase. Enforces PR health before bot wait, CI/bot independence, mandatory `/gemini review` trailer, and trailer-verification gate.
 ---
 
 # Skill: pr-review-cycle
@@ -24,6 +24,67 @@ It writes `bot_review_wait_completed` and `review_addressed` history events on s
 
 ---
 
+## 0 - PR health / mergeability gate (MANDATORY before bot wait)
+
+Bot reviewers are only a meaningful gate after GitHub can evaluate the
+PR. A conflicted PR (`mergeable: CONFLICTING`, `mergeStateStatus:
+DIRTY`, or REST `mergeable_state: dirty`) may prevent bots or CI from
+starting at all. In that state, block on conflict resolution instead of
+waiting on a bot that cannot begin (see `lessons/pr-review-failures.md`
+L7).
+
+Run this gate after PR creation and after every push before entering or
+re-entering the bot wait:
+
+```bash
+PR=<n>
+REPO=maxkulish/gcm
+
+PR_HEALTH=$(gh pr view "${PR}" --json mergeable,mergeStateStatus,isDraft,headRefOid)
+API_HEALTH=$(gh api repos/${REPO}/pulls/${PR} \
+  --jq '{mergeable, mergeable_state, rebaseable, head_sha:.head.sha, base_sha:.base.sha}')
+
+MERGEABLE=$(jq -r '.mergeable' <<<"$PR_HEALTH")
+MERGE_STATE=$(jq -r '.mergeStateStatus' <<<"$PR_HEALTH")
+API_MERGEABLE_STATE=$(jq -r '.mergeable_state' <<<"$API_HEALTH")
+
+if [ "$MERGEABLE" = "CONFLICTING" ] || [ "$MERGE_STATE" = "DIRTY" ] || [ "$API_MERGEABLE_STATE" = "dirty" ]; then
+  echo "GATE FAIL: PR has merge conflicts; resolve conflicts before CI/bot-review gates."
+  echo "gh pr view: ${PR_HEALTH}"
+  echo "REST pull: ${API_HEALTH}"
+  exit 1
+fi
+```
+
+On failure, record a conflict blocker and do **not** record
+`bot_review_wait_completed` or `review_addressed`:
+
+```ts
+update_workflow_state({
+  task_id: "CLO-XX",
+  phase: "pr",
+  action: "workflow_blocked",
+  details: "PR #<n> is blocked by merge conflicts (mergeable=CONFLICTING / mergeStateStatus=DIRTY). Resolve conflicts, re-run preflight, push, then restart PR health, CI, and bot-review gates.",
+  phase_updates: { status: "blocked" }
+})
+```
+
+Conflict-resolution loop:
+
+```bash
+git fetch origin main
+git merge origin/main   # or rebase only if the repo/task explicitly prefers rebase
+# resolve conflicts
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo clippy --tests
+cargo test
+git push
+```
+
+After the push, restart this gate. If the head SHA changed, restart the
+bot wait deadline for that new head.
+
 ## 1 - Wait for bot reviewers deterministically
 
 Bot reviewers (`gemini-code-assist`, `copilot-pull-request-reviewer`)
@@ -33,7 +94,7 @@ or CI status. PR #24 showed why: it was merged at +261s while Gemini
 posted the review and inline comment at +289s/+290s.
 
 **Rules, all mandatory** (see `lessons/pr-review-failures.md` L1, L2,
-L6):
+L6, L7):
 
 1. **CI presence is independent of bot reviewers.** Bots are GitHub
    Apps installed at repo/org level and post regardless of
@@ -43,20 +104,24 @@ L6):
    bot review exists for `pull_request.head.sha`, proceed immediately
    to fetch inline comments and review threads.
 3. **10 minutes is a hard timeout, not a success condition.** If bots
-   are installed but no current-head bot review appears by
-   `pull_request.created_at + 600s`, block for user guidance instead of
-   silently marking reviews addressed.
+   are installed but no current-head bot review appears within 600s of
+   the current head SHA becoming reviewable, block for user guidance
+   instead of silently marking reviews addressed.
 4. **Only confirmed absence of installed bots may skip bot review.**
    Absence is confirmed by inspecting recent closed PRs for bot reviews.
+5. **A conflicting PR is not reviewable.** If the PR health gate reports
+   `mergeable: CONFLICTING`, `mergeStateStatus: DIRTY`, or
+   `mergeable_state: dirty`, resolve conflicts before waiting for bot
+   review. Bot-review absence is not meaningful while GitHub cannot
+   evaluate the PR.
 
 ```bash
 PR=<n>
 REPO=maxkulish/gcm
-PR_CREATED_AT=$(gh api repos/${REPO}/pulls/${PR} --jq .created_at)
 HEAD_SHA=$(gh api repos/${REPO}/pulls/${PR} --jq .head.sha)
 BOT_RE='gemini-code-assist|copilot-pull-request-reviewer'
-DEADLINE=$(date -u -j -v+600S -f "%Y-%m-%dT%H:%M:%SZ" "$PR_CREATED_AT" "+%s" 2>/dev/null \
-           || date -u -d "$PR_CREATED_AT + 600 seconds" "+%s")
+WAIT_STARTED_AT=$(date -u +%s)
+DEADLINE=$((WAIT_STARTED_AT + 600))
 BOT_REVIEW_SEEN=0
 
 for i in $(seq 1 60); do

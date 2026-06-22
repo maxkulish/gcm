@@ -127,6 +127,61 @@ mcp__linear__save_issue(id="CLO-XX", state="In Review")
 mcp__linear__save_comment(issueId="CLO-XX", body="PR #<n>: <url>")
 ```
 
+## Step 2.5 - PR health / mergeability gate (MANDATORY before CI/bots)
+
+Run after PR creation and after every push before waiting for CI or bot
+reviews. If GitHub marks the PR conflicted, CI and bot reviewers may not
+start; in that case the workflow must block on conflict resolution, not
+on a misleading bot-review timeout.
+
+```bash
+PR=<n>
+REPO=maxkulish/gcm
+
+PR_HEALTH=$(gh pr view "$PR" --json mergeable,mergeStateStatus,isDraft,headRefOid,statusCheckRollup)
+API_HEALTH=$(gh api repos/${REPO}/pulls/${PR} \
+  --jq '{mergeable, mergeable_state, rebaseable, head_sha:.head.sha, base_sha:.base.sha}')
+
+MERGEABLE=$(jq -r '.mergeable' <<<"$PR_HEALTH")
+MERGE_STATE=$(jq -r '.mergeStateStatus' <<<"$PR_HEALTH")
+API_MERGEABLE_STATE=$(jq -r '.mergeable_state' <<<"$API_HEALTH")
+
+if [ "$MERGEABLE" = "CONFLICTING" ] || [ "$MERGE_STATE" = "DIRTY" ] || [ "$API_MERGEABLE_STATE" = "dirty" ]; then
+  echo "GATE FAIL: PR has merge conflicts; resolve conflicts before CI/bot-review gates."
+  echo "gh pr view: ${PR_HEALTH}"
+  echo "REST pull: ${API_HEALTH}"
+  exit 1
+fi
+```
+
+On failure:
+
+```ts
+update_workflow_state({
+  task_id: "CLO-XX",
+  phase: "pr",
+  action: "workflow_blocked",
+  details: "PR #<n> is blocked by merge conflicts (mergeable=CONFLICTING / mergeStateStatus=DIRTY). Resolve conflicts, re-run preflight, push, then restart PR health, CI, and bot-review gates.",
+  phase_updates: { status: "blocked" }
+})
+```
+
+Then resolve conflicts and restart Step 2.5:
+
+```bash
+git fetch origin main
+git merge origin/main   # or rebase only if the repo/task explicitly prefers rebase
+# resolve conflicts
+cargo fmt --check
+cargo clippy -- -D warnings
+cargo clippy --tests
+cargo test
+git push
+```
+
+If the head SHA changed, restart the bot-review wait deadline from that
+new reviewable head; do not reuse the original PR creation time.
+
 ## Step 3 - Wait for CI
 
 Poll until CI completes:
@@ -135,7 +190,7 @@ Poll until CI completes:
 gh pr checks <n> --watch
 ```
 
-If CI fails, fix locally, push, repeat. Update state on each iteration:
+If CI fails, fix locally, push, repeat from Step 2.5 (PR health gate) before waiting on CI again. Update state on each iteration:
 
 ```ts
 update_workflow_state({
@@ -165,7 +220,7 @@ categorizing them, addressing them, replying with the mandatory
 `/gemini review` trailer, verifying the trailer landed, and
 re-fetching post-reply lives in
 [`.pi/skills/pr-review-cycle.md`](../../skills/pr-review-cycle.md).
-Run that skill in order from step 1 to step 10. Do not reinvent any
+Run that skill in order from step 0 to step 10. Do not reinvent any
 part of it inline here.
 
 The skill cites `.pi/lessons/pr-review-failures.md` for the durable
