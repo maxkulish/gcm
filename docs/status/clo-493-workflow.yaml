@@ -25,7 +25,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-06-22T07:58:35.361Z'
-  updated_at: '2026-06-22T08:09:17.799Z'
+  updated_at: '2026-06-22T08:24:08.065Z'
 phases:
   discovery:
     status: pending
@@ -34,8 +34,12 @@ phases:
   plan:
     status: pending
   implement:
-    status: in_progress
-    last_phase_completed: init
+    status: validating
+    last_phase_completed: ST1
+    commits:
+      - fa9c3fc
+    assumption_outcomes: []
+    assumptions_revalidated: true
   pr:
     status: pending
   complete:
@@ -120,5 +124,41 @@ history:
     details: >-
       Implement phase started. Lessons consulted: pr-review-failures.md, timeout-layering.md (PR/timeout rules, no
       implementation blockers).
+  - timestamp: '2026-06-22T08:22:45.618Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST1 landed: JSON envelope, error-code mapping, and commit-hash helper. Commit c78c740 is docs/spec artifacts; code
+      commit follows.
+  - timestamp: '2026-06-22T08:22:49.543Z'
+    action: subtask_complete
+    phase: implement
+    details: 'ST1 landed: JSON envelope, error-code mapping, and commit-hash helper. Commit 3b0906a.'
+  - timestamp: '2026-06-22T08:22:53.300Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST2/ST3 landed: CLI flags, non-interactive safe paths, JSON routing for all outcomes, and stdout purity. Commit
+      29f45b2.
+  - timestamp: '2026-06-22T08:22:57.096Z'
+    action: subtask_complete
+    phase: implement
+    details: 'ST4 landed: GCM_LOG_LEVEL precedence over GCM_DEBUG, debug/warn macros, all logs on stderr. Commit c7dc5b8.'
+  - timestamp: '2026-06-22T08:23:57.783Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST5/ST6 landed: acceptance matrix AC-493-1..12 and README/help disclosure for --json/--plan-only/GCM_LOG_LEVEL.
+      Commit fa9c3fc.
+  - timestamp: '2026-06-22T08:24:05.757Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: No design phase assumptions exist for this specification-type task; assumption_outcomes is empty.
+  - timestamp: '2026-06-22T08:24:08.065Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All sub-tasks landed. fmt+clippy+test green; acceptance.sh 214 PASS / 0 FAIL / 1 SKIP. 5 commits on branch.
+      Proceeding to validation gate.
 task_title: 'Add automation surface: --json, non-interactive flags, structured logging'
 task_url: https://linear.app/cloud-ai/issue/CLO-493/add-automation-surface-json-non-interactive-flags-structured-logging

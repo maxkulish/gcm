@@ -125,6 +125,11 @@ with an actionable message rather than hanging on a prompt.
   so it overrides any manual hunk-level (`git add -p`) staging. Group 1's files are staged
   in full; later groups are left unstaged - their changes stay in the working tree and are
   never lost. Use `--all` if you want everything in one commit.
+- **Plan cache**: `gcm` persists the last grouping plan per repo so the next run can
+  commit the next group without re-calling the LLM. Use `--reset` to discard the
+  cached plan and re-analyze from scratch; in `--json` mode `--reset` clears the
+  cache and then emits the normal noop/plan/committed envelope for the current
+  tree (there is no separate `reset` status).
 - **Safe fallback**: if the provider can't return a usable plan (structured output
   unavailable, unparseable JSON, or a plan that references files outside the change set),
   `gcm` announces it and falls back to a single commit. An unresolved merge conflict makes

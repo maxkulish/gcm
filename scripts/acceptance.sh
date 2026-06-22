@@ -1172,6 +1172,18 @@ printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat:
 [ $rc -eq 1 ] && ok "error exit 1" || bad "error exit (rc=$rc)"
 : > "$PLAN_FILE"; rm -rf "$d"
 
+note "AC-493-13: --reset clears the cache and still emits a valid JSON envelope"
+reset_cache
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run --json >/dev/null 2>&1 )
+[ -n "$(ls "$GCM_CACHE_DIR"/plan-*.json 2>/dev/null)" ] && ok "cache warmed before reset" || bad "cache not warmed"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --reset --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; json.load(open('/tmp/gcm-json.out'))" && ok "--reset --json stdout is valid JSON" || bad "--reset --json invalid"
+[ -z "$(ls "$GCM_CACHE_DIR"/plan-*.json 2>/dev/null)" ] && ok "cache cleared after reset" || bad "cache not cleared"
+[ $rc -eq 0 ] && ok "--reset --plan-only exit 0" || bad "--reset exit (rc=$rc)"
+: > "$PLAN_FILE"; rm -rf "$d"
+
 # --- CLO-489 provider trait: Gemini + OpenAI backends ----------------------
 # OpenAI uses the OpenAI-compatible mock (MOCK_URL); Gemini uses the
 # :generateContent mock (GEMINI_MOCK_URL). Real Gemini/OpenAI HTTP is not

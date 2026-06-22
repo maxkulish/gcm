@@ -67,6 +67,7 @@ impl Repo {
     /// The full SHA of HEAD after a successful commit.
     pub fn last_commit_hash(&self) -> Result<String, GcmError> {
         self.capture(&["rev-parse", "HEAD"])
+            .map(|s| s.trim().to_string())
     }
 
     /// Whether HEAD resolves (false on an unborn branch / fresh repo).

@@ -25,8 +25,8 @@ pub fn confirm(message: &str, auto_yes: bool, quiet: bool) -> Result<Decision, G
         return Ok(Decision::Commit(message.to_string()));
     }
 
-    print!("Commit with this message? [Y/n/e(dit)] ");
-    std::io::stdout().flush().ok();
+    eprint!("Commit with this message? [Y/n/e(dit)] ");
+    std::io::stderr().flush().ok();
 
     let mut response = String::new();
     if std::io::stdin().read_line(&mut response).is_err() {

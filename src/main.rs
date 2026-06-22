@@ -53,9 +53,9 @@ fn execute(args: &Cli) -> Envelope {
     let repo = match Repo::discover() {
         Ok(Some(r)) => r,
         Ok(None) => {
-            return output::error(None, None, None, &GcmError::NotARepo);
+            return output::error(None, None, Some(mode_from_args(args)), &GcmError::NotARepo);
         }
-        Err(e) => return output::error(None, None, None, &e),
+        Err(e) => return output::error(None, None, Some(mode_from_args(args)), &e),
     };
 
     // `--reset` discards any cached plan up front (FR-8/FR-28), before the
@@ -65,7 +65,7 @@ fn execute(args: &Cli) -> Envelope {
     }
 
     if let Err(e) = repo.has_changes() {
-        return output::error(None, None, None, &e);
+        return output::error(None, None, Some(mode_from_args(args)), &e);
     }
     if !repo.has_changes().unwrap_or(false) {
         return output::noop(None, None, noop_mode(args));
@@ -75,7 +75,12 @@ fn execute(args: &Cli) -> Envelope {
     // the commit anyway (ADR-001 #10, AC-11). `--plan-only` is non-interactive
     // safe: it never prompts and never mutates the index.
     if ui::needs_terminal_but_absent(args.yes, args.dry_run || args.plan_only) {
-        return output::error(None, None, None, &GcmError::NonInteractive);
+        return output::error(
+            None,
+            None,
+            Some(mode_from_args(args)),
+            &GcmError::NonInteractive,
+        );
     }
 
     // Merge-state guard (CLO-487 review-2 #2) runs BEFORE any grouping bypass,
@@ -84,10 +89,15 @@ fn execute(args: &Cli) -> Envelope {
     // into the commit, so an unresolved conflict must abort regardless of flags.
     let changed = match repo.changed_files() {
         Ok(c) => c,
-        Err(e) => return output::error(None, None, None, &e),
+        Err(e) => return output::error(None, None, Some(mode_from_args(args)), &e),
     };
     if changed.iter().any(|c| c.is_unmerged()) {
-        return output::error(None, None, None, &GcmError::UnmergedConflicts);
+        return output::error(
+            None,
+            None,
+            Some(mode_from_args(args)),
+            &GcmError::UnmergedConflicts,
+        );
     }
 
     // Select the provider once (FR-12, precedence flag > env > default). Pure
@@ -96,7 +106,14 @@ fn execute(args: &Cli) -> Envelope {
     // provider name fails fast here.
     let provider = match provider::select(args.provider, args.model.as_deref()) {
         Ok(p) => p,
-        Err(e) => return output::error(None, None, None, &GcmError::Provider(e)),
+        Err(e) => {
+            return output::error(
+                None,
+                None,
+                Some(mode_from_args(args)),
+                &GcmError::Provider(e),
+            )
+        }
     };
     let provider_name = provider.name().to_string();
     let model_id = provider.cache_model_id();
@@ -137,7 +154,7 @@ fn execute(args: &Cli) -> Envelope {
     // validation failure falls back to the single-commit path with an announced
     // reason (never silent); a fatal error (missing key, git failure) is
     // returned as an error envelope.
-    let plan = match cache::load(&repo, &changed, &model_id) {
+    let (plan, cached) = match cache::load(&repo, &changed, &model_id) {
         Some(plan) => {
             let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
             if let Err(reason) = plan::validate_cached(&plan, &change_set) {
@@ -155,7 +172,7 @@ fn execute(args: &Cli) -> Envelope {
                     raw_code,
                 );
             }
-            plan
+            (plan, true)
         }
         None => match build_plan(&repo, &changed, provider.as_ref()) {
             Ok(plan) => {
@@ -164,7 +181,7 @@ fn execute(args: &Cli) -> Envelope {
                     // and the default interactive path also save.
                     cache::save(&repo, &plan, &changed, &model_id);
                 }
-                plan
+                (plan, false)
             }
             Err(BuildError::Fatal(e)) => {
                 return output::error(
@@ -195,6 +212,7 @@ fn execute(args: &Cli) -> Envelope {
         args,
         &changed,
         &plan,
+        cached,
         model_id.as_str(),
         provider.as_ref(),
         provider_name.as_str(),
@@ -256,11 +274,13 @@ fn build_plan(
 
 /// Display the groups, then (unless `--dry-run` or `--plan-only`) confirm and
 /// commit group 1, advancing the cache on a successful commit.
+#[allow(clippy::too_many_arguments)]
 fn commit_first_group(
     repo: &Repo,
     args: &Cli,
     changed: &[ChangedFile],
     plan: &Plan,
+    cached: bool,
     model: &str,
     provider: &dyn Provider,
     provider_name: &str,
@@ -316,7 +336,7 @@ fn commit_first_group(
             output::MODE_PLAN_ONLY,
             plan.clone(),
             changed_paths,
-            false,
+            cached,
         );
     }
 
@@ -330,7 +350,7 @@ fn commit_first_group(
             output::MODE_DRY_RUN,
             plan.clone(),
             changed_paths,
-            false,
+            cached,
         );
     }
 
@@ -618,6 +638,18 @@ fn noop_mode(args: &Cli) -> &'static str {
         output::MODE_DRY_RUN
     } else {
         output::MODE_PLAN_ONLY
+    }
+}
+
+fn mode_from_args(args: &Cli) -> &'static str {
+    if args.plan_only {
+        output::MODE_PLAN_ONLY
+    } else if args.dry_run {
+        output::MODE_DRY_RUN
+    } else if args.all {
+        output::MODE_SINGLE
+    } else {
+        output::MODE_GROUPED
     }
 }
 
