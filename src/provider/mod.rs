@@ -201,7 +201,16 @@ pub fn select(
         ProviderId::Groq => Box::new(groq::Groq::new(model)),
         ProviderId::Google => Box::new(gemini::Gemini::new(model)),
         ProviderId::Openai => Box::new(openai::OpenAi::new(model)),
-        ProviderId::Ollama => Box::new(ollama::Ollama::new(model)),
+        ProviderId::Ollama => {
+            // Privacy defense-in-depth (FR-56/FR-48): a `*:cloud` model is proxied
+            // off-machine by the local daemon, so warn that it is NOT zero-egress.
+            if model.ends_with(":cloud") {
+                eprintln!(
+                    "note: Ollama model '{model}' routes through Ollama Cloud; the diff is NOT zero-egress."
+                );
+            }
+            Box::new(ollama::Ollama::new(model))
+        }
     })
 }
 
@@ -406,6 +415,15 @@ mod tests {
         assert!(err.to_string().contains("bogus"));
         assert!(err.to_string().contains("groq"));
         assert!(err.to_string().contains("ollama"));
+    }
+
+    #[test]
+    fn select_ollama_is_key_free() {
+        // CLO-495 eval row 4: selecting Ollama constructs a provider with no key
+        // read and no panic; the default model resolves and qualifies the cache id.
+        let p = select(Some(ProviderId::Ollama), None).unwrap();
+        assert_eq!(p.name(), "Ollama");
+        assert_eq!(p.cache_model_id(), "ollama:gemma4:e4b-mlx");
     }
 
     #[test]

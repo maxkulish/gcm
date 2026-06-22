@@ -1213,6 +1213,27 @@ else
 fi
 rm -rf "$d"
 
+note "AC-O5: GCM_PROVIDER=ollama (env selection, no flag) selects the backend key-free"
+reset_cache; d="$(new_repo)"
+printf 'e\n' > "$d/e.txt"
+printf '%s' '{"groups":[{"files":["e.txt"],"summary":"e","commit_message":"chore: e"}]}' > "$PLAN_FILE"
+: > "$CAPTURE"
+( cd "$d" && env -u GROQ_API_KEY GCM_PROVIDER=ollama GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT" "$BIN" --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && [ -s "$CAPTURE" ] && ok "GCM_PROVIDER=ollama selected + reached mock" || bad "GCM_PROVIDER=ollama (rc=$rc; $(tail -1 /tmp/gcm-out))"
+: > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
+note "AC-O6: a :cloud model warns it is NOT zero-egress (privacy defense-in-depth)"
+reset_cache; d="$(new_repo)"
+printf 'c\n' > "$d/c.txt"
+printf '%s' '{"groups":[{"files":["c.txt"],"summary":"c","commit_message":"chore: c"}]}' > "$PLAN_FILE"
+( cd "$d" && env -u GROQ_API_KEY GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT" "$BIN" --provider=ollama --model=demo-model:cloud --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+if grep -qi "Ollama Cloud" /tmp/gcm-out && grep -qi "NOT zero-egress" /tmp/gcm-out; then
+  ok ":cloud model warns about egress"
+else
+  bad ":cloud egress warning (rc=$rc): $(cat /tmp/gcm-out)"
+fi
+: > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
 stop_mock
 
 # --- optional real-network smoke test --------------------------------------

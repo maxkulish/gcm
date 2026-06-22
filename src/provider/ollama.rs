@@ -38,7 +38,7 @@ impl Ollama {
     }
 
     fn endpoint(&self) -> String {
-        format!("{}/api/chat", self.base_url().trim_end_matches('/'))
+        chat_endpoint(&self.base_url())
     }
 
     fn request<'a>(&self, payload: &'a Value) -> HttpRequest<'a> {
@@ -130,6 +130,12 @@ impl Provider for Ollama {
         // env-overridable (FR-13a).
         DiffBudget::standard()
     }
+}
+
+/// Build the `/api/chat` endpoint from a base URL, trimming a trailing slash so
+/// the path never double-slashes (mirrors the other backends).
+fn chat_endpoint(base: &str) -> String {
+    format!("{}/api/chat", base.trim_end_matches('/'))
 }
 
 /// Read a non-empty, trimmed env var, else `None`.
@@ -325,6 +331,18 @@ mod tests {
         );
         // neither -> default
         assert_eq!(resolve_base_url(None, None), DEFAULT_BASE_URL);
+    }
+
+    #[test]
+    fn chat_endpoint_trims_trailing_slash() {
+        assert_eq!(
+            chat_endpoint("http://localhost:11434"),
+            "http://localhost:11434/api/chat"
+        );
+        assert_eq!(
+            chat_endpoint("http://localhost:11434/"),
+            "http://localhost:11434/api/chat"
+        );
     }
 
     #[test]
