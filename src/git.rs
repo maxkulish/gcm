@@ -96,38 +96,11 @@ impl Repo {
         Ok(status.success())
     }
 
-    /// Diff stat for the prompt header. With HEAD, `git diff HEAD` covers all
-    /// tracked changes. On an unborn branch (no HEAD) the empty-tree object may
-    /// not exist in a fresh repo (so `git diff <empty-tree>` errors), thus we
-    /// combine unstaged (working vs index) and staged (index vs empty) diffs -
-    /// together they capture every tracked change, incl. a staged-then-modified
-    /// file - and gather untracked files separately (AC-14).
-    pub fn diff_stat(&self) -> Result<String, GcmError> {
-        if self.has_head() {
-            self.capture(&["diff", "--stat", "HEAD"])
-        } else {
-            let unstaged = self.capture(&["diff", "--stat"])?;
-            let staged = self.capture(&["diff", "--cached", "--stat"])?;
-            Ok(format!("{unstaged}{staged}"))
-        }
-    }
-
-    /// Full diff (no color) for the prompt body. HEAD when present; otherwise
-    /// unstaged + staged on an unborn branch. See [`Self::diff_stat`] for the
-    /// unborn-branch rationale.
-    pub fn diff_full(&self) -> Result<String, GcmError> {
-        if self.has_head() {
-            self.capture(&["diff", "--no-color", "HEAD"])
-        } else {
-            let unstaged = self.capture(&["diff", "--no-color"])?;
-            let staged = self.capture(&["diff", "--no-color", "--cached"])?;
-            Ok(format!("{unstaged}{staged}"))
-        }
-    }
-
     /// Diff `--stat` scoped to specific paths (CLO-491 per-group message header).
-    /// Same HEAD/unborn handling as [`Self::diff_stat`]. Empty `paths` returns an
-    /// empty string rather than an unscoped whole-tree diff.
+    /// With HEAD, `git diff HEAD -- <paths>` covers tracked changes. On an unborn
+    /// branch, combine unstaged and staged scoped diffs so staged-then-modified
+    /// files are represented. Empty `paths` returns an empty string rather than
+    /// an unscoped whole-tree diff.
     pub fn diff_stat_for(&self, paths: &[&str]) -> Result<String, GcmError> {
         if paths.is_empty() {
             return Ok(String::new());
@@ -142,8 +115,8 @@ impl Repo {
     }
 
     /// Full diff (no color) scoped to specific paths (CLO-491 per-group message
-    /// body). Same HEAD/unborn handling as [`Self::diff_full`]. Empty `paths`
-    /// returns an empty string.
+    /// body). Same HEAD/unborn handling as [`Self::diff_stat_for`]. Empty
+    /// `paths` returns an empty string.
     pub fn diff_full_for(&self, paths: &[&str]) -> Result<String, GcmError> {
         if paths.is_empty() {
             return Ok(String::new());

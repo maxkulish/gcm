@@ -1,0 +1,101 @@
+# Workflow state for CLO-490
+# Managed by /task:orchestrate
+
+task: CLO-490
+title: "Add optional secret scanning and gcmignore path filtering"
+linear_url: https://linear.app/cloud-ai/issue/CLO-490/add-optional-secret-scanning-and-gcmignore-path-filtering
+branch: feat/clo-490-secret
+task_type: development
+slice: S10
+labels: [AFK]
+covers_fr: [50]
+
+task_profile:
+  has_backend: true
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+
+depends_on:
+  blocked_by: [] # CLO-486 is complete locally.
+  blocks: [CLO-497]
+
+workflow:
+  current_phase: pr
+  status: in_progress
+  last_event: "pre-flight checks passed (de-raced flaky anthropic env test)"
+  updated_at: "2026-06-22T12:50:50Z"
+
+phases:
+  discovery:
+    status: complete
+    artifact: null
+    approach: "Add a dependency-free privacy layer: read repo-local gcmignore patterns, filter changed files before provider-bound diff/cache/validation/staging, and apply optional secret scan redaction/abort to gathered payloads immediately before provider calls."
+  design:
+    status: complete
+    artifact: docs/design-docs/2026-06-22-clo-490-secret-scan-gcmignore.md
+    approved_by: "implementation request"
+    review_note: "Narrow, dependency-free design; separate model review skipped for this AFK implementation request."
+  plan:
+    status: complete
+    artifact: docs/plans/clo-490-secret-scan-gcmignore.md
+    approved_by: "implementation request"
+  implement:
+    status: complete
+    artifact: null
+    summary: "Added .gcmignore/gcmignore filtering and optional pre-send secret scan with off/redact/abort modes."
+    validation:
+      cargo_fmt_check: pass
+      cargo_test: "pass (161 tests; two racing anthropic env tests merged into one)"
+      cargo_clippy: "pass (-D warnings)"
+      acceptance: "pass (237 PASS / 0 FAIL / 1 SKIP; required unsandboxed localhost mock-provider run)"
+  pr:
+    status: in_progress
+    pr_url: null
+    pr_number: null
+    ci_passed: false
+    artifact: null
+  complete: { status: pending, artifact: null }
+
+scope:
+  - "`gcmignore` / config glob list excluded from analysis"
+  - "Optional pre-send secret scan that redacts or aborts on detected credentials"
+
+acceptance_criteria:
+  - "A path matched by the ignore list never appears in the provider request"
+  - "With the scan enabled, an embedded credential pattern triggers redaction or abort before egress"
+
+history:
+  - timestamp: 2026-06-22T12:12:45Z
+    action: workflow_started
+    phase: discovery
+    details: "New workflow for CLO-490. Linear still lists CLO-486 as a blocker, but local project docs mark CLO-486 Done and CLO-490 Ready. Classified as development and starting discovery."
+  - timestamp: 2026-06-22T12:12:45Z
+    action: project_sync_start
+    phase: discovery
+    details: "PROJECT.md: added to Active Work and removed from Up Next; master table moved to In Progress. ROADMAP.md: status Ready -> In Progress. DEPENDENCIES.md: removed from Unblocked & Ready."
+  - timestamp: 2026-06-22T12:18:00Z
+    action: discovery_complete
+    phase: discovery
+    details: "Existing gitignore protection only covers untracked files. CLO-490 needs provider-bound diffs to be path-scoped after gcmignore filtering, and secret scanning must run after diff assembly but before provider calls."
+  - timestamp: 2026-06-22T12:24:00Z
+    action: design_complete
+    phase: design
+    details: "Created concise design doc for dependency-free privacy layer; user request to implement treated as approval to proceed."
+  - timestamp: 2026-06-22T12:28:00Z
+    action: plan_complete
+    phase: plan
+    details: "Created implementation plan and proceeded under the user's direct implementation request."
+  - timestamp: 2026-06-22T12:45:00Z
+    action: implementation_complete
+    phase: implement
+    details: "Implemented privacy layer, CLI/env secret-scan option, filtered provider-bound diffs/staging, docs, and acceptance coverage. Local validation passed; workflow is ready for PR phase."
+  - timestamp: 2026-06-22T12:50:50Z
+    action: pre_flight_fix_applied
+    phase: pr
+    details: "Pre-flight cargo test surfaced a pre-existing parallel race: base_url_defaults_to_production and base_url_override_from_env (from CLO-494) both mutate GCM_ANTHROPIC_BASE_URL. Merged them into one sequential test base_url_resolution_default_and_override. User approved including this fix in the CLO-490 PR."
+  - timestamp: 2026-06-22T12:50:50Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check, cargo clippy --all-targets -D warnings, and cargo test (161 tests, 3x parallel) all pass. Ready to create PR."

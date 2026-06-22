@@ -495,23 +495,20 @@ mod tests {
     }
 
     #[test]
-    fn base_url_defaults_to_production() {
+    fn base_url_resolution_default_and_override() {
+        // Both cases mutate the same process-global env var, so they share one
+        // test body; splitting them into separate #[test] fns races under
+        // cargo's parallel execution.
         let prev = std::env::var("GCM_ANTHROPIC_BASE_URL").ok();
+
         std::env::remove_var("GCM_ANTHROPIC_BASE_URL");
         let a = Anthropic::new("claude-haiku-4-5".to_string());
         assert_eq!(a.base_url(), "https://api.anthropic.com");
-        // Restore
-        if let Some(u) = prev {
-            std::env::set_var("GCM_ANTHROPIC_BASE_URL", u);
-        }
-    }
 
-    #[test]
-    fn base_url_override_from_env() {
-        let prev = std::env::var("GCM_ANTHROPIC_BASE_URL").ok();
         std::env::set_var("GCM_ANTHROPIC_BASE_URL", "http://localhost:8080");
         let a = Anthropic::new("claude-haiku-4-5".to_string());
         assert_eq!(a.base_url(), "http://localhost:8080");
+
         // Restore
         if let Some(u) = prev {
             std::env::set_var("GCM_ANTHROPIC_BASE_URL", u);

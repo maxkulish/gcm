@@ -23,6 +23,14 @@ pub enum GcmError {
     /// FR-58). Distinct from [`GcmError::Git`] (pre-commit-step failures, which
     /// restore the index).
     CommitFailed(String),
+    /// User/configuration input outside provider selection (provider config
+    /// errors are represented by `ProviderError::Config`).
+    Config(String),
+    /// The optional pre-send secret scan found credential-looking content and
+    /// was configured to abort before provider egress (CLO-490, FR-50).
+    SecretDetected {
+        count: usize,
+    },
 }
 
 impl GcmError {
@@ -59,6 +67,12 @@ impl fmt::Display for GcmError {
                 "{msg}\nThe group is left staged and the plan was not advanced; \
                  fix the issue and re-run gcm to retry this group."
             ),
+            GcmError::Config(msg) => write!(f, "{msg}"),
+            GcmError::SecretDetected { count } => write!(
+                f,
+                "secret scan detected {count} credential-like value(s); no provider request was sent. \
+                 Remove the secret, add the path to .gcmignore, or re-run with --secret-scan=redact."
+            ),
         }
     }
 }
@@ -81,6 +95,7 @@ mod tests {
         assert!(!GcmError::Git("git add failed".to_string()).leaves_staged());
         assert!(!GcmError::UnmergedConflicts.leaves_staged());
         assert!(!GcmError::NotARepo.leaves_staged());
+        assert!(!GcmError::SecretDetected { count: 1 }.leaves_staged());
     }
 
     #[test]
@@ -92,5 +107,12 @@ mod tests {
             msg.contains("left staged"),
             "tells the user the group is kept"
         );
+    }
+
+    #[test]
+    fn secret_detected_mentions_no_provider_request() {
+        let msg = GcmError::SecretDetected { count: 2 }.to_string();
+        assert!(msg.contains("no provider request was sent"));
+        assert!(msg.contains("--secret-scan=redact"));
     }
 }
