@@ -29,15 +29,17 @@ fn timeout_secs() -> u64 {
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
 
-/// One provider HTTP request (CLO-489 round-2 review pt 5): `auth` is a
-/// `(header_name, header_value)` pair passed straight to `ureq` - Groq/OpenAI
-/// send `("Authorization", "Bearer <key>")`, Gemini sends `("x-goog-api-key", key)`.
+/// One provider HTTP request (CLO-489 round-2 review pt 5): `auth` is an optional
+/// `(header_name, header_value)` pair passed straight to `ureq` - Groq/OpenAI send
+/// `Some(("Authorization", "Bearer <key>"))`, Gemini `Some(("x-goog-api-key", key))`,
+/// and the local Ollama provider (CLO-495) sends `None` (no key, no auth header).
 pub(super) struct HttpRequest<'a> {
     pub provider: &'static str,
     /// API-key env var, surfaced in an `Auth` (401/403) error message (FR-18).
+    /// Meaningful only when `auth` is `Some`; a no-auth backend passes `""`.
     pub auth_env_var: &'static str,
     pub endpoint: String,
-    pub auth: (&'static str, String),
+    pub auth: Option<(&'static str, String)>,
     pub payload: &'a Value,
 }
 
@@ -63,10 +65,14 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
         .http_status_as_error(false)
         .build();
     let agent = ureq::Agent::new_with_config(config);
-    let mut response = agent
+    let mut builder = agent
         .post(&req.endpoint)
-        .header(req.auth.0, req.auth.1.as_str())
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    // No-auth backends (Ollama) send no auth header; everyone else sends one.
+    if let Some((name, value)) = req.auth.as_ref() {
+        builder = builder.header(*name, value.as_str());
+    }
+    let mut response = builder
         .send(body.as_str())
         .map_err(|e| wrap(map_ureq_error(e)))?;
 
@@ -92,11 +98,14 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
         .take(MAX_ERROR_BODY_BYTES)
         .read_to_end(&mut buf);
     let err_body = String::from_utf8_lossy(&buf);
+    // Only surface the auth env var when the request actually carried auth - a
+    // no-auth backend (Ollama, `auth: None`) must never synthesize an `Auth`
+    // error naming an empty placeholder env var (CLO-495 validation).
     let kind = classify_status(
         status,
         retry_after,
         bad_request_detail(&err_body),
-        req.auth_env_var,
+        req.auth.as_ref().map(|_| req.auth_env_var),
     );
     crate::debug_log!("{provider} response error: {kind:?}");
     Err(wrap(kind))
@@ -108,13 +117,16 @@ fn classify_status(
     status: u16,
     retry_after: Option<Duration>,
     detail: Option<String>,
-    auth_env_var: &'static str,
+    auth_env_var: Option<&'static str>,
 ) -> ErrorKind {
     match status {
         400 => ErrorKind::BadRequest { detail },
-        401 | 403 => ErrorKind::Auth {
-            status,
-            env_var: auth_env_var,
+        // 401/403 mean "bad key" only for a backend that sends one; a no-auth
+        // backend (`auth_env_var: None`, e.g. Ollama behind a proxy) treats them
+        // as a generic HTTP error rather than naming a nonexistent key var.
+        401 | 403 => match auth_env_var {
+            Some(env_var) => ErrorKind::Auth { status, env_var },
+            None => ErrorKind::Http(status),
         },
         429 => ErrorKind::RateLimit { retry_after },
         500..=599 => ErrorKind::Server(status),
@@ -256,33 +268,53 @@ mod tests {
     #[test]
     fn classify_status_maps_codes() {
         assert!(matches!(
-            classify_status(400, None, None, "K"),
+            classify_status(400, None, None, Some("K")),
             ErrorKind::BadRequest { .. }
         ));
         assert!(matches!(
-            classify_status(401, None, None, "K"),
+            classify_status(401, None, None, Some("K")),
             ErrorKind::Auth { status: 401, .. }
         ));
         assert!(matches!(
-            classify_status(403, None, None, "K"),
+            classify_status(403, None, None, Some("K")),
             ErrorKind::Auth { status: 403, .. }
         ));
         assert!(matches!(
-            classify_status(429, None, None, "K"),
+            classify_status(429, None, None, Some("K")),
             ErrorKind::RateLimit { .. }
         ));
         assert!(matches!(
-            classify_status(500, None, None, "K"),
+            classify_status(500, None, None, Some("K")),
             ErrorKind::Server(500)
         ));
         // 504 Gateway Timeout is a Server error, NOT the client-side Timeout.
         assert!(matches!(
-            classify_status(504, None, None, "K"),
+            classify_status(504, None, None, Some("K")),
             ErrorKind::Server(504)
         ));
         assert!(matches!(
-            classify_status(418, None, None, "K"),
+            classify_status(418, None, None, Some("K")),
             ErrorKind::Http(418)
+        ));
+    }
+
+    #[test]
+    fn classify_status_no_auth_401_403_is_http_not_auth() {
+        // CLO-495: a no-auth backend (Ollama, auth_env_var None) must not
+        // synthesize an Auth error naming an empty env var on a fronting-proxy
+        // 401/403 - it degrades to a generic HTTP error.
+        assert!(matches!(
+            classify_status(401, None, None, None),
+            ErrorKind::Http(401)
+        ));
+        assert!(matches!(
+            classify_status(403, None, None, None),
+            ErrorKind::Http(403)
+        ));
+        // 400/429/5xx are unaffected by the auth-var presence.
+        assert!(matches!(
+            classify_status(400, None, None, None),
+            ErrorKind::BadRequest { .. }
         ));
     }
 

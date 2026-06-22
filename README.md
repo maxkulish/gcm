@@ -8,8 +8,8 @@ logical commit groups (a typed JSON plan via structured outputs), shows you the 
 and commits the **first** group with its own message. Run it again to commit the next
 group - a mixed change set becomes a series of clean, atomic commits. `--all` skips
 grouping and commits everything as one. Providers are selectable by flag/env -
-**Groq** (default), **Google (Gemini)**, and **OpenAI** - each via direct HTTP per its
-verified capability. Architecture is fixed by
+**Groq** (default), **Google (Gemini)**, **OpenAI**, and **Ollama** (local, no key) -
+each via direct HTTP per its verified capability. Architecture is fixed by
 [ADR-001](docs/adrs/001-foundational-architecture-decisions.md).
 
 ## Privacy / data egress
@@ -20,11 +20,17 @@ to generate the grouping plan and commit messages. Gitignored files (for example
 are gathered with `git --exclude-standard` and are **never sent**. Review the selected
 provider's data policy before use. This disclosure is also printed by `gcm --help`.
 
+**Zero-egress option:** `--provider=ollama` talks to a local Ollama daemon (default
+`http://localhost:11434`), so with a local model **nothing leaves the machine** - the
+privacy anchor. One caveat: an Ollama `*:cloud` model (e.g. `deepseek-v4-flash:cloud`)
+is proxied by the daemon to Ollama Cloud and is therefore **not** zero-egress.
+
 ## Requirements
 
 - Rust 1.75+ (build) / a `git` binary on `PATH` (runtime)
-- An API key for the selected provider: `GROQ_API_KEY` (default), `GEMINI_API_KEY`, or
-  `OPENAI_API_KEY`
+- An API key for the selected cloud provider: `GROQ_API_KEY` (default), `GEMINI_API_KEY`,
+  or `OPENAI_API_KEY` - **or** a running local [Ollama](https://ollama.com) daemon with a
+  pulled model (`--provider=ollama`, no key)
 - git commit signing configured (`commit.gpgsign=true` with a usable GPG or SSH key);
   every commit is signed (`git commit -S`)
 
@@ -53,6 +59,7 @@ gcm --json --yes                 # unattended JSON commit
 gcm --yes                        # auto-confirm (non-interactive / CI / agents); alias --no-input
 gcm --provider=google            # use Gemini (also: --provider=openai); default is groq
 gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
+gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
@@ -83,19 +90,30 @@ Override the model with `--model` or the per-provider env var.
 | Groq (default) | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `GCM_GROQ_MODEL` | strict `json_schema` |
 | Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
 | OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini-2024-07-18` | `GCM_OPENAI_MODEL` | strict `json_schema` |
+| Ollama (local) | `ollama` | none | `gemma4:e4b-mlx` | `GCM_OLLAMA_MODEL` | native `format` (model-dependent) |
 
 Reasoning models emit no chain-of-thought into the plan or message (per-provider
 suppression + a `<think>` backstop). OpenAI reasoning models (`o1`/`o3`-style) are
 supported as `--model` overrides; the default `gpt-4o-mini` is non-reasoning.
 
+**Ollama (local, zero-egress):** needs a running daemon and a pulled model; no API key.
+The endpoint is `http://localhost:11434` by default - override with `OLLAMA_HOST` (e.g.
+`OLLAMA_HOST=host:port`, scheme/port auto-completed) or `GCM_OLLAMA_BASE_URL` (a full URL).
+gcm uses the native `/api/chat` with a JSON-Schema `format`; structured-output fidelity
+varies by model, so it falls back to defensive parsing + retry. If the daemon is not
+running or the model is not pulled, gcm prints an actionable error (`ollama serve` /
+`ollama pull <model>`). Local inference can be slow - raise `GCM_HTTP_TIMEOUT_SECS` for
+large diffs. A `*:cloud` model is proxied to Ollama Cloud and is **not** zero-egress.
+
 ### Configuration (environment)
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` | (one required) | API key for the selected provider |
-| `GCM_PROVIDER` | `groq` | Provider: `groq`, `google`, or `openai` (flag `--provider` wins) |
-| `GCM_GROQ_MODEL` / `GCM_GEMINI_MODEL` / `GCM_OPENAI_MODEL` | per-provider default | Model id (flag `--model` wins) |
-| `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` | per-provider default | Override the API base URL |
+| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` | (one required for cloud) | API key for the selected cloud provider; Ollama needs none |
+| `GCM_PROVIDER` | `groq` | Provider: `groq`, `google`, `openai`, or `ollama` (flag `--provider` wins) |
+| `GCM_GROQ_MODEL` / `GCM_GEMINI_MODEL` / `GCM_OPENAI_MODEL` / `GCM_OLLAMA_MODEL` | per-provider default | Model id (flag `--model` wins) |
+| `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` / `GCM_OLLAMA_BASE_URL` | per-provider default | Override the API base URL |
+| `OLLAMA_HOST` | `localhost:11434` | Ollama daemon host (scheme/port auto-completed); `GCM_OLLAMA_BASE_URL` takes precedence |
 | `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` | per-provider | Override the diff budget |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
 | `GCM_DEBUG` | (unset) | Legacy shortcut: when set to a non-empty, non-`0` value it enables debug-level logging (overridden by `GCM_LOG_LEVEL`) |

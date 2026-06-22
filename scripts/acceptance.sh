@@ -82,6 +82,9 @@ class H(http.server.BaseHTTPRequestHandler):
             _send_json(self, 401, '{"error":{"message":"invalid api key"}}'); return
         if "/fail403/" in self.path:
             _send_json(self, 403, '{"error":{"message":"forbidden"}}'); return
+        if "/ollama404/" in self.path:
+            # Ollama returns 404 for an unpulled model (CLO-495 AC-O4).
+            _send_json(self, 404, '{"error":"model not found, try pulling it first"}'); return
         if "/fail400big/" in self.path:
             # >4096-byte error body: the read must stay bounded yet still surface a
             # (truncated) detail, not drop the body (CLO-488 validation MEDIUM).
@@ -95,7 +98,9 @@ class H(http.server.BaseHTTPRequestHandler):
         # Gemini uses the :generateContent endpoint + responseSchema; the
         # OpenAI-compatible providers (Groq, OpenAI) use response_format (CLO-489).
         is_gemini = ":generatecontent" in self.path.lower() or "/gemini" in self.path.lower()
-        is_plan = (b'"response_format"' in body) or (b'"responseSchema"' in body)
+        # Ollama (CLO-495): native /api/chat; structured-output request carries `format`.
+        is_ollama = "/api/chat" in self.path
+        is_plan = (b'"response_format"' in body) or (b'"responseSchema"' in body) or (is_ollama and b'"format"' in body)
         if "/empty/" in self.path:
             content = "   \n  "   # whitespace-only -> EmptyResponse
         elif is_plan:
@@ -114,6 +119,9 @@ class H(http.server.BaseHTTPRequestHandler):
             content = "chore(test): mock commit message"
         if is_gemini:
             resp = json.dumps({"candidates":[{"content":{"parts":[{"text":content}]},"finishReason":"STOP"}]}).encode()
+        elif is_ollama:
+            # Ollama native /api/chat: top-level message.content; `thinking` must be ignored.
+            resp = json.dumps({"message":{"role":"assistant","thinking":"(ignored)","content":content}}).encode()
         else:
             resp = json.dumps({"choices":[{"message":{"content":content}}]}).encode()
         self.send_response(200)
@@ -199,6 +207,20 @@ d="$(new_repo)"; echo hi > "$d/a.txt"
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:9/openai/v1" "$BIN" --yes >/tmp/gcm-out 2>&1 ); rc=$?
 [ $rc -eq 1 ] && ok "unreachable host -> exit 1" || bad "unreachable host (rc=$rc)"
 [ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after transport error" || bad "index mutated"
+rm -rf "$d"
+
+# CLO-495: Ollama is local (no key) and not present in CI, so these cases run
+# against the mock /api/chat route (offline). The dead-daemon case (AC-O2) needs
+# no mock - it points at a closed port, like AC-12.
+note "AC-O2: ollama daemon unreachable -> exit 1 + actionable error, index untouched"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && env -u GROQ_API_KEY GCM_OLLAMA_BASE_URL="http://127.0.0.1:9" "$BIN" --provider=ollama --yes >/tmp/gcm-out 2>&1 ); rc=$?
+if [ $rc -eq 1 ] && grep -qi "is Ollama running" /tmp/gcm-out && grep -q "OLLAMA_HOST" /tmp/gcm-out; then
+  ok "ollama down -> exit 1 + actionable (start ollama / OLLAMA_HOST)"
+else
+  bad "ollama down (rc=$rc): $(cat /tmp/gcm-out)"
+fi
+[ -z "$(git -C "$d" diff --cached --name-only)" ] && ok "index untouched after ollama transport error" || bad "index mutated"
 rm -rf "$d"
 
 # Cases below talk to the mock server.
@@ -1277,6 +1299,70 @@ if [ "$SIGNING_OK" -eq 1 ]; then
 else
   skip "AC-489-google needs signing"
 fi
+
+note "AC-O1: --provider=ollama is key-free, sends NO Authorization, native /api/chat"
+reset_cache; d="$(new_repo)"
+printf 'v1\n' > "$d/o.txt"
+git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+git -C "$d" -c commit.gpgsign=false commit -qm init
+printf 'v2\n' > "$d/o.txt"
+printf '%s' '{"groups":[{"files":["o.txt"],"summary":"o","commit_message":"feat: o"}]}' > "$PLAN_FILE"
+: > "$CAPTURE"; : > "$HEADERS"
+# No provider API keys in the environment at all -> proves Ollama needs none.
+( cd "$d" && env -u GROQ_API_KEY -u OPENAI_API_KEY -u GEMINI_API_KEY GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT" "$BIN" --provider=ollama --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "ollama --dry-run is key-free -> exit 0" || bad "ollama dry-run (rc=$rc; $(tail -1 /tmp/gcm-out))"
+[ -s "$CAPTURE" ] && ok "ollama request reached the local endpoint" || bad "no ollama request captured"
+grep -q '"format"' "$CAPTURE" && ok "ollama sent a native format=schema request" || bad "ollama request not native format"
+grep -q "AUTH= GOOG=" "$HEADERS" && ok "ollama sent NO auth headers (zero-egress, key-free)" || bad "ollama auth headers: $(cat "$HEADERS")"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  : > "$CAPTURE"
+  ( cd "$d" && env -u GROQ_API_KEY GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT" "$BIN" --provider=ollama --yes >/tmp/gcm-out 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "ollama grouped commit exit 0" || bad "ollama grouped (rc=$rc; $(tail -1 /tmp/gcm-out))"
+  git -C "$d" show --name-only --pretty=format: HEAD | grep -qx 'o.txt' && ok "group committed via ollama" || bad "ollama group missing"
+else
+  skip "AC-O1 real commit needs signing (key-free dry-run path verified above)"
+fi
+: > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
+note "AC-O3: scheme-less OLLAMA_HOST (host:port) is normalized and reaches the daemon"
+reset_cache; d="$(new_repo)"
+printf 'h\n' > "$d/h.txt"
+printf '%s' '{"groups":[{"files":["h.txt"],"summary":"h","commit_message":"chore: h"}]}' > "$PLAN_FILE"
+: > "$CAPTURE"
+( cd "$d" && env -u GROQ_API_KEY OLLAMA_HOST="127.0.0.1:$PORT" "$BIN" --provider=ollama --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && [ -s "$CAPTURE" ] && ok "OLLAMA_HOST normalized + reached mock" || bad "OLLAMA_HOST normalize (rc=$rc; $(tail -1 /tmp/gcm-out))"
+: > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
+note "AC-O4: ollama 404 (model not pulled) -> exit 1 + 'ollama pull' guidance"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && env -u GROQ_API_KEY GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT/ollama404" "$BIN" --provider=ollama --yes >/tmp/gcm-out 2>&1 ); rc=$?
+if [ $rc -eq 1 ] && grep -qi "ollama pull" /tmp/gcm-out; then
+  ok "404 -> exit 1 + ollama pull hint"
+else
+  bad "404 hint (rc=$rc): $(cat /tmp/gcm-out)"
+fi
+rm -rf "$d"
+
+note "AC-O5: GCM_PROVIDER=ollama (env selection, no flag) selects the backend key-free"
+reset_cache; d="$(new_repo)"
+printf 'e\n' > "$d/e.txt"
+printf '%s' '{"groups":[{"files":["e.txt"],"summary":"e","commit_message":"chore: e"}]}' > "$PLAN_FILE"
+: > "$CAPTURE"
+( cd "$d" && env -u GROQ_API_KEY GCM_PROVIDER=ollama GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT" "$BIN" --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && [ -s "$CAPTURE" ] && ok "GCM_PROVIDER=ollama selected + reached mock" || bad "GCM_PROVIDER=ollama (rc=$rc; $(tail -1 /tmp/gcm-out))"
+: > "$PLAN_FILE"; reset_cache; rm -rf "$d"
+
+note "AC-O6: a :cloud model warns it is NOT zero-egress (privacy defense-in-depth)"
+reset_cache; d="$(new_repo)"
+printf 'c\n' > "$d/c.txt"
+printf '%s' '{"groups":[{"files":["c.txt"],"summary":"c","commit_message":"chore: c"}]}' > "$PLAN_FILE"
+( cd "$d" && env -u GROQ_API_KEY GCM_OLLAMA_BASE_URL="http://127.0.0.1:$PORT" "$BIN" --provider=ollama --model=demo-model:cloud --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
+if grep -qi "Ollama Cloud" /tmp/gcm-out && grep -qi "NOT zero-egress" /tmp/gcm-out; then
+  ok ":cloud model warns about egress"
+else
+  bad ":cloud egress warning (rc=$rc): $(cat /tmp/gcm-out)"
+fi
+: > "$PLAN_FILE"; reset_cache; rm -rf "$d"
 
 stop_mock
 
