@@ -122,3 +122,27 @@ clean. If installed bots do not produce a current-head review by the
 `copilot-pull-request-reviewer` on the current head SHA, then fetches
 inline comments and GraphQL review threads. Step 2 only permits a skip
 when recent closed PRs confirm those bots are not installed.
+
+---
+
+## L7 - Merge conflicts are the first PR blocker
+
+**Source incident:** CLO-494 PR #11 was blocked by merge conflicts
+(`mergeable: CONFLICTING`, `mergeStateStatus: DIRTY`) while the
+orchestrator kept blocking on absent Copilot review. Because GitHub
+could not evaluate the PR cleanly, the bot-review job never had a
+reviewable head to inspect.
+
+**Rule:** Before waiting for CI or installed bot reviewers, verify PR
+health/mergeability. If the PR is conflicted (`CONFLICTING`, `DIRTY`,
+or REST `mergeable_state: dirty`), block on conflict resolution. Bot
+review absence is not meaningful while the PR is unmergeable.
+
+**How to apply:**
+- `pr.md` Step 2.5 runs `gh pr view --json mergeable,mergeStateStatus`
+  plus REST `mergeable_state` immediately after PR creation and after
+  every push.
+- `pr-review-cycle.md` Step 0 repeats the same guard before bot wait.
+- After resolving conflicts and pushing, restart PR health, CI, and bot
+  review gates. If the head SHA changed, restart the 10-minute bot wait
+  from the new reviewable head, not from PR creation time.

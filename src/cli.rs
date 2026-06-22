@@ -15,11 +15,12 @@ MACHINE MODE: use --json to emit a stable JSON envelope on stdout (status: plan/
 committed/fallback/error). Combine with --plan-only for a non-destructive preview, or\n\
 --yes (alias --no-input) for unattended commits. All diagnostics go to stderr.\n\
 \n\
-PROVIDER: select with --provider (groq, google, openai, ollama) or GCM_PROVIDER\n\
-(precedence flag > env > default groq); override the model with --model or the\n\
-per-provider env (GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL / GCM_OLLAMA_MODEL).\n\
-Keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY. Ollama is local and needs NO key -\n\
-it talks to http://localhost:11434 (override with OLLAMA_HOST / GCM_OLLAMA_BASE_URL).\n\
+PROVIDER: select with --provider (groq, google, openai, anthropic, ollama) or GCM_PROVIDER\n\
+(precedence flag > env > default groq); override the model with --model or the per-provider\n\
+env (GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL / GCM_ANTHROPIC_MODEL /\n\
+GCM_OLLAMA_MODEL). Keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY.\n\
+Ollama is local and needs NO key - it talks to http://localhost:11434 (override with\n\
+OLLAMA_HOST / GCM_OLLAMA_BASE_URL).\n\
 \n\
 PRIVACY: gcm sends your working-tree diff and the content of untracked, non-gitignored\n\
 files to the configured LLM provider to generate the plan and commit messages.\n\
@@ -71,7 +72,7 @@ pub struct Cli {
     #[arg(long, visible_alias = "no-input")]
     pub yes: bool,
 
-    /// LLM provider: groq (default), google (Gemini), openai, or ollama (local,
+    ///LLM provider: groq (default), google (Gemini), openai, anthropic, or ollama (local,
     /// no key, zero-egress). Overrides GCM_PROVIDER (precedence: flag > env > default).
     #[arg(long, value_enum)]
     pub provider: Option<ProviderId>,

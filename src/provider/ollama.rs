@@ -47,6 +47,7 @@ impl Ollama {
             auth_env_var: "", // no auth -> unreachable in an Auth (401/403) error
             endpoint: self.endpoint(),
             auth: None, // key-free: no Authorization header (zero-egress anchor)
+            extra_headers: Vec::new(),
             payload,
         }
     }

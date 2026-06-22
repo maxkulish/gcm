@@ -62,9 +62,51 @@ After all pass:
    - `phases.pr.status: in_progress`
 3. Add history entry: `pr_created`
 
+### Step 4.1.5: PR Health / Mergeability Gate (MANDATORY before CI/reviews)
+
+After PR creation and after every push, verify GitHub can evaluate the PR before waiting for CI or bot reviewers. A conflicted PR (`mergeable: CONFLICTING`, `mergeStateStatus: DIRTY`, or REST `mergeable_state: dirty`) may prevent CI/bot review from starting; block on conflict resolution instead of bot-review absence.
+
+```bash
+PR=[number]
+REPO=maxkulish/gcm
+
+PR_HEALTH=$(gh pr view "$PR" --json mergeable,mergeStateStatus,isDraft,headRefOid,statusCheckRollup)
+API_HEALTH=$(gh api repos/${REPO}/pulls/${PR} \
+  --jq '{mergeable, mergeable_state, rebaseable, head_sha:.head.sha, base_sha:.base.sha}')
+
+MERGEABLE=$(jq -r '.mergeable' <<<"$PR_HEALTH")
+MERGE_STATE=$(jq -r '.mergeStateStatus' <<<"$PR_HEALTH")
+API_MERGEABLE_STATE=$(jq -r '.mergeable_state' <<<"$API_HEALTH")
+
+if [ "$MERGEABLE" = "CONFLICTING" ] || [ "$MERGE_STATE" = "DIRTY" ] || [ "$API_MERGEABLE_STATE" = "dirty" ]; then
+  echo "GATE FAIL: PR has merge conflicts; resolve conflicts before CI/bot-review gates."
+  echo "gh pr view: ${PR_HEALTH}"
+  echo "REST pull: ${API_HEALTH}"
+  exit 1
+fi
+```
+
+If this gate fails:
+1. Add history entry: `workflow_blocked`
+2. Set `phases.pr.status: blocked`
+3. Resolve conflicts:
+   ```bash
+   git fetch origin main
+   git merge origin/main   # or rebase only if the repo/task explicitly prefers rebase
+   # resolve conflicts
+   cargo fmt --check
+   cargo clippy -- -D warnings
+   cargo clippy --tests
+   cargo test
+   git push
+   ```
+4. Restart from Step 4.1.5.
+
+If the head SHA changed, restart any bot-review wait deadline from that new reviewable head; do not reuse the original PR creation time.
+
 ### Step 4.2: Monitor CI Status
 
-After PR creation, check CI status:
+After PR health passes, check CI status:
 
 ```bash
 gh run list --branch [branch-name] --limit 1
@@ -90,7 +132,8 @@ gh run list --branch [branch-name] --limit 1
    - Update `phases.pr.reviews_addressed`
    - Push changes
    - Add history entry: `review_addressed`
-4. **CRITICAL - gemini-code-assist replies**: When replying to inline comments from `gemini-code-assist`, every reply MUST end with `/gemini review` on its own line. This triggers Gemini to re-validate the fix. This applies whether you invoke `/pr:review` or handle reviews inline.
+4. After every push, re-run the PR Health / Mergeability Gate before waiting for CI or bot-review completion. If the head SHA changed, restart bot-review wait timing from that new reviewable head.
+5. **CRITICAL - gemini-code-assist replies**: When replying to inline comments from `gemini-code-assist`, every reply MUST end with `/gemini review` on its own line. This triggers Gemini to re-validate the fix. This applies whether you invoke `/pr:review` or handle reviews inline.
 
 ---
 

@@ -62,6 +62,7 @@ impl Gemini {
                 self.model
             ),
             auth: Some(("x-goog-api-key", key.to_string())),
+            extra_headers: Vec::new(),
             payload,
         }
     }

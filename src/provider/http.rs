@@ -40,6 +40,9 @@ pub(super) struct HttpRequest<'a> {
     pub auth_env_var: &'static str,
     pub endpoint: String,
     pub auth: Option<(&'static str, String)>,
+    /// Additional headers beyond auth + Content-Type (e.g. Anthropic's
+    /// `anthropic-version`). Sent after the auth header, before `.send()`.
+    pub extra_headers: Vec<(&'static str, String)>,
     pub payload: &'a Value,
 }
 
@@ -70,6 +73,10 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
         .header("Content-Type", "application/json");
     // No-auth backends (Ollama) send no auth header; everyone else sends one.
     if let Some((name, value)) = req.auth.as_ref() {
+        builder = builder.header(*name, value.as_str());
+    }
+    // Additional provider headers (e.g. Anthropic's `anthropic-version`).
+    for (name, value) in &req.extra_headers {
         builder = builder.header(*name, value.as_str());
     }
     let mut response = builder
