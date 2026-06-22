@@ -43,8 +43,8 @@ classification:
   rationale: "CLO-495 adds a fourth backend behind the CLO-489 Provider trait following the gemini.rs divergent-shape template; the only architectural decisions (native /api/chat format=schema, ignore thinking, OLLAMA_HOST, no-key) are already locked in ADR-001 Decision 8, so the spec follows a recorded decision rather than making one. 4/5 signals lean spec (1 neutral) -> HIGH. Matches the spec precedent for the whole provider/grouping family."
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
 
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
@@ -122,7 +122,7 @@ phases:
     codex_verdict: "FAIL -> fixed (auth_env_var no-auth path + coverage); converged"
     gemini_verdict: PASS_WITH_NOTES
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/14
     pr_number: 14
     base: main
@@ -131,9 +131,22 @@ phases:
     commits:
       - { sha: 14a1d1f, summary: "feat(CLO-495): Ollama local provider for zero-egress commits" }
       - { sha: 4c74b8e, summary: "fix(CLO-495): no-auth 401/403 path + validation-gate coverage" }
-    ci_passed: false
-    approved: false
-  complete:  { status: pending }
+      - { sha: e15e7be, summary: "Merge origin/main (CLO-493) - resolve cli.rs + aggregation conflicts" }
+    ci_passed: true
+    ci_runs: [27942348611]   # macos-latest 56s + ubuntu-latest 42s green after the merge
+    merge_state: "MERGEABLE / CLEAN"
+    conflict_resolution: "main advanced (CLO-493 PR #12) -> merged origin/main into the branch; conflicts in cli.rs EGRESS (combined MACHINE MODE + ollama PROVIDER) + PROJECT/ROADMAP docs; provider/* clean"
+    approved: true          # owner squash-merged PR #14 on GitHub
+    merge_commit: 2871422f2a9f383cc65fd47a29735749799d4f0d
+    merged_at: 2026-06-22T09:24:09Z
+    merge_strategy: squash
+    merged_by: maxkulish
+  complete:
+    status: complete
+    merged_at: 2026-06-22T09:24:09Z
+    aggregation_files_updated: true
+    linear_status_updated: true
+    unblocked: []   # CLO-495 only blocks CLO-497, which still waits on CLO-488/490/494/496
 
 # Scope checklist (from the Linear task)
 scope:
@@ -193,4 +206,20 @@ history:
   - timestamp: 2026-06-22T11:20:00Z
     action: review_addressed
     phase: pr
-    details: "PR #14 was CONFLICTING/DIRTY: main advanced while CLO-495 was in flight (CLO-493 automation surface merged via PR #12/#13/#15). Merged origin/main into feat/clo-495-ollama. Conflicts in src/cli.rs (EGRESS_DISCLOSURE: combined CLO-493's MACHINE MODE/LOGGING blocks with CLO-495's ollama PROVIDER + :cloud PRIVACY lines), docs/PROJECT.md + docs/ROADMAP.md (Last Updated + status rows: CLO-493->Done, CLO-495->In Progress/PR, kept the 494-497 roadmap rows). provider/* did not conflict. Post-merge: 139 unit + 230 acceptance green (CLO-493 + CLO-495 combined), fmt/clippy(-D warnings) clean, acceptance.sh integrity re-verified. Re-pushing to clear the conflict + trigger CI."
+    details: "PR #14 was CONFLICTING/DIRTY: main advanced while CLO-495 was in flight (CLO-493 automation surface merged via PR #12/#13/#15). Merged origin/main into feat/clo-495-ollama. Conflicts in src/cli.rs (EGRESS_DISCLOSURE: combined CLO-493's MACHINE MODE/LOGGING blocks with CLO-495's ollama PROVIDER + :cloud PRIVACY lines), docs/PROJECT.md + docs/ROADMAP.md (Last Updated + status rows: CLO-493->Done, CLO-495->In Progress/PR, kept the 494-497 roadmap rows). provider/* did not conflict. Post-merge: 139 unit + 230 acceptance green (CLO-493 + CLO-495 combined), fmt/clippy(-D warnings) clean, acceptance.sh integrity re-verified. Merge commit e15e7be pushed."
+  - timestamp: 2026-06-22T11:30:00Z
+    action: ci_passed
+    phase: pr
+    details: "After the merge push (e15e7be), CI run 27942348611 green on macos-latest (56s) + ubuntu-latest (42s). PR #14 MERGEABLE / CLEAN. Presented the PR checkpoint."
+  - timestamp: 2026-06-22T09:24:09Z
+    action: pr_merged
+    phase: complete
+    details: "Owner squash-merged PR #14 on GitHub (merge commit 2871422). gcm Ollama local provider (zero-egress) is on main. Worktree mode: post-merge finalize runs in the main checkout (/Users/mk/Code/gcm--feat-clo-493-automation-frag, ff-pulled to include the merge); the feat/clo-495-ollama worktree is deleted by the owner via `gd`."
+  - timestamp: 2026-06-22T11:40:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Post-merge sync on main. Linear CLO-495 -> Done + completion comment. PROJECT.md: master table -> Done, removed from Active Work, added to Recently Completed, Up Next note refreshed. ROADMAP: CLO-495 -> Done, Phase 1 8/13 complete. DEPENDENCIES: CLO-495 removed from CLO-497's blocker list (CLO-497 still waits on CLO-488/490/494/496); no task newly unblocked (CLO-495 only blocked CLO-497). Last-Updated bumped across all three. Left CLO-488's stale Active Work row + CLO-493's missing Recently-Completed row for their own workflows."
+  - timestamp: 2026-06-22T11:40:00Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-495 specification workflow complete (spec -> implement -> PR -> complete). Deliverable: key-free local Ollama provider (FR-56) on main (PR #14 squash, merge 2871422). Native /api/chat format=schema, message.content/ignore thinking; HttpRequest.auth->Option; actionable unreachable/404 errors; OLLAMA_HOST normalization; default gemma4:e4b-mlx; :cloud non-zero-egress warning. 139 unit + 230 acceptance + real-daemon e2e (gemma4:12b); spec review (Gemini+Ollama APPROVE) + Codex/Gemini validation gate (Codex FAIL->fixed no-auth env-var leak->converged). CLO-497 one blocker closer (now waits on CLO-488/490/494/496)."
