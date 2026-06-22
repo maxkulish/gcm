@@ -23,9 +23,9 @@ linear:
   branch_actual: feat/clo-493-add-automation-surface-json-non-interactive-flags-structured
 workflow:
   current_phase: complete
-  status: active
+  status: complete
   created_at: '2026-06-22T07:58:35.361Z'
-  updated_at: '2026-06-22T09:04:18.979Z'
+  updated_at: '2026-06-22T09:05:02.923Z'
 phases:
   discovery:
     status: pending
@@ -84,13 +84,16 @@ phases:
     merge_commit: e1b07a9d119be67592c3f2b077eae0b3a3f2d7d6
     merged_at: '2026-06-22T08:49:28Z'
   complete:
-    status: pending
+    status: complete
     merge_commit: e1b07a9d119be67592c3f2b077eae0b3a3f2d7d6
     merged_at: '2026-06-22T08:49:28Z'
     aggregation_files_updated: true
     lessons_learned:
       - L1 - Keep automation JSON mode stdout strictly machine-readable
     lessons_file: .pi/lessons/clo-493-add-automation-surface-json-non-interactive-flags-structured-lessons.md
+    docs_pr_url: https://github.com/maxkulish/gcm/pull/13
+    docs_pr_number: 13
+    docs_pr_merge_commit: c566302332daff38fb51708b6cf2a9f16d41bb3d
   spec:
     status: complete
     spec_file: docs/specs/2026-06-22-clo-493-add-automation-surface-json-non-interactive-flags-structured-logging.md
@@ -273,5 +276,15 @@ history:
     details: >-
       1 lesson recorded. File:
       .pi/lessons/clo-493-add-automation-surface-json-non-interactive-flags-structured-lessons.md
+  - timestamp: '2026-06-22T09:05:00.712Z'
+    action: docs_pr_merged
+    phase: complete
+    details: >-
+      Docs PR #13 merged. Files: docs/status/clo-493-workflow.yaml,
+      .pi/lessons/clo-493-add-automation-surface-json-non-interactive-flags-structured-lessons.md
+  - timestamp: '2026-06-22T09:05:02.923Z'
+    action: workflow_complete
+    phase: complete
+    details: 'Task CLO-493 fully completed. PR #12 merged. CLO-497 unblocked.'
 task_title: 'Add automation surface: --json, non-interactive flags, structured logging'
 task_url: https://linear.app/cloud-ai/issue/CLO-493/add-automation-surface-json-non-interactive-flags-structured-logging
