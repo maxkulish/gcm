@@ -167,7 +167,12 @@ phases:
       - sha: f853fe3
         summary: document first-run setup and mark plan complete
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/17
+    pr_number: 17
+    ci_passed: false
+    mergeable: true
+    reviews_addressed: 0
   complete:
     status: pending
 history:
@@ -298,5 +303,13 @@ history:
     action: implementation_complete
     phase: implement
     details: Implementation + validation complete. Transitioning to PR phase.
+  - timestamp: '2026-06-22T17:22:00.000Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'cargo fmt --check, cargo clippy -D warnings, cargo test (194+6), acceptance 241/1 — all pass.'
+  - timestamp: '2026-06-22T17:23:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #17 created (https://github.com/maxkulish/gcm/pull/17). Mergeability gate PASS (mergeable, UNSTABLE=CI pending). Linear set to In Review + comment posted.'
 task_title: Add first-run onboarding wizard for provider setup
 task_url: https://linear.app/cloud-ai/issue/clo-496/add-first-run-onboarding-wizard-for-provider-setup
