@@ -61,7 +61,7 @@ impl Gemini {
                 self.base_url().trim_end_matches('/'),
                 self.model
             ),
-            auth: ("x-goog-api-key", key.to_string()),
+            auth: Some(("x-goog-api-key", key.to_string())),
             extra_headers: Vec::new(),
             payload,
         }

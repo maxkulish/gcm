@@ -8,23 +8,29 @@ logical commit groups (a typed JSON plan via structured outputs), shows you the 
 and commits the **first** group with its own message. Run it again to commit the next
 group - a mixed change set becomes a series of clean, atomic commits. `--all` skips
 grouping and commits everything as one. Providers are selectable by flag/env -
-**Groq** (default), **Google (Gemini)**, **OpenAI**, and **Anthropic** - each via direct HTTP per its
-verified capability. Architecture is fixed by
+**Groq** (default), **Google (Gemini)**, **OpenAI**, **Anthropic**, and **Ollama** (local, no key) -
+each via direct HTTP per its verified capability. Architecture is fixed by
 [ADR-001](docs/adrs/001-foundational-architecture-decisions.md).
 
 ## Privacy / data egress
 
 `gcm` sends your **working-tree diff** and the **content of untracked, non-gitignored
-files** to the configured LLM provider (Groq by default; Google, OpenAI, or Anthropic when selected)
+files** to the configured LLM provider (Groq by default; Google, OpenAI, Anthropic, or Ollama when selected)
 to generate the grouping plan and commit messages. Gitignored files (for example `.env`)
 are gathered with `git --exclude-standard` and are **never sent**. Review the selected
 provider's data policy before use. This disclosure is also printed by `gcm --help`.
 
+**Zero-egress option:** `--provider=ollama` talks to a local Ollama daemon (default
+`http://localhost:11434`), so with a local model **nothing leaves the machine** - the
+privacy anchor. One caveat: an Ollama `*:cloud` model (e.g. `deepseek-v4-flash:cloud`)
+is proxied by the daemon to Ollama Cloud and is therefore **not** zero-egress.
+
 ## Requirements
 
 - Rust 1.75+ (build) / a `git` binary on `PATH` (runtime)
-- An API key for the selected provider: `GROQ_API_KEY` (default), `GEMINI_API_KEY`,
-  `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
+- An API key for the selected cloud provider: `GROQ_API_KEY` (default), `GEMINI_API_KEY`,
+  `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` - **or** a running local
+  [Ollama](https://ollama.com) daemon with a pulled model (`--provider=ollama`, no key)
 - git commit signing configured (`commit.gpgsign=true` with a usable GPG or SSH key);
   every commit is signed (`git commit -S`)
 
@@ -44,15 +50,36 @@ gcm                              # group changes, show the plan, confirm [Y/n/e]
 gcm                              # run again to commit the next group
 gcm --all                        # skip grouping; commit everything as one
 gcm --dry-run                    # preview the plan (or the --all message); stage/commit nothing
+gcm --plan-only                  # same preview as --dry-run, but never touches the plan cache
+                                 # and can run without an API key on the --all path
+
+gcm --json                       # emit a machine-readable envelope on stdout; diagnostics on stderr
+gcm --json --plan-only           # JSON plan preview; non-destructive
+gcm --json --yes                 # unattended JSON commit
 gcm --yes                        # auto-confirm (non-interactive / CI / agents); alias --no-input
 gcm --provider=google            # use Gemini (also: --provider=openai, --provider=anthropic); default is groq
 gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
+gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
 At the prompt: `Y`/Enter commits group 1, `n` aborts (exit 0, nothing staged), `e` opens
 `$EDITOR` (default `vim`) to edit group 1's message first.
+
+### Machine-readable mode (`--json`)
+
+When `--json` is set, `gcm` prints exactly one JSON object on stdout and sends all
+logs/warnings to stderr. The envelope always contains `v: 1` and a `status` field:
+`plan`, `noop`, `committed`, `fallback`, or `error`. The `mode` field is one of
+`plan_only`, `dry_run`, `single`, or `grouped`. Use this for CI, agents, and scripts
+that need a stable contract instead of parsing human prose.
+
+Example:
+
+```sh
+gcm --json --plan-only | jq -e '.status == "plan" and .mode == "plan_only"'
+```
 
 ### Providers
 
@@ -65,22 +92,34 @@ Override the model with `--model` or the per-provider env var.
 | Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
 | OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini-2024-07-18` | `GCM_OPENAI_MODEL` | strict `json_schema` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` | `GCM_ANTHROPIC_MODEL` | forced tool-use (`input_schema`) |
+| Ollama (local) | `ollama` | none | `gemma4:e4b-mlx` | `GCM_OLLAMA_MODEL` | native `format` (model-dependent) |
 
 Reasoning models emit no chain-of-thought into the plan or message (per-provider
 suppression + a `<think>` backstop). OpenAI reasoning models (`o1`/`o3`-style) are
 supported as `--model` overrides; the default `gpt-4o-mini` is non-reasoning.
 
+**Ollama (local, zero-egress):** needs a running daemon and a pulled model; no API key.
+The endpoint is `http://localhost:11434` by default - override with `OLLAMA_HOST` (e.g.
+`OLLAMA_HOST=host:port`, scheme/port auto-completed) or `GCM_OLLAMA_BASE_URL` (a full URL).
+gcm uses the native `/api/chat` with a JSON-Schema `format`; structured-output fidelity
+varies by model, so it falls back to defensive parsing + retry. If the daemon is not
+running or the model is not pulled, gcm prints an actionable error (`ollama serve` /
+`ollama pull <model>`). Local inference can be slow - raise `GCM_HTTP_TIMEOUT_SECS` for
+large diffs. A `*:cloud` model is proxied to Ollama Cloud and is **not** zero-egress.
+
 ### Configuration (environment)
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | (one required) | API key for the selected provider |
-| `GCM_PROVIDER` | `groq` | Provider: `groq`, `google`, `openai`, or `anthropic` (flag `--provider` wins) |
-| `GCM_GROQ_MODEL` / `GCM_GEMINI_MODEL` / `GCM_OPENAI_MODEL` / `GCM_ANTHROPIC_MODEL` | per-provider default | Model id (flag `--model` wins) |
-| `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` / `GCM_ANTHROPIC_BASE_URL` | per-provider default | Override the API base URL |
+| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | (one required for cloud) | API key for the selected cloud provider; Ollama needs none |
+| `GCM_PROVIDER` | `groq` | Provider: `groq`, `google`, `openai`, `anthropic`, or `ollama` (flag `--provider` wins) |
+| `GCM_GROQ_MODEL` / `GCM_GEMINI_MODEL` / `GCM_OPENAI_MODEL` / `GCM_ANTHROPIC_MODEL` / `GCM_OLLAMA_MODEL` | per-provider default | Model id (flag `--model` wins) |
+| `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` / `GCM_ANTHROPIC_BASE_URL` / `GCM_OLLAMA_BASE_URL` | per-provider default | Override the API base URL |
+| `OLLAMA_HOST` | `localhost:11434` | Ollama daemon host (scheme/port auto-completed); `GCM_OLLAMA_BASE_URL` takes precedence |
 | `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` | per-provider | Override the diff budget |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
-| `GCM_DEBUG` | (unset) | When set (not `0`), print the typed provider error and each retry attempt to stderr |
+| `GCM_DEBUG` | (unset) | Legacy shortcut: when set to a non-empty, non-`0` value it enables debug-level logging (overridden by `GCM_LOG_LEVEL`) |
+| `GCM_LOG_LEVEL` | `off` | Logging level: `off`, `error`, `warn`, `info`, `debug`, `trace`. Precedence over `GCM_DEBUG`; all logs go to stderr |
 | `GCM_RETRY_MAX` | `3` | Max retries for transient (429/5xx) failures |
 | `GCM_RETRY_BASE_MS` | `500` | Base backoff in ms (doubles per attempt) |
 | `GCM_RETRY_MAX_MS` | `8000` | Per-attempt backoff cap in ms |
@@ -106,6 +145,11 @@ with an actionable message rather than hanging on a prompt.
   so it overrides any manual hunk-level (`git add -p`) staging. Group 1's files are staged
   in full; later groups are left unstaged - their changes stay in the working tree and are
   never lost. Use `--all` if you want everything in one commit.
+- **Plan cache**: `gcm` persists the last grouping plan per repo so the next run can
+  commit the next group without re-calling the LLM. Use `--reset` to discard the
+  cached plan and re-analyze from scratch; in `--json` mode `--reset` clears the
+  cache and then emits the normal noop/plan/committed envelope for the current
+  tree (there is no separate `reset` status).
 - **Safe fallback**: if the provider can't return a usable plan (structured output
   unavailable, unparseable JSON, or a plan that references files outside the change set),
   `gcm` announces it and falls back to a single commit. An unresolved merge conflict makes

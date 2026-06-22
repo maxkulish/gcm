@@ -11,18 +11,29 @@ run it again to commit the next group. Grouping operates on whole files over the
 working tree, so it overrides any manual hunk-level (git add -p) staging: group 1's files\n\
 are staged in full, later groups are left unstaged (their changes are never lost).\n\
 \n\
-PROVIDER: select with --provider (groq, google, openai, anthropic) or GCM_PROVIDER (precedence\n\
-flag > env > default groq); override the model with --model or the per-provider env\n\
-(GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL / GCM_ANTHROPIC_MODEL). Keys: GROQ_API_KEY,\n\
-GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY.\n\
+MACHINE MODE: use --json to emit a stable JSON envelope on stdout (status: plan/noop/\n\
+committed/fallback/error). Combine with --plan-only for a non-destructive preview, or\n\
+--yes (alias --no-input) for unattended commits. All diagnostics go to stderr.\n\
+\n\
+PROVIDER: select with --provider (groq, google, openai, anthropic, ollama) or GCM_PROVIDER\n\
+(precedence flag > env > default groq); override the model with --model or the per-provider\n\
+env (GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL / GCM_ANTHROPIC_MODEL /\n\
+GCM_OLLAMA_MODEL). Keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY.\n\
+Ollama is local and needs NO key - it talks to http://localhost:11434 (override with\n\
+OLLAMA_HOST / GCM_OLLAMA_BASE_URL).\n\
 \n\
 PRIVACY: gcm sends your working-tree diff and the content of untracked, non-gitignored\n\
 files to the configured LLM provider to generate the plan and commit messages.\n\
-Gitignored files (e.g. .env) are never sent. See the README for each provider's data policy.\n\
+Gitignored files (e.g. .env) are never sent. With --provider=ollama and a local model,\n\
+nothing leaves the machine (zero-egress); an Ollama `:cloud` model routes through Ollama\n\
+Cloud and is NOT zero-egress. See the README for each provider's data policy.\n\
+\n\
+LOGGING: set GCM_LOG_LEVEL=off|error|warn|info|debug|trace (default off). The legacy\n\
+GCM_DEBUG=1 shortcut still enables debug-level output. Logs always go to stderr.\n\
 \n\
 RESILIENCE: transient provider failures (HTTP 429 rate limit, 5xx) are retried with\n\
-bounded exponential backoff; 400/auth errors fail fast. Set GCM_DEBUG=1 to print the\n\
-typed error and retry attempts to stderr.";
+bounded exponential backoff; 400/auth errors fail fast. Set GCM_DEBUG=1 (or\n\
+GCM_LOG_LEVEL=debug) to print the typed error and retry attempts to stderr.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -38,6 +49,17 @@ pub struct Cli {
     #[arg(long)]
     pub dry_run: bool,
 
+    /// Emit a stable JSON envelope on stdout instead of human-oriented prose.
+    /// All diagnostics are sent to stderr so stdout contains a single valid
+    /// JSON object.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Generate the plan (or single-commit preview with --all) and exit without
+    /// staging, committing, or touching the cache.
+    #[arg(long)]
+    pub plan_only: bool,
+
     /// Skip grouping and commit all changes as a single commit.
     #[arg(long)]
     pub all: bool,
@@ -50,8 +72,8 @@ pub struct Cli {
     #[arg(long, visible_alias = "no-input")]
     pub yes: bool,
 
-    /// LLM provider: groq (default), google (Gemini), openai, or anthropic. Overrides
-    /// GCM_PROVIDER (precedence: flag > env > default).
+    ///LLM provider: groq (default), google (Gemini), openai, anthropic, or ollama (local,
+    /// no key, zero-egress). Overrides GCM_PROVIDER (precedence: flag > env > default).
     #[arg(long, value_enum)]
     pub provider: Option<ProviderId>,
 

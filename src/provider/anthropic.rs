@@ -58,7 +58,7 @@ impl Anthropic {
             provider: NAME,
             auth_env_var: API_KEY_ENV,
             endpoint: format!("{}/v1/messages", self.base_url().trim_end_matches('/')),
-            auth: ("x-api-key", key.to_string()),
+            auth: Some(("x-api-key", key.to_string())),
             extra_headers: vec![("anthropic-version", ANTHROPIC_VERSION.to_string())],
             payload,
         }
@@ -526,8 +526,9 @@ mod tests {
         let a = Anthropic::new("claude-haiku-4-5".to_string());
         let payload = serde_json::json!({"model": "test"});
         let req = a.request("sk-ant-test", &payload);
-        assert_eq!(req.auth.0, "x-api-key");
-        assert_eq!(req.auth.1, "sk-ant-test");
+        let (auth_name, auth_value) = req.auth.as_ref().expect("anthropic sends an auth header");
+        assert_eq!(*auth_name, "x-api-key");
+        assert_eq!(auth_value, "sk-ant-test");
         assert!(req
             .extra_headers
             .iter()

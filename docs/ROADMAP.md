@@ -1,31 +1,29 @@
-# Roadmap
+# Roadmap - gcm
 
-**Last Updated**: 2026-06-22
-
-## Phase 1: Foundation
-
-| Task | Title | Status | Dependencies |
-|------|-------|--------|--------------|
-| [CLO-485](https://linear.app/cloud-ai/issue/CLO-485/lock-foundational-architecture-decisions-and-verify-provider) | Lock foundational architecture decisions and verify provider capabilities (ADR) | Done | - |
-| [CLO-486](https://linear.app/cloud-ai/issue/CLO-486/add-single-commit-tracer-ai-message-via-groq-with-safe-diff-read) | Add single-commit tracer AI message via Groq with safe diff read | Done | CLO-485 |
-| [CLO-489](https://linear.app/cloud-ai/issue/CLO-489/add-provider-trait-with-gemini-and-openai-backends) | Add provider trait with Gemini and OpenAI backends | Done | CLO-485, CLO-486 |
-
-## Phase 2: Provider Expansion
-
-| Task | Title | Status | Dependencies |
-|------|-------|--------|--------------|
-| [CLO-494](https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use) | Add Anthropic provider via forced tool-use | In Progress | CLO-485, CLO-489 |
-
-## Phase 3: Release
-
-| Task | Title | Status | Dependencies |
-|------|-------|--------|--------------|
-| [CLO-497](https://linear.app/cloud-ai/issue/CLO-497/ship-cross-platform-releases-and-the-alias-cutover) | Ship cross-platform releases and the alias cutover | Backlog | CLO-494 |
+**Last Updated**: 2026-06-22 (CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
-| Phase 1: Foundation | 3 | 3 | Complete |
-| Phase 2: Provider Expansion | 1 | 0 | In Progress |
-| Phase 3: Release | 1 | 0 | Not Started |
+| Phase 1: Foundations | 13 | 8 | In Progress |
+
+## Phase 1: Foundations
+
+Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions; foundational decisions in [ADR-001](adrs/001-foundational-architecture-decisions.md).
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-485 | Foundational architecture decisions + capability matrix (ADR) | Done | none |
+| CLO-486 | Single-commit tracer | Done | CLO-485 |
+| CLO-487 | Semantic grouping → commit first group | Done | CLO-486 |
+| CLO-488 | Resilient provider calls: typed errors + retries | In Progress | CLO-486 |
+| CLO-489 | Provider trait + Gemini + OpenAI backends | Done | CLO-486, CLO-485 |
+| CLO-490 | Optional secret scanning + `gcmignore` | Ready | CLO-486 |
+| CLO-491 | Per-repo plan cache with commit-safe advancement | Done | CLO-487, CLO-485 |
+| CLO-492 | Full plan validation + safe fallback | Done | CLO-487, CLO-488 |
+| CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | Done | CLO-487 |
+| CLO-494 | Anthropic provider via forced tool-use | Ready | CLO-489, CLO-485 |
+| CLO-495 | Ollama local provider (zero-egress) | Done | CLO-489 |
+| CLO-496 | First-run onboarding wizard | Ready | CLO-485, CLO-489 |
+| CLO-497 | Cross-platform releases + alias cutover | Backlog | CLO-487…CLO-496 |
