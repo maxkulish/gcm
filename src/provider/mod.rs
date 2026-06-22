@@ -7,6 +7,7 @@
 //! [`gemini`] uses Google's divergent `generateContent`/`responseSchema` shape.
 //! Shared HTTP transport + retry/backoff (CLO-488) lives in [`http`].
 
+mod anthropic;
 mod gemini;
 mod groq;
 mod http;
@@ -150,6 +151,7 @@ pub enum ProviderId {
     #[value(alias = "gemini")]
     Google,
     Openai,
+    Anthropic,
 }
 
 impl ProviderId {
@@ -159,6 +161,7 @@ impl ProviderId {
             ProviderId::Groq => "openai/gpt-oss-120b",
             ProviderId::Google => "gemini-3.1-flash-lite",
             ProviderId::Openai => "gpt-4o-mini-2024-07-18",
+            ProviderId::Anthropic => "claude-haiku-4-5",
         }
     }
 
@@ -170,6 +173,7 @@ impl ProviderId {
             ProviderId::Groq => &["GCM_GROQ_MODEL"],
             ProviderId::Google => &["GCM_GEMINI_MODEL", "GCM_GOOGLE_MODEL"],
             ProviderId::Openai => &["GCM_OPENAI_MODEL"],
+            ProviderId::Anthropic => &["GCM_ANTHROPIC_MODEL"],
         }
     }
 
@@ -193,6 +197,7 @@ pub fn select(
         ProviderId::Groq => Box::new(groq::Groq::new(model)),
         ProviderId::Google => Box::new(gemini::Gemini::new(model)),
         ProviderId::Openai => Box::new(openai::OpenAi::new(model)),
+        ProviderId::Anthropic => Box::new(anthropic::Anthropic::new(model)),
     })
 }
 
@@ -222,7 +227,7 @@ fn pick_provider_id(
                 ProviderError::new(
                     "gcm",
                     ErrorKind::Config(format!(
-                        "unknown provider '{t}'. Set --provider/GCM_PROVIDER to one of: groq, google, openai."
+                        "unknown provider '{t}'. Set --provider/GCM_PROVIDER to one of: groq, google, openai, anthropic."
                     )),
                 )
             })
@@ -352,16 +357,18 @@ mod tests {
 
     #[test]
     fn provider_id_parse_canonical_alias_and_case() {
+        // canonical names
         assert_eq!(ProviderId::parse("groq"), Some(ProviderId::Groq));
         assert_eq!(ProviderId::parse("google"), Some(ProviderId::Google));
         assert_eq!(ProviderId::parse("openai"), Some(ProviderId::Openai));
+        assert_eq!(ProviderId::parse("anthropic"), Some(ProviderId::Anthropic));
         // alias gemini -> Google
         assert_eq!(ProviderId::parse("gemini"), Some(ProviderId::Google));
         // case- and whitespace-insensitive
         assert_eq!(ProviderId::parse("GOOGLE"), Some(ProviderId::Google));
         assert_eq!(ProviderId::parse("  google "), Some(ProviderId::Google));
+        assert_eq!(ProviderId::parse("ANTHROPIC"), Some(ProviderId::Anthropic));
         // unknown
-        assert_eq!(ProviderId::parse("anthropic"), None);
         assert_eq!(ProviderId::parse("foo"), None);
     }
 
@@ -439,10 +446,15 @@ mod tests {
         assert_eq!(ProviderId::Groq.default_model(), "openai/gpt-oss-120b");
         assert_eq!(ProviderId::Google.default_model(), "gemini-3.1-flash-lite");
         assert_eq!(ProviderId::Openai.default_model(), "gpt-4o-mini-2024-07-18");
+        assert_eq!(ProviderId::Anthropic.default_model(), "claude-haiku-4-5");
         // Google reads both gemini + google model envs (primary first)
         assert_eq!(
             ProviderId::Google.model_env_vars(),
             &["GCM_GEMINI_MODEL", "GCM_GOOGLE_MODEL"]
+        );
+        assert_eq!(
+            ProviderId::Anthropic.model_env_vars(),
+            &["GCM_ANTHROPIC_MODEL"]
         );
     }
 
