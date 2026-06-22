@@ -44,6 +44,12 @@ gcm                              # group changes, show the plan, confirm [Y/n/e]
 gcm                              # run again to commit the next group
 gcm --all                        # skip grouping; commit everything as one
 gcm --dry-run                    # preview the plan (or the --all message); stage/commit nothing
+gcm --plan-only                  # same preview as --dry-run, but never touches the plan cache
+                                 # and can run without an API key on the --all path
+
+gcm --json                       # emit a machine-readable envelope on stdout; diagnostics on stderr
+gcm --json --plan-only           # JSON plan preview; non-destructive
+gcm --json --yes                 # unattended JSON commit
 gcm --yes                        # auto-confirm (non-interactive / CI / agents); alias --no-input
 gcm --provider=google            # use Gemini (also: --provider=openai); default is groq
 gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
@@ -52,6 +58,20 @@ gcm --version                    # build-stamped version (crate version + git sh
 
 At the prompt: `Y`/Enter commits group 1, `n` aborts (exit 0, nothing staged), `e` opens
 `$EDITOR` (default `vim`) to edit group 1's message first.
+
+### Machine-readable mode (`--json`)
+
+When `--json` is set, `gcm` prints exactly one JSON object on stdout and sends all
+logs/warnings to stderr. The envelope always contains `v: 1` and a `status` field:
+`plan`, `noop`, `committed`, `fallback`, or `error`. The `mode` field is one of
+`plan_only`, `dry_run`, `single`, or `grouped`. Use this for CI, agents, and scripts
+that need a stable contract instead of parsing human prose.
+
+Example:
+
+```sh
+gcm --json --plan-only | jq -e '.status == "plan" and .mode == "plan_only"'
+```
 
 ### Providers
 
@@ -78,7 +98,8 @@ supported as `--model` overrides; the default `gpt-4o-mini` is non-reasoning.
 | `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` | per-provider default | Override the API base URL |
 | `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` | per-provider | Override the diff budget |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
-| `GCM_DEBUG` | (unset) | When set (not `0`), print the typed provider error and each retry attempt to stderr |
+| `GCM_DEBUG` | (unset) | Legacy shortcut: when set to a non-empty, non-`0` value it enables debug-level logging (overridden by `GCM_LOG_LEVEL`) |
+| `GCM_LOG_LEVEL` | `off` | Logging level: `off`, `error`, `warn`, `info`, `debug`, `trace`. Precedence over `GCM_DEBUG`; all logs go to stderr |
 | `GCM_RETRY_MAX` | `3` | Max retries for transient (429/5xx) failures |
 | `GCM_RETRY_BASE_MS` | `500` | Base backoff in ms (doubles per attempt) |
 | `GCM_RETRY_MAX_MS` | `8000` | Per-attempt backoff cap in ms |
@@ -104,6 +125,11 @@ with an actionable message rather than hanging on a prompt.
   so it overrides any manual hunk-level (`git add -p`) staging. Group 1's files are staged
   in full; later groups are left unstaged - their changes stay in the working tree and are
   never lost. Use `--all` if you want everything in one commit.
+- **Plan cache**: `gcm` persists the last grouping plan per repo so the next run can
+  commit the next group without re-calling the LLM. Use `--reset` to discard the
+  cached plan and re-analyze from scratch; in `--json` mode `--reset` clears the
+  cache and then emits the normal noop/plan/committed envelope for the current
+  tree (there is no separate `reset` status).
 - **Safe fallback**: if the provider can't return a usable plan (structured output
   unavailable, unparseable JSON, or a plan that references files outside the change set),
   `gcm` announces it and falls back to a single commit. An unresolved merge conflict makes

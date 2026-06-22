@@ -12,17 +12,21 @@ pub enum Decision {
 }
 
 /// Render the message and ask the user to confirm (FR-5). With `auto_yes` the
-/// prompt is skipped and the message is accepted as-is. Assumes the caller has
-/// already enforced the non-TTY guard for the prompting path.
-pub fn confirm(message: &str, auto_yes: bool) -> Result<Decision, GcmError> {
-    print_message(message);
+/// prompt is skipped and the message is accepted as-is. With `quiet` the
+/// message preview is not printed to stdout (used in `--json` mode where stdout
+/// must contain only the machine envelope). Assumes the caller has already
+/// enforced the non-TTY guard for the prompting path.
+pub fn confirm(message: &str, auto_yes: bool, quiet: bool) -> Result<Decision, GcmError> {
+    if !quiet {
+        print_message(message);
+    }
 
     if auto_yes {
         return Ok(Decision::Commit(message.to_string()));
     }
 
-    print!("Commit with this message? [Y/n/e(dit)] ");
-    std::io::stdout().flush().ok();
+    eprint!("Commit with this message? [Y/n/e(dit)] ");
+    std::io::stderr().flush().ok();
 
     let mut response = String::new();
     if std::io::stdin().read_line(&mut response).is_err() {

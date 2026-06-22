@@ -1,31 +1,94 @@
-//! Minimal debug logging gated by the `GCM_DEBUG` env var.
+//! Minimal logging for gcm (CLO-493 / FR-38).
 //!
-//! This is deliberately NOT a logging framework (no levels, targets, or
-//! structured output) - that is CLO-493 (FR-38). It exists so the typed provider
-//! errors and retry attempts (CLO-488) are visible when diagnosing: the task's
-//! acceptance criterion is "the error type is visible in debug logs."
+//! `GCM_LOG_LEVEL` governs the active level (`off|error|warn|info|debug|trace`).
+//! If `GCM_LOG_LEVEL` is unset, the legacy `GCM_DEBUG` flag provides backward
+//! compatibility: any non-empty, non-`0` value enables debug-level output.
+//! All log lines go to stderr.
 
-/// Whether debug logging is on: `GCM_DEBUG` set to anything other than empty or
-/// `0`.
-pub fn enabled() -> bool {
-    debug_flag(std::env::var("GCM_DEBUG").ok().as_deref())
+use std::str::FromStr;
+
+/// Available log levels, ordered from least to most verbose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Level {
+    Off = 0,
+    Error = 1,
+    Warn = 2,
+    Info = 3,
+    Debug = 4,
+    Trace = 5,
 }
 
-/// Pure predicate behind [`enabled`] - testable without mutating the process env.
+impl FromStr for Level {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "off" => Ok(Level::Off),
+            "error" => Ok(Level::Error),
+            "warn" => Ok(Level::Warn),
+            "info" => Ok(Level::Info),
+            "debug" => Ok(Level::Debug),
+            "trace" => Ok(Level::Trace),
+            other => Err(format!("unknown log level '{other}'")),
+        }
+    }
+}
+
+/// The effective log level: `GCM_LOG_LEVEL` wins over the legacy `GCM_DEBUG`
+/// flag. Default is `Off`.
+pub fn log_level() -> Level {
+    if let Ok(v) = std::env::var("GCM_LOG_LEVEL") {
+        if !v.trim().is_empty() {
+            return v.parse().unwrap_or(Level::Off);
+        }
+    }
+    if debug_flag(std::env::var("GCM_DEBUG").ok().as_deref()) {
+        return Level::Debug;
+    }
+    Level::Off
+}
+
+/// Pure predicate behind the legacy `GCM_DEBUG` behaviour.
 fn debug_flag(value: Option<&str>) -> bool {
     matches!(value, Some(v) if !v.is_empty() && v != "0")
 }
 
-/// Emit a `gcm: [debug] ...` line to stderr, but only when [`enabled`]. The
-/// message is formatted with `format_args!` *inside* the `enabled()` guard, so
-/// nothing is formatted or allocated when `GCM_DEBUG` is unset.
+/// Whether a message at `level` would be emitted right now.
+pub fn enabled(level: Level) -> bool {
+    log_level() >= level
+}
+
+/// Emit a single log line to stderr if `level` is enabled.
+#[macro_export]
+macro_rules! log {
+    ($level:expr, $($arg:tt)*) => {
+        if $crate::debug::enabled($level) {
+            eprintln!("gcm: [{}] {}", $level.as_str(), format_args!($($arg)*));
+        }
+    };
+}
+
+/// Convenience macro for debug-level messages. Backwards-compatible with the
+/// pre-CLO-493 `GCM_DEBUG=1` callers used in CLO-488.
 #[macro_export]
 macro_rules! debug_log {
     ($($arg:tt)*) => {
-        if $crate::debug::enabled() {
-            eprintln!("gcm: [debug] {}", format_args!($($arg)*));
-        }
+        $crate::log!($crate::debug::Level::Debug, $($arg)*)
     };
+}
+
+impl Level {
+    /// Lower-case label used in the log prefix.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Level::Off => "off",
+            Level::Error => "error",
+            Level::Warn => "warn",
+            Level::Info => "info",
+            Level::Debug => "debug",
+            Level::Trace => "trace",
+        }
+    }
 }
 
 #[cfg(test)]
@@ -33,14 +96,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flag_on_for_nonempty_nonzero() {
-        assert!(debug_flag(Some("1")));
-        assert!(debug_flag(Some("true")));
-        assert!(debug_flag(Some("yes")));
+    fn level_parsing() {
+        assert_eq!("off".parse::<Level>().unwrap(), Level::Off);
+        assert_eq!("WARN".parse::<Level>().unwrap(), Level::Warn);
+        assert_eq!("  debug ".parse::<Level>().unwrap(), Level::Debug);
+        assert!("bogus".parse::<Level>().is_err());
     }
 
     #[test]
-    fn flag_off_for_unset_empty_or_zero() {
+    fn ordering() {
+        assert!(Level::Debug > Level::Warn);
+        assert!(Level::Off < Level::Error);
+    }
+
+    #[test]
+    fn legacy_debug_flag_unchanged() {
+        assert!(debug_flag(Some("1")));
+        assert!(debug_flag(Some("true")));
+        assert!(debug_flag(Some("yes")));
         assert!(!debug_flag(None));
         assert!(!debug_flag(Some("")));
         assert!(!debug_flag(Some("0")));
