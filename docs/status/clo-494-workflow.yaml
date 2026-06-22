@@ -10,12 +10,13 @@ task_profile:
   has_external_deps: false
   skip_probe: false
 pending_human_action: >-
-  Merge conflict resolved (merge commit a947e11 pushed); PR #11 is now MERGEABLE with CI re-running on the merge commit.
-  Waiting on CI to go green on the new head, then owner squash-merges PR #11 on GitHub.
+  None. PR #11 merged (b6de032); CLO-494 finalized (Linear Done, aggregation files synced). Owner may run `gd` to
+  delete the feat/clo-494-anthropic worktree and branch.
 linear:
   team: Cloud-ai
   project: Personal-health
   status_at_start: Backlog
+  status_at_complete: Done
   blocks:
     - CLO-497
   blocked_by:
@@ -25,10 +26,10 @@ linear:
   priority: Medium
   branch_actual: feat/clo-494-anthropic
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-06-22T07:16:39.555Z'
-  updated_at: '2026-06-22T10:15:32.000Z'
+  updated_at: '2026-06-22T10:44:17.000Z'
 phases:
   discovery:
     status: complete
@@ -184,15 +185,21 @@ phases:
         completion_tokens: 0
         task_label: pre-pr-validation-synthesis
   pr:
-    status: in_progress
+    status: complete
     pr_number: 11
     pr_url: https://github.com/maxkulish/gcm/pull/11
     ci_passed: true
     mergeable: true
     merge_conflict_resolved: true
     merge_commit: a947e11
+    merged: true
+    merged_at: '2026-06-22T10:40:39Z'
+    pr_merge_commit: b6de032
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    linear_status: Done
+    merged_at: '2026-06-22T10:40:39Z'
 history:
   - timestamp: '2026-06-22T07:16:39.555Z'
     action: workflow_started
@@ -380,5 +387,25 @@ history:
       PR #11 mergeable=MERGEABLE after pushing merge commit a947e11 (was CONFLICTING/DIRTY). mergeStateStatus=UNSTABLE
       reflects CI re-running on the new merge commit, not a conflict. Local gate green post-merge: fmt + clippy -D
       warnings + cargo test (156 tests) all pass. Merge-conflict blocker cleared.
+  - timestamp: '2026-06-22T10:40:39.000Z'
+    action: pr_merged
+    phase: pr
+    details: >-
+      Owner squash/merge of PR #11 into main (merge commit b6de032, mergedAt 2026-06-22T10:40:39Z). Both required
+      checks (build/test ubuntu-latest + macos-latest) green; mergeStateStatus=CLEAN at merge.
+  - timestamp: '2026-06-22T10:44:17.000Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      Post-merge finalize in main repo (/Users/mk/Code/gcm). Linear CLO-494 -> Done (completion comment posted).
+      PROJECT.md: CLO-494 master-table Status -> Done, moved to Recently Completed, removed from Up Next, CLO-497
+      blocker list trimmed to CLO-488/490/496. ROADMAP.md: CLO-494 -> Done, Phase 1 completed 8 -> 9. DEPENDENCIES.md:
+      CLO-494 removed from Current Blockers + Unblocked & Ready, added to Recently Resolved Blockers.
+  - timestamp: '2026-06-22T10:44:17.000Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-494 (Add Anthropic provider via forced tool-use) fully complete. PR #11 merged, Linear Done, aggregation
+      files synced on main. Worktree cleanup (gd) left to the owner.
 task_title: Add Anthropic provider via forced tool-use
 task_url: https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use

@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-495 Ollama local provider merged PR #14, Done — zero-egress local provider; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-494 Anthropic provider via forced tool-use merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -28,7 +28,7 @@
 | [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Done | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
 | [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Done | CLO-487 | 37,38,51 |
-| [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Backlog | CLO-489, CLO-485 | 13b,18c |
+| [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Done | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Done | CLO-489 | 56 |
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Backlog | CLO-485, CLO-489 | 40,53,54,55 |
 | [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Backlog | CLO-487…CLO-496 | 42,43,44 |
@@ -67,22 +67,22 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| Medium | CLO-494 | Anthropic provider via forced tool-use | CLO-489 (done), CLO-485 (done) | direct Messages API, forced tool-use |
 | High | CLO-496 | First-run onboarding wizard | CLO-485 (done), CLO-489 (done) | provider setup (HITL) |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
-> **CLO-495** (Ollama local provider, zero-egress) merged 2026-06-22 (PR #14) — Done. CLO-491 (plan cache, PR #7), **CLO-492** (validation, PR #9), **CLO-493** (automation surface, PR #12), **CLO-489** (provider trait, PR #10) all Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. Ready: **CLO-494** (Anthropic), **CLO-496** (onboarding), **CLO-490**. CLO-497 waits on CLO-488/490/494/496.
+> **CLO-494** (Anthropic provider, forced tool-use) merged 2026-06-22 (PR #11) — Done. **CLO-495** (Ollama local provider, zero-egress) merged 2026-06-22 (PR #14) — Done. CLO-491 (plan cache, PR #7), **CLO-492** (validation, PR #9), **CLO-493** (automation surface, PR #12), **CLO-489** (provider trait, PR #10) all Done. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. Ready: **CLO-496** (onboarding), **CLO-490**. CLO-497 waits on CLO-488/490/496.
 
 ## Blocked
 
 | Task | Title | Blocked By | Notes |
 |------|-------|------------|-------|
-| CLO-497 | Release + cutover | CLO-488/490/494/495/496 | Ships after the v1 feature set (CLO-487/489/491/492/493 done; waits on CLO-488/490/494/495/496) |
+| CLO-497 | Release + cutover | CLO-488/490/496 | Ships after the v1 feature set (CLO-487/489/491/492/493/494/495 done; waits on CLO-488/490/496) |
 
 ## Recently Completed
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-494 | Anthropic provider via forced tool-use | 2026-06-22 | Anthropic backend behind the CLO-489 `Provider` trait (FR-13b/18c): direct Messages API (`/v1/messages`) with forced tool-use (`tool_choice:{type:tool,name:commit_plan}`, `input_schema` from `plan::schema()`) for the typed grouping plan. `x-api-key` + `anthropic-version: 2023-06-01` via the new `HttpRequest.extra_headers` Vec; adaptive-thinking content blocks skipped + `<think>` backstop (no CoT into plan/message); `max_tokens` stop_reason guard; default `claude-haiku-4-5`. 15 unit tests (156 total); Codex + Gemini pre-PR validation PASS_WITH_NOTES. Merged origin/main (CLO-495 Ollama + CLO-493 automation) at the PR checkpoint, reconciling `HttpRequest.auth`→`Option` (key-free Ollama) with the new `extra_headers` field. PR #11 merged. |
 | CLO-495 | Ollama local provider (zero-egress) | 2026-06-22 | Local, key-free Ollama backend behind the CLO-489 `Provider` trait (FR-56): native `/api/chat` with a JSON-Schema `format` (modeled on `gemini.rs`), reads `message.content` / ignores `message.thinking`, `stream:false`. `HttpRequest.auth`→`Option` (key-free, no `Authorization` header); `classify_status` no-auth 401/403→`Http`. Actionable errors: unreachable→`Transport` (`ollama serve`/`OLLAMA_HOST`), 404→`Config` (`ollama pull`). `OLLAMA_HOST` scheme/port normalization; default `gemma4:e4b-mlx`; `:cloud`-egress warning. 139 unit + 230 acceptance + real-daemon e2e (gemma4:12b); Gemini+Ollama spec review APPROVE; Codex FAIL→fixed (no-auth env-var leak)→converged. Merged origin/main (CLO-493) at the PR checkpoint. PR #14 (squash) merged. |
 | CLO-489 | Provider trait + Gemini + OpenAI backends | 2026-06-21 | Synchronous `Provider` trait + flag/env registry (`src/provider/`); Groq refactored onto it; Gemini (`generateContent`/`responseSchema`/`thinkingLevel`) + OpenAI (strict `json_schema`, o-series payload path) backends. `GroqError`→provider-agnostic `ProviderError{provider,kind}`; CLO-488 retry engine moved to shared `http.rs`. Selection flag>env>default groq; per-provider model env + diff budgets; cache fingerprint folds provider+model (key unchanged, FR-25); per-model reasoning suppression + `<think>` backstop (no CoT). Behavioral parity for bare `gcm`. 105 unit + 161 acceptance; Gemini PASS + Codex FAIL→fixed→PASS_WITH_NOTES; Copilot no comments. Spec workflow (round-2 user review: 6 pts). Merged origin/main (CLO-492) twice at the PR checkpoint. PR #10 (squash) merged. |
 | CLO-492 | Full plan validation + safe fallback | 2026-06-21 | FR-23 full bijective validation (`plan::validate`): rejects omissions, cross-group duplicates, empty groups (new `PlanError::{EmptyGroup,DuplicateFile,OmittedFile}`) - the bash validator only caught unknown files. FR-46 runtime curated-index warning (`is_staged`/`is_partially_staged` + `ui::curated_index_warning`) before any index reset, even under `--yes`, silent on `--dry-run`. Cache-hit re-validation (`validate_cached`, partition-only) so a pre-CLO-492 cache can't replay an omission. FR-24/FR-47 verified (fallback already post-retry + post-confirm staging + index restore from CLO-488/491). 101 unit + 167 acceptance; Gemini PASS + Codex FAIL→fixed→PASS (caught a cache-hit bypass); Copilot 1 fixed + 1 pushed back. Spec workflow. PR #9 (squash) merged. |
