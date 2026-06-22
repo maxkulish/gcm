@@ -23,6 +23,10 @@ pub enum GcmError {
     /// FR-58). Distinct from [`GcmError::Git`] (pre-commit-step failures, which
     /// restore the index).
     CommitFailed(String),
+    /// First-run setup is needed but there is no terminal to run the wizard
+    /// (CLO-496). The caller prints `config::non_tty_instructions()` to stderr
+    /// and exits non-zero; it occurs before any staging.
+    OnboardingRequired,
 }
 
 impl GcmError {
@@ -59,6 +63,12 @@ impl fmt::Display for GcmError {
                 "{msg}\nThe group is left staged and the plan was not advanced; \
                  fix the issue and re-run gcm to retry this group."
             ),
+            GcmError::OnboardingRequired => write!(
+                f,
+                "no provider is configured and there is no terminal to run setup. \
+                 Run `gcm config` interactively, or export a provider key (e.g. \
+                 GROQ_API_KEY) and set GCM_PROVIDER, then retry."
+            ),
         }
     }
 }
@@ -81,6 +91,8 @@ mod tests {
         assert!(!GcmError::Git("git add failed".to_string()).leaves_staged());
         assert!(!GcmError::UnmergedConflicts.leaves_staged());
         assert!(!GcmError::NotARepo.leaves_staged());
+        // CLO-496: onboarding-required occurs before staging, so nothing is kept.
+        assert!(!GcmError::OnboardingRequired.leaves_staged());
     }
 
     #[test]

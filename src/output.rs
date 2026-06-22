@@ -192,6 +192,7 @@ fn gcm_error_code(err: &GcmError) -> String {
         GcmError::EmptyMessage => "EmptyMessage".to_string(),
         GcmError::UnmergedConflicts => "UnmergedConflicts".to_string(),
         GcmError::CommitFailed(_) => "CommitFailed".to_string(),
+        GcmError::OnboardingRequired => "OnboardingRequired".to_string(),
     }
 }
 
