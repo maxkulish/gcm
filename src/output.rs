@@ -226,7 +226,7 @@ pub fn fallback_raw_code(reason: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{ErrorKind, ProviderError};
+    use crate::provider::ProviderError;
 
     #[test]
     fn noop_has_version_and_status() {

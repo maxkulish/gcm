@@ -22,10 +22,10 @@ linear:
   branch_suggested: kmamemo/clo-493-add-automation-surface-json-non-interactive-flags-structured
   branch_actual: feat/clo-493-add-automation-surface-json-non-interactive-flags-structured
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: active
   created_at: '2026-06-22T07:58:35.361Z'
-  updated_at: '2026-06-22T08:24:08.065Z'
+  updated_at: '2026-06-22T08:37:44.658Z'
 phases:
   discovery:
     status: pending
@@ -34,14 +34,45 @@ phases:
   plan:
     status: pending
   implement:
-    status: validating
-    last_phase_completed: ST1
+    status: complete
+    last_phase_completed: validation
     commits:
+      - c78c740
+      - 3b0906a
+      - 29f45b2
+      - c7dc5b8
       - fa9c3fc
+      - 5d3a68e
     assumption_outcomes: []
     assumptions_revalidated: true
+    codex_report: docs/reviews/clo-493-codex-validation.md
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-493-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-493-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    token_usage:
+      - recorded_at: '2026-06-22T08:36:38.292Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-06-22T08:36:38.292Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-06-22T08:36:38.292Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis
   pr:
-    status: pending
+    status: in_progress
   complete:
     status: pending
   spec:
@@ -160,5 +191,24 @@ history:
     details: >-
       All sub-tasks landed. fmt+clippy+test green; acceptance.sh 214 PASS / 0 FAIL / 1 SKIP. 5 commits on branch.
       Proceeding to validation gate.
+  - timestamp: '2026-06-22T08:36:38.292Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Validation gate passed: Codex FAIL -> Gemini PASS_WITH_NOTES -> Synthesis PASS_WITH_NOTES. Applied one bounded fix
+      iteration: prompt to stderr, mode on early errors, real cached flag, trimmed commit hash, --reset --json
+      documented/tested. cargo test + acceptance.sh green (218 PASS / 0 FAIL / 1 SKIP).
+  - timestamp: '2026-06-22T08:36:52.767Z'
+    action: state_corrected
+    phase: implement
+    details: Corrected implement commits list to include all sub-task commits plus fix iteration.
+  - timestamp: '2026-06-22T08:36:54.765Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-06-22T08:37:44.658Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'Pre-merge gate green: fmt + clippy + clippy --tests + test all pass (125 tests).'
 task_title: 'Add automation surface: --json, non-interactive flags, structured logging'
 task_url: https://linear.app/cloud-ai/issue/CLO-493/add-automation-surface-json-non-interactive-flags-structured-logging
