@@ -26,7 +26,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-06-22T07:16:39.555Z'
-  updated_at: '2026-06-22T08:10:31.100Z'
+  updated_at: '2026-06-22T08:12:34.321Z'
 phases:
   discovery:
     status: complete
@@ -109,6 +109,7 @@ phases:
       - '7149670'
       - 3ebd305
       - 7838d9e
+      - '9466342'
   pr:
     status: pending
   complete:
@@ -204,5 +205,9 @@ history:
     action: subtask_complete
     phase: implement
     details: 'ST3 landed: ProviderId::Anthropic variant + stub anthropic.rs. Commit 7838d9e'
+  - timestamp: '2026-06-22T08:12:34.321Z'
+    action: subtask_complete
+    phase: implement
+    details: 'ST4 landed: full anthropic.rs module with 15 unit tests. Commit 9466342'
 task_title: Add Anthropic provider via forced tool-use
 task_url: https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use
