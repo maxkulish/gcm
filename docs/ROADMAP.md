@@ -1,12 +1,12 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-22 (CLO-490 optional secret scanning + gcmignore implementation complete, ready for PR; CLO-494 Anthropic provider via forced tool-use merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-490 optional secret scanning + gcmignore merged PR #16, Done; CLO-494 Anthropic provider via forced tool-use merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
-| Phase 1: Foundations | 13 | 9 | In Progress |
+| Phase 1: Foundations | 13 | 10 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -19,7 +19,7 @@ Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions; foundational decisions i
 | CLO-487 | Semantic grouping → commit first group | Done | CLO-486 |
 | CLO-488 | Resilient provider calls: typed errors + retries | In Progress | CLO-486 |
 | CLO-489 | Provider trait + Gemini + OpenAI backends | Done | CLO-486, CLO-485 |
-| CLO-490 | Optional secret scanning + `gcmignore` | In Progress | CLO-486 |
+| CLO-490 | Optional secret scanning + `gcmignore` | Done | CLO-486 |
 | CLO-491 | Per-repo plan cache with commit-safe advancement | Done | CLO-487, CLO-485 |
 | CLO-492 | Full plan validation + safe fallback | Done | CLO-487, CLO-488 |
 | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | Done | CLO-487 |

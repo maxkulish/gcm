@@ -22,10 +22,10 @@ depends_on:
   blocks: [CLO-497]
 
 workflow:
-  current_phase: pr
-  status: in_progress
-  last_event: "pre-flight checks passed (de-raced flaky anthropic env test)"
-  updated_at: "2026-06-22T12:50:50Z"
+  current_phase: complete
+  status: complete
+  last_event: "PR #16 merged; task complete"
+  updated_at: "2026-06-22T12:58:30Z"
 
 phases:
   discovery:
@@ -51,12 +51,17 @@ phases:
       cargo_clippy: "pass (-D warnings)"
       acceptance: "pass (237 PASS / 0 FAIL / 1 SKIP; required unsandboxed localhost mock-provider run)"
   pr:
-    status: in_progress
-    pr_url: null
-    pr_number: null
-    ci_passed: false
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/16
+    pr_number: 16
+    ci_passed: true
+    approved: true
     artifact: null
-  complete: { status: pending, artifact: null }
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: "2026-06-22T12:56:17Z"
+    merge_commit: 96fa2c91a336c2d6005a22de396a92e0d4c55144
 
 scope:
   - "`gcmignore` / config glob list excluded from analysis"
@@ -99,3 +104,31 @@ history:
     action: pre_flight_checks_passed
     phase: pr
     details: "cargo fmt --check, cargo clippy --all-targets -D warnings, and cargo test (161 tests, 3x parallel) all pass. Ready to create PR."
+  - timestamp: 2026-06-22T12:53:00Z
+    action: commit_created
+    phase: pr
+    details: "Committed all CLO-490 work as 0cd2890 (single feature commit incl. the de-raced anthropic env test, per user choice)."
+  - timestamp: 2026-06-22T12:53:00Z
+    action: pushed_to_remote
+    phase: pr
+    details: "Pushed feat/clo-490-secret to origin with upstream tracking."
+  - timestamp: 2026-06-22T12:53:00Z
+    action: pr_created
+    phase: pr
+    details: "PR #16 created (https://github.com/maxkulish/gcm/pull/16). Mergeability gate PASS. Linear CLO-490 -> In Review, PR linked, comment posted."
+  - timestamp: 2026-06-22T12:56:00Z
+    action: ci_passed
+    phase: pr
+    details: "CI green on ubuntu-latest and macos-latest (build / test, 36s each)."
+  - timestamp: 2026-06-22T12:58:30Z
+    action: pr_merged
+    phase: pr
+    details: "PR #16 squash-merged to main at 2026-06-22T12:56:17Z (merge commit 96fa2c9). Owner merged on GitHub."
+  - timestamp: 2026-06-22T12:58:30Z
+    action: project_sync_complete
+    phase: complete
+    details: "Pulled merge into main repo. PROJECT.md: CLO-490 -> Done, removed from Active Work, added to Recently Completed. ROADMAP.md: Done, Phase 1 completed 9 -> 10. DEPENDENCIES.md: CLO-497 blockers CLO-488/490/496 -> CLO-488/496, CLO-490 added to Recently Resolved. Linear CLO-490 -> Done with completion comment."
+  - timestamp: 2026-06-22T12:58:30Z
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-490 fully completed. Worktree cleanup (gd) left to the user."
