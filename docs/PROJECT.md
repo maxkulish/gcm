@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-21 (CLO-489 provider trait + Gemini/OpenAI merged PR #10, Done — unblocks CLO-494/495/496; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-493 automation surface merged PR #12, Done — stable JSON envelopes, --plan-only, GCM_LOG_LEVEL; CLO-497 blocker list shrinks to CLO-488/490/494/495/496)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -27,7 +27,7 @@
 | [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
 | [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Done | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
-| [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Backlog | CLO-487 | 37,38,51 |
+| [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Done | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Backlog | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Backlog | CLO-489 | 56 |
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Backlog | CLO-485, CLO-489 | 40,53,54,55 |
@@ -79,7 +79,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Blocked By | Notes |
 |------|-------|------------|-------|
-| CLO-497 | Release + cutover | CLO-488…CLO-496 | Ships after the v1 feature set (CLO-487/489/491/492 done; waits on CLO-488/490/493/494/495/496) |
+| CLO-497 | Release + cutover | CLO-488/490/494/495/496 | Ships after the v1 feature set (CLO-487/489/491/492/493 done; waits on CLO-488/490/494/495/496) |
 
 ## Recently Completed
 

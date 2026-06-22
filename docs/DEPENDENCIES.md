@@ -6,7 +6,7 @@
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| CLO-497 | CLO-488…CLO-496 | Backlog | Release + cutover (last); CLO-487/489/491/492 satisfied (still waits on CLO-488/490/493/494/495/496) |
+| CLO-497 | CLO-488/490/494/495/496 | Backlog | Release + cutover (last); CLO-487/489/491/492/493 satisfied (still waits on CLO-488/490/494/495/496) |
 
 ## Unblocked & Ready
 
@@ -15,7 +15,6 @@
 | CLO-494 | CLO-489 + CLO-485 complete | 2026-06-21 |
 | CLO-495 | CLO-489 complete | 2026-06-21 |
 | CLO-496 | CLO-489 + CLO-485 complete | 2026-06-21 |
-| CLO-493 | CLO-487 (grouping merged) | 2026-06-20 |
 | CLO-490 | CLO-486 (tracer merged) | 2026-06-19 |
 
-> CLO-489 merged on main 2026-06-21 (PR #10, `ca1db75`, Done) — **unblocks CLO-494 (Anthropic), CLO-495 (Ollama), CLO-496 (onboarding)**, now all Ready. CLO-488 PR #6 merged on main 2026-06-21 (post-merge sync pending in its own workflow). CLO-491 + CLO-492 merged on main 2026-06-21. CLO-497 still waits on the rest of the feature set.
+> CLO-493 merged on main 2026-06-22 (PR #12, Done) — no new downstream unblock. CLO-489 merged on main 2026-06-21 (PR #10, `ca1db75`, Done) — **unblocks CLO-494 (Anthropic), CLO-495 (Ollama), CLO-496 (onboarding)**, now all Ready. CLO-488 PR #6 merged on main 2026-06-21 (post-merge sync pending in its own workflow). CLO-491 + CLO-492 merged on main 2026-06-21. CLO-497 still waits on CLO-488/490/494/495/496.

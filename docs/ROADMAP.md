@@ -1,12 +1,12 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-21 (CLO-489 provider trait + Gemini/OpenAI merged PR #10, Done; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
-| Phase 1: Foundations | 13 | 6 | In Progress |
+| Phase 1: Foundations | 13 | 7 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -22,4 +22,4 @@ Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions; foundational decisions i
 | CLO-490 | Optional secret scanning + `gcmignore` | Ready | CLO-486 |
 | CLO-491 | Per-repo plan cache with commit-safe advancement | Done | CLO-487, CLO-485 |
 | CLO-492 | Full plan validation + safe fallback | Done | CLO-487, CLO-488 |
-| CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | Ready | CLO-487 |
+| CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | Done | CLO-487 |
