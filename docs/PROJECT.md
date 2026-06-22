@@ -6,7 +6,7 @@
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-494](https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use) | Add Anthropic provider via forced tool-use | In Progress | Discovery | - |
+| [CLO-494](https://linear.app/cloud-ai/issue/CLO-494/add-anthropic-provider-via-forced-tool-use) | Add Anthropic provider via forced tool-use | In Progress | Validating | - |
 
 ## Up Next (Prioritized Backlog)
 

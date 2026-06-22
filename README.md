@@ -8,14 +8,14 @@ logical commit groups (a typed JSON plan via structured outputs), shows you the 
 and commits the **first** group with its own message. Run it again to commit the next
 group - a mixed change set becomes a series of clean, atomic commits. `--all` skips
 grouping and commits everything as one. Providers are selectable by flag/env -
-**Groq** (default), **Google (Gemini)**, and **OpenAI** - each via direct HTTP per its
+**Groq** (default), **Google (Gemini)**, **OpenAI**, and **Anthropic** - each via direct HTTP per its
 verified capability. Architecture is fixed by
 [ADR-001](docs/adrs/001-foundational-architecture-decisions.md).
 
 ## Privacy / data egress
 
 `gcm` sends your **working-tree diff** and the **content of untracked, non-gitignored
-files** to the configured LLM provider (Groq by default; Google or OpenAI when selected)
+files** to the configured LLM provider (Groq by default; Google, OpenAI, or Anthropic when selected)
 to generate the grouping plan and commit messages. Gitignored files (for example `.env`)
 are gathered with `git --exclude-standard` and are **never sent**. Review the selected
 provider's data policy before use. This disclosure is also printed by `gcm --help`.
@@ -23,8 +23,8 @@ provider's data policy before use. This disclosure is also printed by `gcm --hel
 ## Requirements
 
 - Rust 1.75+ (build) / a `git` binary on `PATH` (runtime)
-- An API key for the selected provider: `GROQ_API_KEY` (default), `GEMINI_API_KEY`, or
-  `OPENAI_API_KEY`
+- An API key for the selected provider: `GROQ_API_KEY` (default), `GEMINI_API_KEY`,
+  `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 - git commit signing configured (`commit.gpgsign=true` with a usable GPG or SSH key);
   every commit is signed (`git commit -S`)
 
@@ -45,8 +45,9 @@ gcm                              # run again to commit the next group
 gcm --all                        # skip grouping; commit everything as one
 gcm --dry-run                    # preview the plan (or the --all message); stage/commit nothing
 gcm --yes                        # auto-confirm (non-interactive / CI / agents); alias --no-input
-gcm --provider=google            # use Gemini (also: --provider=openai); default is groq
+gcm --provider=google            # use Gemini (also: --provider=openai, --provider=anthropic); default is groq
 gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
+gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
@@ -63,6 +64,7 @@ Override the model with `--model` or the per-provider env var.
 | Groq (default) | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `GCM_GROQ_MODEL` | strict `json_schema` |
 | Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
 | OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini-2024-07-18` | `GCM_OPENAI_MODEL` | strict `json_schema` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` | `GCM_ANTHROPIC_MODEL` | forced tool-use (`input_schema`) |
 
 Reasoning models emit no chain-of-thought into the plan or message (per-provider
 suppression + a `<think>` backstop). OpenAI reasoning models (`o1`/`o3`-style) are
@@ -72,10 +74,10 @@ supported as `--model` overrides; the default `gpt-4o-mini` is non-reasoning.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` | (one required) | API key for the selected provider |
-| `GCM_PROVIDER` | `groq` | Provider: `groq`, `google`, or `openai` (flag `--provider` wins) |
-| `GCM_GROQ_MODEL` / `GCM_GEMINI_MODEL` / `GCM_OPENAI_MODEL` | per-provider default | Model id (flag `--model` wins) |
-| `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` | per-provider default | Override the API base URL |
+| `GROQ_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | (one required) | API key for the selected provider |
+| `GCM_PROVIDER` | `groq` | Provider: `groq`, `google`, `openai`, or `anthropic` (flag `--provider` wins) |
+| `GCM_GROQ_MODEL` / `GCM_GEMINI_MODEL` / `GCM_OPENAI_MODEL` / `GCM_ANTHROPIC_MODEL` | per-provider default | Model id (flag `--model` wins) |
+| `GCM_GROQ_BASE_URL` / `GCM_GEMINI_BASE_URL` / `GCM_OPENAI_BASE_URL` / `GCM_ANTHROPIC_BASE_URL` | per-provider default | Override the API base URL |
 | `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` | per-provider | Override the diff budget |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
 | `GCM_DEBUG` | (unset) | When set (not `0`), print the typed provider error and each retry attempt to stderr |

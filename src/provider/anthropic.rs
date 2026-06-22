@@ -502,6 +502,35 @@ mod tests {
     }
 
     #[test]
+    fn base_url_override_from_env() {
+        let prev = std::env::var("GCM_ANTHROPIC_BASE_URL").ok();
+        std::env::set_var("GCM_ANTHROPIC_BASE_URL", "http://localhost:8080");
+        let a = Anthropic::new("claude-haiku-4-5".to_string());
+        assert_eq!(a.base_url(), "http://localhost:8080");
+        // Restore
+        if let Some(u) = prev {
+            std::env::set_var("GCM_ANTHROPIC_BASE_URL", u);
+        } else {
+            std::env::remove_var("GCM_ANTHROPIC_BASE_URL");
+        }
+    }
+
+    #[test]
+    fn request_sends_correct_headers() {
+        // Verify the request() method produces the expected auth + extra headers.
+        let a = Anthropic::new("claude-haiku-4-5".to_string());
+        let payload = serde_json::json!({"model": "test"});
+        let req = a.request("sk-ant-test", &payload);
+        assert_eq!(req.auth.0, "x-api-key");
+        assert_eq!(req.auth.1, "sk-ant-test");
+        assert!(req
+            .extra_headers
+            .iter()
+            .any(|(n, v)| { *n == "anthropic-version" && v == "2023-06-01" }));
+        assert_eq!(req.endpoint, "https://api.anthropic.com/v1/messages");
+    }
+
+    #[test]
     fn api_key_missing_is_typed_error() {
         // Temporarily unset ANTHROPIC_API_KEY
         let prev = std::env::var(API_KEY_ENV).ok();

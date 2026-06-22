@@ -400,6 +400,7 @@ mod tests {
         assert!(matches!(err.kind, ErrorKind::Config(_)));
         assert!(err.to_string().contains("bogus"));
         assert!(err.to_string().contains("groq"));
+        assert!(err.to_string().contains("anthropic"));
     }
 
     #[test]
