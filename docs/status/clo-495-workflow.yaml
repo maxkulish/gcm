@@ -116,12 +116,23 @@ phases:
         findings_applied:
           - "LOW (auth_env_var, same as Codex MEDIUM): fixed as above."
           - "Optional Prefer (:cloud warning): IMPLEMENTED - select() emits a one-line stderr note when the model ends with ':cloud' (NOT zero-egress). +AC-O6 acceptance."
-      fix_commit: pending   # committed below
+      fix_commit: 4c74b8e
       converged: true   # Gemini PASS_WITH_NOTES; Codex FAIL -> the one real finding (auth_env_var) fixed + regression-tested; coverage gaps closed; manual e2e done
     codex_validated: true
     codex_verdict: "FAIL -> fixed (auth_env_var no-auth path + coverage); converged"
     gemini_verdict: PASS_WITH_NOTES
-  pr:        { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/14
+    pr_number: 14
+    base: main
+    head: feat/clo-495-ollama
+    pre_flight: "cargo fmt --check / clippy --all-targets -D warnings / 132 tests - all clean before PR"
+    commits:
+      - { sha: 14a1d1f, summary: "feat(CLO-495): Ollama local provider for zero-egress commits" }
+      - { sha: 4c74b8e, summary: "fix(CLO-495): no-auth 401/403 path + validation-gate coverage" }
+    ci_passed: false
+    approved: false
   complete:  { status: pending }
 
 # Scope checklist (from the Linear task)
@@ -166,4 +177,20 @@ history:
   - timestamp: 2026-06-22T10:55:00Z
     action: codex_validation_complete
     phase: implement
-    details: "Dual-model gate (both read-only). Gemini PASS_WITH_NOTES; Codex FAIL. Both flagged the SAME real issue (Codex MEDIUM / Gemini LOW): send_once passed auth_env_var to classify_status unconditionally, so a no-auth (Ollama-proxy) 401/403 rendered a broken Auth message with an empty env var - violating the spec's Some-path constraint. VERIFIED against http.rs + the Display impls and fixed: classify_status takes Option<&'static str>; None+401/403 -> Http(status); +regression test. Closed Codex coverage gaps (select(Some(Ollama),None) eval row 4; GCM_PROVIDER=ollama AC-O5; chat_endpoint trailing-slash). Implemented Gemini's optional :cloud stderr warning (+AC-O6). Pushed back on Codex's 'AC-5 env cases untested' (covered by pure resolve_base_url/normalize_host; env-global tests are flaky). Ran the real local-daemon e2e (gemma4:12b) -> AC-1/AC-6 confirmed. Post-fix: 132 unit + 200 acceptance green, fmt/clippy clean. Converged. NOTE: a sandbox /tmp-rewrite corrupted the working-tree acceptance.sh after the first commit (all /tmp/gcm-out -> repo-absolute paths); restored from HEAD (commit was clean) and re-ran with the sandbox disabled."
+    details: "Dual-model gate (both read-only). Gemini PASS_WITH_NOTES; Codex FAIL. Both flagged the SAME real issue (Codex MEDIUM / Gemini LOW): send_once passed auth_env_var to classify_status unconditionally, so a no-auth (Ollama-proxy) 401/403 rendered a broken Auth message with an empty env var - violating the spec's Some-path constraint. VERIFIED against http.rs + the Display impls and fixed: classify_status takes Option<&'static str>; None+401/403 -> Http(status); +regression test. Closed Codex coverage gaps (select(Some(Ollama),None) eval row 4; GCM_PROVIDER=ollama AC-O5; chat_endpoint trailing-slash). Implemented Gemini's optional :cloud stderr warning (+AC-O6). Pushed back on Codex's 'AC-5 env cases untested' (covered by pure resolve_base_url/normalize_host; env-global tests are flaky). Ran the real local-daemon e2e (gemma4:12b) -> AC-1/AC-6 confirmed. Post-fix: 132 unit + 200 acceptance green, fmt/clippy clean. Converged. Fix commit 4c74b8e. NOTE: a sandbox /tmp-rewrite corrupted the working-tree acceptance.sh after the first commit (all /tmp/gcm-out -> repo-absolute paths); restored from HEAD (commit was clean) and re-ran with the sandbox disabled."
+  - timestamp: 2026-06-22T11:05:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check clean; cargo clippy --all-targets -D warnings clean; 132 unit tests pass; release build ok. acceptance.sh on-disk integrity re-verified (165 /tmp/gcm-out, 0 absolute) after the sandbox-rewrite incident."
+  - timestamp: 2026-06-22T11:05:00Z
+    action: pushed_to_remote
+    phase: pr
+    details: "Pushed feat/clo-495-ollama to origin (github.com/maxkulish/gcm), new tracking branch. Commits 14a1d1f + 4c74b8e."
+  - timestamp: 2026-06-22T11:06:00Z
+    action: pr_created
+    phase: pr
+    details: "PR #14 opened against main: https://github.com/maxkulish/gcm/pull/14. Body covers the 8 ACs, native /api/chat design (ADR-001 #8), key-free Option<auth>, actionable errors, :cloud non-zero-egress caveat, 132 unit + 200 acceptance + real-daemon e2e + validation gate. Monitoring CI."
+  - timestamp: 2026-06-22T11:20:00Z
+    action: review_addressed
+    phase: pr
+    details: "PR #14 was CONFLICTING/DIRTY: main advanced while CLO-495 was in flight (CLO-493 automation surface merged via PR #12/#13/#15). Merged origin/main into feat/clo-495-ollama. Conflicts in src/cli.rs (EGRESS_DISCLOSURE: combined CLO-493's MACHINE MODE/LOGGING blocks with CLO-495's ollama PROVIDER + :cloud PRIVACY lines), docs/PROJECT.md + docs/ROADMAP.md (Last Updated + status rows: CLO-493->Done, CLO-495->In Progress/PR, kept the 494-497 roadmap rows). provider/* did not conflict. Post-merge: 139 unit + 230 acceptance green (CLO-493 + CLO-495 combined), fmt/clippy(-D warnings) clean, acceptance.sh integrity re-verified. Re-pushing to clear the conflict + trigger CI."

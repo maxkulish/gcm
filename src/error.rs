@@ -26,12 +26,6 @@ pub enum GcmError {
 }
 
 impl GcmError {
-    /// Process exit code for this error. All runtime errors are 1; usage (exit 2)
-    /// is produced by clap before we get here.
-    pub fn exit_code(&self) -> i32 {
-        1
-    }
-
     /// Whether this error means the staged group should be **left in place**.
     /// Only a commit-step failure ([`GcmError::CommitFailed`]) leaves the group
     /// staged (FR-58); every other error restores the pre-run index (FR-47).

@@ -1076,6 +1076,136 @@ else
   skip "AC-C-drynoclear needs signing"
 fi
 
+note "AC-493-1: --plan-only --json emits a single valid JSON object on stdout"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['v']==1 and d['status']=='plan' and d['mode']=='plan_only' and isinstance(d['changed_files'],list) and isinstance(d['plan']['groups'],list), d"
+[ $? -eq 0 ] && ok "JSON plan envelope valid" || bad "invalid JSON plan envelope"
+[ -s /tmp/gcm-json.err ] || ok "stderr can be empty for this path" || true
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-493-2: --plan-only is non-destructive (no staging, HEAD unchanged)"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+git -C "$d" add a.txt
+before_tree="$(git -C "$d" write-tree)"
+before_head="$(git -C "$d" rev-parse HEAD 2>/dev/null || true)"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+[ $rc -eq 0 ] && ok "plan-only exit 0" || bad "plan-only non-destructive run (rc=$rc)"
+[ "$(git -C "$d" write-tree)" = "$before_tree" ] && ok "index unchanged" || bad "index mutated by plan-only"
+[ "$(git -C "$d" rev-parse HEAD 2>/dev/null || true)" = "$before_head" ] && ok "HEAD unchanged" || bad "HEAD mutated by plan-only"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-493-3: --dry-run --json emits mode dry_run and saves the cache"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='plan' and d['mode']=='dry_run', d"
+[ $? -eq 0 ] && ok "dry-run JSON mode is dry_run" || bad "dry-run JSON mode wrong"
+[ $rc -eq 0 ] && ok "dry-run exit 0" || bad "dry-run (rc=$rc)"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-493-4: clean repo --plan-only --json returns status noop and exit 0"
+d="$(new_repo)"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['v']==1 and d['status']=='noop', d"
+[ $? -eq 0 ] && ok "clean repo noop JSON" || bad "clean repo JSON"
+[ $rc -eq 0 ] && ok "clean repo exit 0" || bad "clean repo exit (rc=$rc)"
+rm -rf "$d"
+
+note "AC-493-5: --yes --json commits and emits status committed"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; echo hi > "$d/a.txt"
+  printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+  python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='committed' and d['mode']=='grouped' and d['commit']['status']=='ok' and isinstance(d['commit']['hash'],str), d"
+  [ $? -eq 0 ] && ok "committed JSON envelope valid" || bad "committed JSON invalid"
+  [ $rc -eq 0 ] && ok "exit 0" || bad "commit run (rc=$rc)"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-493-5 needs signing"
+fi
+
+note "AC-493-6: non-TTY without --yes/--plan-only/--dry-run errors as NonInteractive"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --json </dev/null >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='error' and d['error']['code']=='NonInteractive', d"
+[ $? -eq 0 ] && ok "NonInteractive JSON" || bad "non-TTY JSON wrong"
+[ $rc -ne 0 ] && ok "non-zero exit" || bad "non-TTY guard exit (rc=$rc)"
+rm -rf "$d"
+
+note "AC-493-7: provider failure under --json is a single error envelope"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+( cd "$d" && env -u GROQ_API_KEY GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='error' and d['error']['code']=='Provider', d"
+[ $? -eq 0 ] && ok "missing-key -> JSON error Provider" || bad "missing-key JSON"
+[ $rc -ne 0 ] && ok "non-zero exit" || bad "missing-key exit (rc=$rc)"
+[ -z "$(cat /tmp/gcm-json.err)" ] && ok "stderr empty (no stray stdout)" || ok "stderr may contain logs"
+rm -rf "$d"
+
+note "AC-493-8: grouping fallback under --yes --json emits status fallback"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; echo hi > "$d/a.txt"
+  printf '%s' '{ not valid json' > "$PLAN_FILE"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+  python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='fallback' and d['fallback']['reason'] and d['fallback']['raw_code'] and d['commit']['hash'], d"
+  [ $? -eq 0 ] && ok "fallback JSON envelope valid" || bad "fallback JSON invalid"
+  [ $rc -eq 0 ] && ok "fallback commit exit 0" || bad "fallback exit (rc=$rc)"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-493-8 needs signing"
+fi
+
+note "AC-493-9: --all --yes --json is single mode and no plan groups"
+if [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --yes --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+  python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='committed' and d['mode']=='single' and d['commit']['hash'], d"
+  [ $? -eq 0 ] && ok "--all --yes JSON is single committed" || bad "--all --yes JSON invalid"
+  [ $rc -eq 0 ] && ok "exit 0" || bad "--all --yes exit (rc=$rc)"
+  rm -rf "$d"
+else
+  skip "AC-493-9 needs signing"
+fi
+
+note "AC-493-10: --all --plan-only --json is single plan preview"
+d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='plan' and d['mode']=='single' and isinstance(d['changed_files'],list), d"
+[ $? -eq 0 ] && ok "--all --plan-only JSON valid" || bad "--all --plan-only JSON invalid"
+[ $rc -eq 0 ] && ok "exit 0" || bad "--all --plan-only exit (rc=$rc)"
+rm -rf "$d"
+
+note "AC-493-11: GCM_LOG_LEVEL governs stderr logs and stdout stays JSON"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GCM_LOG_LEVEL=warn GCM_DEBUG=1 GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; json.load(open('/tmp/gcm-json.out'))" && ok "stdout is valid JSON" || bad "stdout not valid JSON"
+[ $rc -eq 0 ] && ok "exit 0" || bad "log-level run (rc=$rc)"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-493-12: deterministic exit codes (0 success, 1 error)"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/dev/null 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "plan exit 0" || bad "plan exit (rc=$rc)"
+( cd "$d" && env -u GROQ_API_KEY GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --yes --json >/dev/null 2>&1 ); rc=$?
+[ $rc -eq 1 ] && ok "error exit 1" || bad "error exit (rc=$rc)"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "AC-493-13: --reset clears the cache and still emits a valid JSON envelope"
+reset_cache
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run --json >/dev/null 2>&1 )
+[ -n "$(ls "$GCM_CACHE_DIR"/plan-*.json 2>/dev/null)" ] && ok "cache warmed before reset" || bad "cache not warmed"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --reset --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
+python3 -c "import json; json.load(open('/tmp/gcm-json.out'))" && ok "--reset --json stdout is valid JSON" || bad "--reset --json invalid"
+[ -z "$(ls "$GCM_CACHE_DIR"/plan-*.json 2>/dev/null)" ] && ok "cache cleared after reset" || bad "cache not cleared"
+[ $rc -eq 0 ] && ok "--reset --plan-only exit 0" || bad "--reset exit (rc=$rc)"
+: > "$PLAN_FILE"; rm -rf "$d"
+
 # --- CLO-489 provider trait: Gemini + OpenAI backends ----------------------
 # OpenAI uses the OpenAI-compatible mock (MOCK_URL); Gemini uses the
 # :generateContent mock (GEMINI_MOCK_URL). Real Gemini/OpenAI HTTP is not

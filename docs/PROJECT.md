@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-495 Ollama local provider started — Spec phase, Active Work; CLO-489 provider trait + Gemini/OpenAI merged PR #10, Done — unblocks CLO-494/495/496; CLO-492 merged PR #9; CLO-488 PR #6 merged; CLO-491 merged on main)
+**Last Updated**: 2026-06-22 (CLO-495 Ollama local provider — PR #14 open, in PR phase; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-488 PR #6; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -27,7 +27,7 @@
 | [CLO-490](https://linear.app/cloud-ai/issue/CLO-490) | S10 | Optional secret scanning + `gcmignore` | AFK | Low | Backlog | CLO-486 | 50 |
 | [CLO-491](https://linear.app/cloud-ai/issue/CLO-491) | S3 | Per-repo plan cache with commit-safe advancement | AFK | High | Done | CLO-487, CLO-485 | 2,8,25,26,27,28,29,30,45,58 |
 | [CLO-492](https://linear.app/cloud-ai/issue/CLO-492) | S5 | Full plan validation + safe fallback | AFK | High | Done | CLO-487, CLO-488 | 23,24,46,47 |
-| [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Backlog | CLO-487 | 37,38,51 |
+| [CLO-493](https://linear.app/cloud-ai/issue/CLO-493) | S9 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | AFK | Medium | Done | CLO-487 | 37,38,51 |
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Backlog | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | In Progress | CLO-489 | 56 |
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Backlog | CLO-485, CLO-489 | 40,53,54,55 |
@@ -62,7 +62,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-488](https://linear.app/cloud-ai/issue/CLO-488) | Resilient provider calls: typed errors + retries | In Progress | PR | - |
-| [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | Ollama local provider (zero-egress) | In Progress | Spec | - |
+| [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | Ollama local provider (zero-egress) | In Progress | PR | - |
 
 ## Up Next (Ready - no open blockers)
 
@@ -70,7 +70,6 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 |----------|------|-------|--------------|--------|
 | Medium | CLO-494 | Anthropic provider via forced tool-use | CLO-489 (done), CLO-485 (done) | direct Messages API, forced tool-use |
 | High | CLO-496 | First-run onboarding wizard | CLO-485 (done), CLO-489 (done) | provider setup (HITL) |
-| Medium | CLO-493 | Automation surface: `--json`, `--yes`/`--plan-only`, logging | CLO-487 (done) | automation flags on the grouping path |
 | Low | CLO-490 | Optional secret scanning + `gcmignore` | CLO-486 (done) | optional |
 
 > **CLO-495** (Ollama local provider) started 2026-06-22 — Spec phase, in Active Work. CLO-491 (plan cache) merged (PR #7). **CLO-492** (validation + fallback) merged (PR #9). **CLO-489** (provider trait + Gemini + OpenAI) merged (PR #10, `ca1db75`) — Done; **unblocked CLO-494/495/496**. **CLO-488** (typed errors + retries) merged (PR #6, `9052a7e`) — post-merge sync pending in its own workflow. **CLO-494**, **CLO-496**, **CLO-490**, **CLO-493** ready. CLO-497 waits on the rest of the feature set.
@@ -79,7 +78,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Blocked By | Notes |
 |------|-------|------------|-------|
-| CLO-497 | Release + cutover | CLO-488…CLO-496 | Ships after the v1 feature set (CLO-487/489/491/492 done; waits on CLO-488/490/493/494/495/496) |
+| CLO-497 | Release + cutover | CLO-488/490/494/495/496 | Ships after the v1 feature set (CLO-487/489/491/492/493 done; waits on CLO-488/490/494/495/496) |
 
 ## Recently Completed
 
