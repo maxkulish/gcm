@@ -195,10 +195,7 @@ enum ContentBlock {
 /// - Empty content → `EmptyResponse`
 /// - `thinking` blocks are silently skipped
 fn extract_tool_use_input(provider: &'static str, raw: &str) -> Result<String, ProviderError> {
-    let err = |kind| ProviderError {
-        provider,
-        kind,
-    };
+    let err = |kind| ProviderError { provider, kind };
     let resp: AnthropicResponse =
         serde_json::from_str(raw).map_err(|e| err(ErrorKind::Deserialize(e.to_string())))?;
 
@@ -268,10 +265,7 @@ fn extract_tool_use_input(provider: &'static str, raw: &str) -> Result<String, P
 /// `generate_message`). Concatenates all `text` content blocks, applies
 /// `strip_think()`, and trims. Returns empty string if no text blocks.
 fn extract_text_content(provider: &'static str, raw: &str) -> Result<String, ProviderError> {
-    let err = |kind| ProviderError {
-        provider,
-        kind,
-    };
+    let err = |kind| ProviderError { provider, kind };
     let resp: AnthropicResponse =
         serde_json::from_str(raw).map_err(|e| err(ErrorKind::Deserialize(e.to_string())))?;
 
@@ -514,7 +508,12 @@ mod tests {
         std::env::remove_var(API_KEY_ENV);
         let a = Anthropic::new("claude-haiku-4-5".to_string());
         let err = a.api_key().unwrap_err();
-        assert!(matches!(err.kind, ErrorKind::MissingKey { env_var: "ANTHROPIC_API_KEY" }));
+        assert!(matches!(
+            err.kind,
+            ErrorKind::MissingKey {
+                env_var: "ANTHROPIC_API_KEY"
+            }
+        ));
         // Restore
         if let Some(k) = prev {
             std::env::set_var(API_KEY_ENV, k);
