@@ -64,6 +64,11 @@ impl Repo {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 
+    /// The full SHA of HEAD after a successful commit.
+    pub fn last_commit_hash(&self) -> Result<String, GcmError> {
+        self.capture(&["rev-parse", "HEAD"])
+    }
+
     /// Whether HEAD resolves (false on an unborn branch / fresh repo).
     pub fn has_head(&self) -> bool {
         self.git(&["rev-parse", "--verify", "--quiet", "HEAD"])
@@ -209,26 +214,27 @@ impl Repo {
         self.capture(&["add", "-A"]).map(|_| ())
     }
 
-    /// Create a signed commit (FR-4). Stdio is inherited so GPG/SSH passphrase
-    /// (pinentry) prompts work on the user's terminal.
-    ///
-    /// A non-zero `git commit` (a rejecting pre-commit hook, a signing failure)
-    /// returns [`GcmError::CommitFailed`], not [`GcmError::Git`]: the caller
-    /// leaves the staged group in place and does not advance the plan cache
-    /// (CLO-491, FR-58). A failure to even spawn `git` is a `Git` error (no
-    /// commit was attempted, so the staged group should be rolled back).
+    /// Create a signed commit (FR-4). Stdin is inherited so GPG/SSH passphrase
+    /// (pinentry) prompts work on the user's terminal. Stdout is piped and kept
+    /// off the main stdout stream: in `--json` mode the consumer expects a
+    /// single JSON object, and in plain mode we print our own outcome text.
     pub fn commit_signed(&self, message: &str) -> Result<(), GcmError> {
-        let status = self
+        let output = self
             .git(&["commit", "-S", "-m", message])
             .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
+            .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .status()
+            .output()
             .map_err(|e| GcmError::Git(format!("failed to run git commit: {e}")))?;
-        if !status.success() {
+        if !output.status.success() {
             return Err(GcmError::CommitFailed(
                 "git commit failed (see output above)".to_string(),
             ));
+        }
+        // Any git commit summary output is a log-line, not machine output.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            eprintln!("{stdout}");
         }
         Ok(())
     }
