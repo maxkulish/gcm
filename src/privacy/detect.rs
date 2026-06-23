@@ -29,16 +29,18 @@ const GENERIC_MIN_LEN: usize = 16;
 /// keyword (keyword fast path), down to this floor.
 const KEYWORD_MIN_LEN: usize = 8;
 
-/// Identifiers that mark a value as security-sensitive, lowering the bar.
+/// Identifier substrings that mark a value as security-sensitive, lowering
+/// the bar. Keep this aligned with the legacy assignment detector's allowlist
+/// so the keyword fast path preserves AC7 without widening to broad fragments
+/// like `key`, `api`, or `auth` (for example, `monkey` is not sensitive).
 const SENSITIVE_KEYWORDS: &[&str] = &[
-    "key",
+    "api_key",
+    "apikey",
+    "access_key",
     "secret",
     "token",
     "password",
-    "passwd",
-    "credential",
-    "auth",
-    "api",
+    "private_key",
 ];
 
 /// Inline pragmas that mute detection on a line.
@@ -386,6 +388,15 @@ mod tests {
     fn ac7_keyworded_low_entropy_value_still_detected() {
         assert!(detects("password=aaaaaaaa"));
         assert!(detects("token=abcdabcd"));
+        assert!(detects("my_api_key=aaaaaaaa"));
+        assert!(detects("access_key_id=aaaaaaaa"));
+    }
+
+    #[test]
+    fn broad_keyword_substrings_do_not_trigger_fast_path() {
+        assert!(!detects("monkey=aaaaaaaa"));
+        assert!(!detects("api_version=aaaaaaaa"));
+        assert!(!detects("auth_method=aaaaaaaa"));
     }
 
     // Boundary regression: two secrets separated by one delimiter, both caught.
@@ -429,9 +440,22 @@ mod tests {
     }
 
     #[test]
+    fn deleted_lockfile_path_uses_diff_git_not_dev_null() {
+        let diff = "diff --git a/package-lock.json b/package-lock.json\n--- a/package-lock.json\n+++ /dev/null\n-random_value = 3cjcjg988jrskbxx\n";
+        assert!(!detects(diff));
+    }
+
+    #[test]
     fn utf8_adjacent_secret_no_panic() {
         let text = "ключ = sk-abcDEF0123456789ghiJKLmnopQRS";
         let _ = secret_ranges(text, engine()); // must not panic on byte slicing
         assert!(detects(text));
+    }
+
+    #[test]
+    fn utf8_redaction_slices_on_char_boundaries() {
+        let text = "префикс🔐 token = sk-abcDEF0123456789ghiJKLmnopQRS суффикс";
+        let out = redact_secrets(text, engine());
+        assert!(out.contains("префикс🔐 token = [REDACTED: secret] суффикс"));
     }
 }
