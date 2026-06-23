@@ -281,6 +281,27 @@ printf 'API_KEY=supersecretvalue12345\n' > "$d/creds.txt"
 [ ! -s "$CAPTURE" ] && ok "abort mode sent no provider request" || bad "abort mode still sent provider request"
 rm -rf "$d"
 
+note "AC-S4 (CLO-514/FR-60): generic prefix-less credential GITLAB=\"...\" is caught (abort + redact)"
+d="$(new_repo)"
+printf 'GITLAB="3cjcjg988jrskbxx"\n' > "$d/.env"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run --secret-scan=abort >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 1 ] && grep -qi "secret scan detected" /tmp/gcm-out && ok "generic GITLAB token aborts egress" || bad "generic GITLAB token NOT caught (rc=$rc): $(cat /tmp/gcm-out)"
+[ ! -s "$CAPTURE" ] && ok "abort sent no provider request for generic token" || bad "abort still sent request"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run --secret-scan=redact >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "redact mode exits 0 for generic token" || bad "redact mode rc=$rc"
+grep -q "3cjcjg988jrskbxx" "$CAPTURE" && bad "generic secret value reached provider" || ok "generic secret value redacted"
+rm -rf "$d"
+
+note "AC-S5 (CLO-514/FR-60): UUID + git SHA are NOT flagged (false-positive control)"
+d="$(new_repo)"
+printf 'request_id = 550e8400-e29b-41d4-a716-446655440000\ncommit = a94a8fe5ccb19ba61c4c0873d391e987982fbbd3\n' > "$d/meta.txt"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run --secret-scan=abort >/tmp/gcm-out 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok "UUID + git SHA do not trigger abort" || bad "false positive on UUID/git SHA (rc=$rc): $(cat /tmp/gcm-out)"
+rm -rf "$d"
+
 note "AC-safe-files: untracked symlink/FIFO are name-only (no follow, no freeze)"
 outside="$(mktemp -d)"; printf 'SENSITIVE_OUTSIDE_CONTENT_xyz\n' > "$outside/secret"
 d="$(new_repo)"; printf 'real\n' > "$d/real.txt"

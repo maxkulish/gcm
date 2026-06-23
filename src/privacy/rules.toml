@@ -1,0 +1,108 @@
+# gcm vendored secret-detection rule pack (CLO-514, FR-60)
+#
+# Data-driven rule corpus for the pre-egress secret scanner. Add a provider by
+# editing this file - no Rust change required (rules are parsed + compiled at
+# startup). Each rule:
+#   id          unique kebab-case identifier (required)
+#   regex       a lookaround-free, backreference-free pattern; the regex crate
+#               supports neither. Match the secret directly; the engine tests
+#               capture group 1 if present, else the whole match. Patterns use a
+#               leading \b anchor and a bounded char class that stops at the
+#               delimiter WITHOUT consuming it, so adjacent secrets on one line
+#               are not swallowed (regex::find_iter is non-overlapping).
+#   keywords    cheap case-insensitive hints (data only; RegexSet is the
+#               runtime prefilter)
+#   entropy     optional minimum Shannon entropy (bits) of the tested group
+#   min_digits  optional minimum count of ASCII digits in the tested group
+#   confidence  optional informational tag
+#
+# Attribution - rules transcribed and adapted from:
+#   gitleaks  config/gitleaks.toml   - MIT License,        (c) Zachary Rice
+#             https://github.com/gitleaks/gitleaks
+#   Kingfisher data/rules/*.yml      - Apache License 2.0, (c) MongoDB, Inc.
+#             https://github.com/mongodb/kingfisher
+# Lookaround boundaries from the upstream rules were rewritten to leading \b
+# anchors + non-consuming bounded classes to fit the pure-Rust regex engine.
+
+[[rules]]
+id = "aws-access-key-id"
+regex = '\b(?:AKIA|ASIA)[0-9A-Z]{16}'
+keywords = ["AKIA", "ASIA"]
+confidence = "high"
+
+[[rules]]
+id = "gcp-api-key"
+regex = '\bAIza[0-9A-Za-z_\-]{35}'
+keywords = ["AIza"]
+confidence = "high"
+
+[[rules]]
+id = "github-token"
+regex = '\b(?:ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{36}'
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+confidence = "high"
+
+[[rules]]
+id = "github-fine-grained-pat"
+regex = '\bgithub_pat_[0-9A-Za-z_]{22,}'
+keywords = ["github_pat_"]
+confidence = "high"
+
+[[rules]]
+id = "gitlab-pat"
+regex = '\bglpat-[0-9A-Za-z_\-]{20}'
+keywords = ["glpat-"]
+entropy = 3.0
+min_digits = 1
+confidence = "high"
+
+[[rules]]
+id = "gitlab-pipeline-trigger-token"
+regex = '\bglptt-[0-9a-f]{40}'
+keywords = ["glptt-"]
+confidence = "high"
+
+[[rules]]
+id = "gitlab-runner-registration-token"
+regex = '\bGR1348941[0-9A-Za-z_\-]{20}'
+keywords = ["GR1348941"]
+confidence = "high"
+
+[[rules]]
+id = "slack-token"
+regex = '\bxox[baprs]-[0-9A-Za-z-]{10,48}'
+keywords = ["xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-"]
+confidence = "high"
+
+[[rules]]
+id = "stripe-secret-key"
+regex = '\b(?:sk|rk)_live_[0-9A-Za-z]{16,}'
+keywords = ["sk_live_", "rk_live_"]
+confidence = "high"
+
+[[rules]]
+id = "anthropic-api-key"
+regex = '\bsk-ant-[0-9A-Za-z_\-]{20,}'
+keywords = ["sk-ant-"]
+confidence = "high"
+
+[[rules]]
+id = "openai-api-key"
+regex = '\bsk-[0-9A-Za-z_\-]{20,}'
+keywords = ["sk-"]
+entropy = 3.0
+confidence = "medium"
+
+[[rules]]
+id = "xai-api-key"
+regex = '\bxai-[0-9A-Za-z]{20,}'
+keywords = ["xai-"]
+entropy = 3.0
+confidence = "high"
+
+[[rules]]
+id = "generic-api-key"
+regex = '''(?i)(?:api[_\-]?key|secret|token|password|passwd|credential|auth)["']?\s*[:=]\s*["']?([0-9A-Za-z+/_\-]{16,})'''
+keywords = ["key", "secret", "token", "password", "passwd", "credential", "auth"]
+entropy = 3.5
+confidence = "low"

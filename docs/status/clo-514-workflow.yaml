@@ -1,0 +1,228 @@
+task: CLO-514
+title: Replace best-effort secret scanner with a real rule-pack + entropy detection engine
+linear_url: https://linear.app/cloud-ai/issue/CLO-514/replace-best-effort-secret-scanner-with-a-real-rule-pack-entropy
+branch: feat/clo-514-secrets
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius:
+      lean: spec
+      note: Centered on src/privacy.rs (444 lines); only cli.rs + main.rs touch the API surface
+    architecture_novelty:
+      lean: dev
+      note: New regex dep + embedded TOML rule schema, but both pre-decided in ticket; no open trade-off
+    prior_art:
+      lean: spec
+      note: gitleaks/Kingfisher corpora as transcription templates + existing secret_ranges to migrate
+    requirement_clarity:
+      lean: spec
+      note: Full Architecture/Scope/Acceptance/Non-goals all derivable now
+    scope_signal:
+      lean: neutral
+      note: No estimate; medium-large but well-bounded
+  rationale: >-
+    Ticket is a fully-formed design with derivable acceptance criteria; lone dev signal (new dep/schema) is
+    pre-resolved, leaving a precise blueprint + implementation
+workflow:
+  current_phase: pr
+  status: blocked
+  updated_at: '2026-06-23T15:42:03.986Z'
+phases:
+  discovery:
+    status: skipped
+    skip_reason: Specification task
+    approved: true
+  design:
+    status: skipped
+    reason: Specification task - using /spec instead
+  spec:
+    status: complete
+    spec_file: specs/2026-06-23-clo-514-secret-rule-pack-entropy.md
+    approved: true
+    review_gemini: docs/reviews/clo-514-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-514-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-514-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - 'AC8: vendored rules validated by test, never panic; empty rules.toml degrades gracefully'
+      - 'AC9: UTF-8 byte-boundary safe slicing; ranges on char boundaries'
+      - Entropy over .chars() not bytes; charset classifier checks hex before base64
+      - Lookaround-free regex mandated; exclusions moved to Rust filters in detect.rs
+      - Generic detector skips git metadata lines and tolerates leading diff +/- prefixes
+      - Rule load/compile failure maps to GcmError::Config (custom enum, not anyhow)
+      - Precise rules take precedence over generic entropy on overlap (merge_ranges)
+      - Compile-once / cached engine on Privacy; line->path attribution decided (prepare_diff only)
+      - Prefix-detector migration made explicit with regression coverage (sub-task 3)
+      - >-
+        Eval rows 12-17: malformed/empty pack, UTF-8 adjacency, keyword fast-path, git metadata,
+        precise-rule-in-lockfile
+    flagged_suggestions: []
+    user_review_round_2:
+      verdict: applied_all
+      validated: >-
+        Each of 6 points validated before applying; entropy math confirmed via computation (AC1 value H=3.328,
+        log2(16)=4.0 < 4.5)
+      applied:
+        - >-
+          Entropy: length-normalized H/log2(L) primary gate (raw 4.5 unreachable below 23 chars); thresholds calibrated
+          not copied from ticket
+        - >-
+          Charset classifier: hex -> alnum/base36 -> base64 (intermediate class required so lowercase-alnum tokens
+          aren't measured against base64 bar)
+        - >-
+          Binding calibration acid-test: AC1 value 3cjcjg988jrskbxx (H~3.33, norm~0.83) MUST flag; benign low-entropy
+          MUST NOT
+        - >-
+          Regex boundaries: zero-width anchors only, never consume trailing delimiter (find_iter non-overlapping;
+          adjacent-secret regression test)
+        - Line->path attribution from `diff --git a/ b/` header not `+++` (deleted files emit +++ /dev/null)
+        - >-
+          Bare/standalone generics (arrays, call args) documented as deliberate scope limit; precise prefixed rules
+          still fire anywhere
+        - >-
+          RegexSet::matches() IS the prefilter (no hand-rolled keyword prescan for rules); keywords field kept for
+          generic fast-path
+        - >-
+          Eval rows 18-21: entropy calibration, benign low-entropy, adjacent-secret boundary, deleted-file path
+          attribution
+    resolved_disagreements:
+      - >-
+        Error taxonomy: verified src/error.rs is custom GcmError enum (not anyhow); rule-load failure ->
+        GcmError::Config (Gemini correct)
+      - 'Pragma scope: kept ticket-specified # gcm:allow / // gcm:allow; broader comment leaders out of scope'
+  implement:
+    status: complete
+    plan_source: specs/2026-06-23-clo-514-secret-rule-pack-entropy.md
+    commits:
+      - 37c7461
+      - 01911b1
+      - 58eb79d
+      - bf5ee91
+      - cbee2bd
+    last_phase_completed: all 6 sub-tasks (engine, rule pack, pipeline, generic detector, FP controls, tests)
+    test_results: >-
+      cargo fmt --check green; cargo clippy -- -D warnings green; cargo test green (221 unit/integration + 6 onboarding
+      tests); scripts/acceptance.sh PASS=246 FAIL=0 SKIP=1
+    pushed: true
+    codex_validated: true
+    assumptions_revalidated: true
+    assumption_outcomes: []
+    codex_report: docs/reviews/clo-514-codex-revalidation.md
+    codex_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-514-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-514-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    token_usage:
+      - recorded_at: '2026-06-23T15:41:17.171Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-06-23T15:41:17.171Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-06-23T15:41:17.171Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis
+  pr:
+    status: in_progress
+  complete:
+    status: pending
+history:
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: workflow_started
+    phase: init
+    details: New specification workflow created for CLO-514 on branch feat/clo-514-secrets
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: task_classified
+    phase: init
+    details: recommended=specification, chosen=specification, confidence=medium, method=probe
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: project_sync_start
+    phase: init
+    details: >-
+      WIP 0/3 ok, CLO-490 dependency Done so unblocked. Added to PROJECT.md Active Work (S13), ROADMAP.md Phase 1 (14
+      tasks), DEPENDENCIES.md Recently Resolved
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: spec_review_complete
+    phase: spec
+    details: Gemini + Ollama via lok; both APPROVE_WITH_SUGGESTIONS (consensus APPROVE_WITH_SUGGESTIONS)
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: spec_review_applied
+    phase: spec
+    details: >-
+      Applied 10 additive/refinement items (AC8/AC9, .chars() entropy, lookaround-free, git-metadata skip,
+      GcmError::Config, precedence, line->path decision, explicit migration, eval rows 12-17); resolved both
+      disagreements against ticket + verified src/error.rs; 0 conflicts flagged
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: spec_review_applied
+    phase: spec
+    details: >-
+      User deep-review round 2 (6 implementation-level points): all validated and applied. Critical catch - ticket
+      entropy thresholds (base64 4.5 @ min-len 16) mathematically unreachable (max log2(16)=4.0); AC1 value scores 3.33.
+      Switched to length-normalized entropy + base36 class + binding calibration acid-test. Plus zero-width regex
+      boundaries, diff --git path tracking, bare-generic non-goal, RegexSet-as-prefilter.
+  - timestamp: 2026-06-23T12:01:30.000Z
+    action: spec_approved
+    phase: spec
+    details: User approved revised spec; advancing to implement (PLAN skipped - spec decomposition is the plan)
+  - timestamp: '2026-06-23T14:40:46.419Z'
+    action: lessons_consulted
+    phase: implement
+    details: >-
+      Reviewed matching lessons before resuming validation: clo-493 JSON stdout discipline, pr-review failures L1-L7
+      (PR-phase gates), timeout layering L1-L2. No new implementation changes required by these lessons for current
+      secret-scanner scope.
+  - timestamp: '2026-06-23T14:42:59.526Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      Validation hardening landed: narrowed keyword fast path to legacy allowlist semantics and added false-positive,
+      deleted-lockfile attribution, and UTF-8 redaction regressions. Commit bf5ee91.
+  - timestamp: '2026-06-23T14:43:13.016Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      Specification task with design phase skipped; no phases.design.assumptions list exists. Implementation evidence:
+      fmt, clippy, cargo test green on HEAD bf5ee91; acceptance script PASS=246 FAIL=0 SKIP=1.
+  - timestamp: '2026-06-23T14:43:17.923Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All spec decomposition sub-tasks landed plus validation hardening. cargo fmt --check && cargo clippy -- -D
+      warnings && cargo test green on HEAD bf5ee91; scripts/acceptance.sh green (PASS=246 FAIL=0 SKIP=1). 4 commits
+      recorded.
+  - timestamp: '2026-06-23T15:24:57.632Z'
+    action: validation_gate_failed
+    phase: implement
+    details: >-
+      lok pre-pr-validation attempt timed out during synthesis; required Gemini and synthesis reports were not produced.
+      Investigating by rerunning through lok with verbose/full output capture; no PR transition until gate passes.
+  - timestamp: '2026-06-23T15:41:17.171Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: PASS_WITH_NOTES (revalidation). Gemini: PASS. Synthesis: PASS_WITH_NOTES. 1 fix iteration applied
+      (cbee2bd): keyword-anywhere assignment scanning + AC7 bare-prefix test rewrite + AC2 variant coverage.
+  - timestamp: '2026-06-23T15:41:30.951Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-06-23T15:42:03.986Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'Pre-merge gate green: fmt + clippy + clippy --tests + test all pass'

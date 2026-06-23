@@ -1,7 +1,10 @@
-use std::ops::Range;
 use std::path::Path;
 
 use clap::ValueEnum;
+
+mod detect;
+mod entropy;
+mod rules;
 
 use crate::diff::{GatheredDiff, GroupingContext};
 use crate::error::GcmError;
@@ -41,6 +44,7 @@ impl SecretScanMode {
 pub struct Privacy {
     filter: PathFilter,
     secret_scan: SecretScanMode,
+    engine: &'static rules::RuleEngine,
 }
 
 impl Privacy {
@@ -48,6 +52,9 @@ impl Privacy {
         Ok(Self {
             filter: PathFilter::load(repo.root())?,
             secret_scan: SecretScanMode::resolve(cli_secret_scan)?,
+            // Compile the vendored rule pack once; a malformed pack (impossible
+            // for the test-validated corpus) surfaces as Config, never a panic.
+            engine: rules::vendored().map_err(GcmError::Config)?,
         })
     }
 
@@ -75,14 +82,14 @@ impl Privacy {
         match self.secret_scan {
             SecretScanMode::Off => Ok(text),
             SecretScanMode::Abort => {
-                let count = secret_ranges(&text).len();
+                let count = detect::secret_ranges(&text, self.engine).len();
                 if count > 0 {
                     Err(GcmError::SecretDetected { count })
                 } else {
                     Ok(text)
                 }
             }
-            SecretScanMode::Redact => Ok(redact_secrets(&text)),
+            SecretScanMode::Redact => Ok(detect::redact_secrets(&text, self.engine)),
         }
     }
 }
@@ -225,152 +232,6 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
     dp[pat.len()][txt.len()]
 }
 
-fn redact_secrets(text: &str) -> String {
-    let ranges = secret_ranges(text);
-    if ranges.is_empty() {
-        return text.to_string();
-    }
-
-    let mut out = String::with_capacity(text.len());
-    let mut cursor = 0usize;
-    for range in ranges {
-        if range.start < cursor {
-            continue;
-        }
-        out.push_str(&text[cursor..range.start]);
-        out.push_str("[REDACTED: secret]");
-        cursor = range.end;
-    }
-    out.push_str(&text[cursor..]);
-    out
-}
-
-fn secret_ranges(text: &str) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    ranges.extend(prefixed_token_ranges(
-        text,
-        &["AKIA", "ASIA"],
-        20,
-        is_aws_key_char,
-    ));
-    ranges.extend(prefixed_token_ranges(
-        text,
-        &["ghp_", "gho_", "ghu_", "ghs_", "ghr_"],
-        24,
-        is_github_token_char,
-    ));
-    ranges.extend(prefixed_token_ranges(
-        text,
-        &["github_pat_"],
-        32,
-        is_github_token_char,
-    ));
-    ranges.extend(prefixed_token_ranges(
-        text,
-        &["sk-"],
-        20,
-        is_secret_token_char,
-    ));
-    ranges.extend(assignment_value_ranges(text));
-    merge_ranges(ranges)
-}
-
-fn prefixed_token_ranges(
-    text: &str,
-    prefixes: &[&str],
-    min_len: usize,
-    valid: fn(u8) -> bool,
-) -> Vec<Range<usize>> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::new();
-    for prefix in prefixes {
-        for (start, _) in text.match_indices(prefix) {
-            let mut end = start + prefix.len();
-            while end < bytes.len() && valid(bytes[end]) {
-                end += 1;
-            }
-            if end - start >= min_len {
-                out.push(start..end);
-            }
-        }
-    }
-    out
-}
-
-fn assignment_value_ranges(text: &str) -> Vec<Range<usize>> {
-    const KEYS: &[&str] = &[
-        "api_key",
-        "apikey",
-        "access_key",
-        "secret",
-        "token",
-        "password",
-        "private_key",
-    ];
-
-    let mut out = Vec::new();
-    let mut offset = 0usize;
-    for line in text.split_inclusive('\n') {
-        let lower = line.to_ascii_lowercase();
-        for key in KEYS {
-            let Some(key_pos) = lower.find(key) else {
-                continue;
-            };
-            let after_key = &line[key_pos + key.len()..];
-            let Some(delim_rel) = after_key.find(['=', ':']) else {
-                continue;
-            };
-            let mut value_start = key_pos + key.len() + delim_rel + 1;
-            let line_bytes = line.as_bytes();
-            while value_start < line_bytes.len()
-                && (line_bytes[value_start].is_ascii_whitespace()
-                    || line_bytes[value_start] == b'\''
-                    || line_bytes[value_start] == b'"')
-            {
-                value_start += 1;
-            }
-            let mut value_end = value_start;
-            while value_end < line_bytes.len()
-                && is_secret_token_char(line_bytes[value_end])
-                && line_bytes[value_end] != b','
-            {
-                value_end += 1;
-            }
-            if value_end.saturating_sub(value_start) >= 8 {
-                out.push(offset + value_start..offset + value_end);
-            }
-        }
-        offset += line.len();
-    }
-    out
-}
-
-fn merge_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
-    ranges.sort_by_key(|r| r.start);
-    let mut merged: Vec<Range<usize>> = Vec::new();
-    for range in ranges {
-        match merged.last_mut() {
-            Some(last) if range.start <= last.end => {
-                last.end = last.end.max(range.end);
-            }
-            _ => merged.push(range),
-        }
-    }
-    merged
-}
-
-fn is_aws_key_char(b: u8) -> bool {
-    b.is_ascii_uppercase() || b.is_ascii_digit()
-}
-
-fn is_github_token_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
-}
-
-fn is_secret_token_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'/' | b'+' | b'=')
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,8 +277,9 @@ mod tests {
 
     #[test]
     fn redacts_common_secret_shapes() {
+        let engine = rules::vendored().unwrap();
         let text = "token=ghp_abcdefghijklmnopqrstuvwxyz123456\nAWS=AKIAABCDEFGHIJKLMNOP\n";
-        let redacted = redact_secrets(text);
+        let redacted = detect::redact_secrets(text, engine);
         assert!(!redacted.contains("ghp_abcdefghijklmnopqrstuvwxyz123456"));
         assert!(!redacted.contains("AKIAABCDEFGHIJKLMNOP"));
         assert_eq!(redacted.matches("[REDACTED: secret]").count(), 2);
@@ -428,6 +290,7 @@ mod tests {
         let privacy = Privacy {
             filter: PathFilter { patterns: vec![] },
             secret_scan: SecretScanMode::Abort,
+            engine: rules::vendored().unwrap(),
         };
         let result = privacy.prepare_diff(GatheredDiff {
             stat: String::new(),

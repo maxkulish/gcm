@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-22 (CLO-496 first-run onboarding wizard merged PR #17, Done — CLO-497 now the only open slice, unblocked; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-23 (CLO-514 secret-scanner rule-pack + entropy engine started — In Progress, spec phase; hardens FR-50, adds FR-60. CLO-496 first-run onboarding wizard merged PR #17, Done — CLO-497 open slice, unblocked; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -32,6 +32,7 @@
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Done | CLO-489 | 56 |
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Done | CLO-485, CLO-489 | 40,53,54,55 |
 | [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Ready | CLO-487…CLO-496 | 42,43,44 |
+| [CLO-514](https://linear.app/cloud-ai/issue/CLO-514) | S13 | Replace best-effort secret scanner with rule-pack + entropy engine | AFK | Medium | In Progress | CLO-490 (Done) | 60; hardens 50 |
 
 All 58 functional requirements are allocated; `a`/`b`/`c` mark partial → full progressions across slices.
 
@@ -61,7 +62,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-514](https://linear.app/cloud-ai/issue/CLO-514) | Replace best-effort secret scanner with rule-pack + entropy engine | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
