@@ -219,7 +219,8 @@ A new user with no configuration must reach a working first commit without hand-
 |----|-------------|----------|---------------------|
 | FR-48 | Respect gitignore on untracked content | Must | Untracked files are gathered with `--exclude-standard` so gitignored files (e.g. `.env`) are never sent to a provider; this preserves the bash behavior and is the primary secret-leak guard |
 | FR-49 | Disclose third-party data egress | Must | The README and `--help` state plainly that diffs and untracked file content are sent to the selected external LLM provider, and link each provider's data-retention / training policy |
-| FR-50 | Optional secret scanning and path ignore | Should | A user can exclude paths from analysis (a `gcmignore` or config glob) and opt into a pre-send scan that redacts or aborts on detected credentials in the diff |
+| FR-50 | Optional secret scanning and path ignore | Should | A user can exclude paths from analysis (a `gcmignore` or config glob) and opt into a pre-send scan that redacts or aborts on detected credentials in the diff. This FR covers the modes (`off`/`redact`/`abort`), path-ignore, and exit behavior; detection *quality* (rule pack + entropy) is specified in FR-60 |
+| FR-60 | Real secret detection engine | Should | The pre-send scan (FR-50) detects credentials with a maintained, data-driven rule pack, not a hand-coded handful of patterns. A vendored ruleset (TOML, derived from the MIT gitleaks / Apache-2.0 Kingfisher corpora with attribution, embedded at build time via `include_str!`) of provider-specific regexes is executed by a real regex engine (the pure-Rust `regex` crate), combined with: (a) known-prefix/format rules, (b) keyword/context-proximity on assignments, and (c) a Shannon-entropy gate with charset-aware thresholds (base64 ~4.5, hex ~3.0, generic ~3.5) and a minimum length, so prefix-less / generically-named secrets (e.g. `GITLAB="<random>"`) are caught. False positives are controlled by structured-value suppression (UUIDs, MD5/SHA/git-SHA hex), an inline `# gcm:allow` pragma, and the FR-50 path exclusions. Out of scope: network/live validation (it would transmit the very secret being withheld) and any heavyweight engine (Hyperscan/`vectorscan`, ML/BPE tokenization) - detection stays pure-Rust and dependency-light (one new crate, `regex`; `toml`/`serde` already present). The `off`/`redact`/`abort` modes and exit behavior are unchanged (FR-50) |
 
 ### Data Model: Grouping Plan
 
@@ -273,7 +274,7 @@ Invariants:
 | Availability | Uptime / MTTR SLA | Not applicable: local single-process CLI with no long-running service; availability is bounded by the user's machine and provider API |
 | Scalability | Concurrent users / data volume | Not applicable: one invocation per user shell; the only scale axis is diff size, bounded by per-provider caps (FR-15) |
 | Privacy | Third-party data egress | The tool transmits source diffs and untracked file content to external LLM providers. Gitignored files are excluded (FR-48), egress is disclosed to the user (FR-49), and path-ignore plus optional secret redaction are available (FR-50). No PII is stored locally beyond the plan cache |
-| Security | Secret handling on egress | A user-configurable pre-send scan can redact or abort on detected credentials (FR-50); API keys themselves are never placed in the prompt |
+| Security | Secret handling on egress | A user-configurable pre-send scan can redact or abort on detected credentials (FR-50), backed by a real rule-pack + entropy detection engine (FR-60); API keys themselves are never placed in the prompt |
 | Compliance | Regulatory standards | Not applicable as a local CLI: no regulated-data storage. The relevant exposure is voluntary source-code egress to the chosen provider, addressed under Privacy above |
 
 ## 6. Scope & Phasing
@@ -334,7 +335,7 @@ Invariants:
 | GPG signing behaves differently across platforms / CI | M | M | Test signing on macOS and Linux; clear error when unconfigured |
 | Scope creep from "shareable" requirements (config UX, docs, cross-platform) delays v1 | M | M | Keep config additions to Should/Could; ship core parity + fixes first |
 | Provider deprecates a hardcoded model (as Kimi K2 was) | M | L | Models are config-driven, not compiled in |
-| Source diffs / untracked content sent to a provider include sensitive code or secrets | M | H | Gitignore exclusion (FR-48), egress disclosure (FR-49), optional pre-send redaction and path ignore (FR-50) |
+| Source diffs / untracked content sent to a provider include sensitive code or secrets | M | H | Gitignore exclusion (FR-48), egress disclosure (FR-49), optional pre-send redaction and path ignore (FR-50), real rule-pack + entropy detection (FR-60) |
 | Multi-group message contract chosen wrong: stale messages, or extra per-group LLM cost | M | M | Decide the strategy in design (Open Questions); content-fingerprint cache (FR-27) bounds staleness either way |
 | Onboarding stores secrets insecurely or in a non-portable location | M | M | Prefer env-var references; 0600 file permissions; never committed (FR-55) |
 | Five providers multiply integration, structured-output, and reasoning-control surface area | M | M | Capability matrix gate (FR-52) before each integration; provider trait isolates differences; Groq/OpenAI share an OpenAI-compatible shape |
