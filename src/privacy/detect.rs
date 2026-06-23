@@ -151,9 +151,11 @@ fn accept_generic(value: &str, ident: &str, path_ignored: bool) -> bool {
     }
 
     if keyworded {
-        // Keyword fast path: a named credential needs only modest length and
-        // non-trivial entropy; immune to the entropy-only path ignore-set.
-        return len >= KEYWORD_MIN_LEN && shannon_entropy(value) >= 2.0;
+        // Keyword fast path: a named credential (api_key/secret/token/...) needs
+        // only modest length, no entropy floor - this matches the old engine's
+        // keyword-assignment detector so low-entropy named credentials are not a
+        // regression (AC7). Immune to the entropy-only path ignore-set.
+        return len >= KEYWORD_MIN_LEN;
     }
 
     // Generic (unnamed) path: gated by length + normalized entropy, and
@@ -241,7 +243,10 @@ fn drop_pragma_ranges(text: &str, ranges: &mut Vec<Range<usize>>) {
     let mut muted: Vec<Range<usize>> = Vec::new();
     let mut offset = 0usize;
     for line in text.split_inclusive('\n') {
-        if PRAGMAS.iter().any(|p| line.contains(p)) {
+        // Mute only when the line ENDS with the pragma (per AC4), so the literal
+        // text buried mid-line cannot silently suppress a real secret.
+        let trimmed = line.trim_end();
+        if PRAGMAS.iter().any(|p| trimmed.ends_with(p)) {
             muted.push(offset..offset + line.len());
         }
         offset += line.len();
@@ -374,6 +379,15 @@ mod tests {
         assert!(detects("github_pat_11ABCDE0123456789abcdefghij_klmnopqrstuvwxyzABCDEFGHIJ0123456789klmnopqrstuv"));
     }
 
+    // AC7 regression: the old keyword-assignment detector flagged ANY 8+ char
+    // value after a sensitive keyword, with no entropy floor. The keyword fast
+    // path must preserve that, or low-entropy named credentials silently leak.
+    #[test]
+    fn ac7_keyworded_low_entropy_value_still_detected() {
+        assert!(detects("password=aaaaaaaa"));
+        assert!(detects("token=abcdabcd"));
+    }
+
     // Boundary regression: two secrets separated by one delimiter, both caught.
     #[test]
     fn adjacent_secrets_both_detected() {
@@ -390,6 +404,16 @@ mod tests {
     #[test]
     fn benign_low_entropy_assignment_not_detected() {
         assert!(!detects("NAME = aaaaaaaaaaaaaaaaaa"));
+    }
+
+    // AC4 precision: the pragma mutes only when the line ENDS with it, so the
+    // literal "# gcm:allow" buried mid-line cannot silently suppress a real
+    // secret elsewhere on the same line.
+    #[test]
+    fn pragma_only_mutes_at_end_of_line() {
+        let secret = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
+        let line = format!(r#"note = "see # gcm:allow"; token = {secret}"#);
+        assert!(detects(&line), "mid-line pragma text must not suppress");
     }
 
     #[test]
