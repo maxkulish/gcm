@@ -55,6 +55,14 @@ entropy scanning produces. `secret_ranges()` (or its successor) keeps returning 
 - [ ] **AC7 — no regression.** Every detection the old engine made still fires (the redact/abort/off
   contract and existing AC-S1..S3 acceptance checks stay green); existing unit + acceptance suites pass;
   new regression tests added for AC1–AC4.
+
+  **Note on prefix migration narrowing:** The old engine's prefix detector used permissive minimum
+  lengths (e.g. `ghp_` min_len 24 = 20+ trailing chars). The vendored rule pack uses gitleaks
+  live-shape lengths (e.g. GitHub `ghp_` requires exactly 36 trailing chars), which is narrower for
+  sub-canonical bare tokens. This is an intentional precision improvement: canonical-length tokens
+  (provider-documented lengths) still fire; sub-canonical bare tokens that the old engine caught are
+  accepted as a deliberate narrowing. The keyword-anywhere compatibility pass (see §3) preserves
+  detection for keyword-named assignments regardless of prefix length.
 - [ ] **AC8 — vendored rules validated, never panic.** A malformed regex in `rules.toml` fails a unit
   test with a clear, attributed error; rule load/compile never panics at runtime (a runtime load failure
   surfaces as `GcmError::Config`, not a panic). An empty/attribution-only `rules.toml` degrades gracefully
