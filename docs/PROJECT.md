@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-24 (CLO-497 cross-platform releases + alias cutover started, In Progress — spec task, last open v1 slice. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-24 (CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -31,7 +31,7 @@
 | [CLO-494](https://linear.app/cloud-ai/issue/CLO-494) | S7 | Anthropic provider via forced tool-use | AFK | Medium | Done | CLO-489, CLO-485 | 13b,18c |
 | [CLO-495](https://linear.app/cloud-ai/issue/CLO-495) | S8 | Ollama local provider (zero-egress) | AFK | Medium | Done | CLO-489 | 56 |
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Done | CLO-485, CLO-489 | 40,53,54,55 |
-| [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | In Progress | CLO-487…CLO-496 | 42,43,44 |
+| [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Done | CLO-487…CLO-496 | 42,43,44 |
 | [CLO-514](https://linear.app/cloud-ai/issue/CLO-514) | S13 | Replace best-effort secret scanner with rule-pack + entropy engine | AFK | Medium | Done | CLO-490 (related) | 60; hardens 50 |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514.
@@ -63,15 +63,15 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | Cross-platform releases + alias cutover | In Progress (spec) | S12 | — |
+| — | None active | — | — | — |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| — | — | None — CLO-497 (last slice) now Active | — | — |
+| — | — | None — all v1 slices (CLO-485…CLO-497) + CLO-514 Done | — | — |
 
-> **CLO-497** (cross-platform releases + alias cutover) moved to Active Work 2026-06-24 as a **specification** task (`/task:orchestrate`); it is the last open v1 slice and finishes the bash→Rust migration. **CLO-514** (secret-scanner rule-pack + entropy engine) merged PR #18 (squash) 2026-06-23 — new FR-60, hardens FR-50. All feature work Done: **CLO-514** secret-scanner rule-pack (PR #18), **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
+> **CLO-497** (cross-platform releases + alias cutover) merged PR #20 (squash) 2026-06-24 → Done. It was the last open v1 slice: **the bash→Rust migration is complete**. The release pipeline (`.github/workflows/release.yml`) ships static-musl Linux + native macOS binaries on `v*` tags; cutover documented in `docs/guides/cutover-from-bash.md`. **CLO-514** (secret-scanner rule-pack + entropy engine) merged PR #18 2026-06-23 — new FR-60, hardens FR-50. All feature work Done: **CLO-514** secret-scanner rule-pack (PR #18), **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
 
 ## Blocked
 
@@ -83,6 +83,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-497 | Cross-platform releases + alias cutover | 2026-06-24 | FR-42/43/44 - final v1 slice, completes the bash→Rust migration. New `.github/workflows/release.yml`: tag-triggered (`v*`) two-stage pipeline - Stage 1 build matrix for 4 targets (static **musl** Linux x86_64/aarch64 via `CARGO_TARGET_*_LINKER`, native darwin x86_64 on `macos-15-intel` / aarch64 on `macos-latest`), asserts `Cargo.toml` version==tag (exact for final, base-match for `-rc`), runs the built binary `--version`/`--help` on each native runner, packages `gcm`+`LICENSE` as tar.gz + `.sha256`; Stage 2 (`needs: build`, `permissions: contents: write`) assembles one Release (`overwrite_files:true`, idempotent). README documents binary (checksum + macOS Gatekeeper) / `cargo install --git --locked` / build-from-source, links the cutover guide. New `docs/guides/cutover-from-bash.md`: PRD-parity alias matrix (gcm/gcmq/gcmq20/gcmq27/gcmg/gcmo/gcml; gcmc dropped, gcms unchanged) + single-revert rollback keeping `/opt/script` intact. Spec task (`/task:orchestrate`): dual-model spec review (Gemini+Ollama APPROVE_WITH_SUGGESTIONS, 11 applied) + Codex/Gemini validation gate (Codex FAIL→fixed: AC-3 smoke, rollback; Gemini→fixed: musl linker, version assert; re-review PASS_WITH_NOTES 9/9 ACs). Pre-flight fmt+clippy+229 tests + actionlint clean; CI green. PR #20 (squash) merged. |
 | CLO-514 | Replace best-effort secret scanner with rule-pack + entropy engine | 2026-06-23 | FR-60 (new) + hardens FR-50. Replaced inline prefix/keyword matcher with data-driven TOML rule pack (gitleaks/Kingfisher corpus), RegexSet prefilter + per-rule Regex, Shannon entropy gate (length-normalized, charset-aware), generic assignment + entropy detector, keyword-anywhere compatibility pass, inline pragma support, structural FP suppression, entropy ignore-set. 223 unit + 6 onboarding + 246 acceptance tests. PR #18 (squash) merged. |
 | CLO-496 | First-run onboarding wizard | 2026-06-22 | FR-40/53/54/55. New `src/config.rs`: TOML `0600` `config.toml` (atomic load/save mirroring `cache.rs`), first-run detection, interactive wizard (enable providers, echo-suppressed key entry with RAII echo restore, 3s Ollama daemon probe honoring `OLLAMA_HOST`, choose default), `apply_to_env` bridge that preserves `flag > env > config > default` by only setting unset vars (provider layer untouched). `ProviderId` serde + `key_env_var()`; `GcmError::OnboardingRequired`; `gcm config` subcommand + `--reconfigure`; `ensure_configured` pre-step. Non-TTY first run prints a config template + `export` lines and exits non-zero (JSON `OnboardingRequired` envelope on stdout, instructions on stderr per CLO-493 L1). Inline keys stored only at `0600`, never copied from env (FR-55, ADR-001 Decision 4). 194 unit/bin + 6 integration tests; acceptance 241 pass/1 skip incl. PTY-driven `--reconfigure`. Gemini PASS + Codex FAIL→fixed (EOF hang, OLLAMA_HOST seeding, URL validation, Ctrl+C doc)→PASS_WITH_NOTES. Merged `main` (CLO-490) at the implement checkpoint. PR #17 (squash) merged. Unblocks CLO-497 (now the last slice). |
 | CLO-488 | Resilient provider calls: typed errors + retries | 2026-06-22 | FR-20/21/22. Typed provider-error taxonomy (rate-limit/bad-request/server/timeout/auth/parse) with bounded exponential backoff on 429/5xx, never on 400/auth; defensive parsing fallback when structured output is unavailable; distinct actionable message per error type, error kind visible in debug logs. PR #6 (`9052a7e`) merged 2026-06-21; its retry engine was later moved into shared `http.rs` by CLO-489. Linear/aggregation finalize had lagged the merge (issue sat Backlog) — reconciled to Done 2026-06-22. Unblocks CLO-497 (now waits only on CLO-496). |

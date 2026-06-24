@@ -6,8 +6,8 @@ git_branch: kmamemo/clo-497-ship-cross-platform-releases-and-the-alias-cutover
 task_type: specification
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
 
 classification:
   recommended: specification
@@ -81,12 +81,19 @@ phases:
       - 45382de   # fix: validation gate findings (amended, removed stray test.sh)
       - d21a4d1   # docs: validation re-review artifact
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/20
     pr_number: 20
     ci_passed: true   # CI green on ubuntu-latest + macos-latest (fmt/clippy/test/build)
     preflight_passed: true   # fmt + clippy -D warnings + 229 tests, actionlint clean
-  complete: { status: pending }
+    approved: true
+    merge_commit: a36dd06
+    merged_at: 2026-06-24T14:15:48Z
+  complete:
+    status: complete
+    merged_at: 2026-06-24T14:15:48Z
+    aggregation_files_updated: true
+    linear_done: true
 
 context:
   covers_fr: [42, 43, 44]
@@ -138,3 +145,31 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "origin/feat/clo-497-releases-cutover (initial push ce23ca1; fix + review commits pending push at PR phase)"
+  - timestamp: 2026-06-24T12:20:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check, clippy --all-targets -D warnings, cargo test --all (229 pass), actionlint clean"
+  - timestamp: 2026-06-24T12:20:00Z
+    action: pr_created
+    phase: pr
+    details: "PR #20 https://github.com/maxkulish/gcm/pull/20"
+  - timestamp: 2026-06-24T12:21:00Z
+    action: ci_passed
+    phase: pr
+    details: "CI green on ubuntu-latest + macos-latest (fmt/clippy/test/build)"
+  - timestamp: 2026-06-24T14:15:48Z
+    action: pr_approved
+    phase: pr
+    details: "Owner squash-merged PR #20 on GitHub (PR checkpoint)"
+  - timestamp: 2026-06-24T14:15:48Z
+    action: pr_merged
+    phase: complete
+    details: "Squash-merged to main as a36dd06"
+  - timestamp: 2026-06-24T14:18:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "CLO-497 -> Done: PROJECT.md (Active Work cleared, Recently Completed +CLO-497), ROADMAP (Phase 1 13/13 Complete), DEPENDENCIES (Recently Resolved +CLO-497, Ready cleared); Linear CLO-497 -> Done. Last v1 slice: bash->Rust migration complete."
+  - timestamp: 2026-06-24T14:18:00Z
+    action: workflow_complete
+    phase: complete
+    details: "CLO-497 lifecycle finished (spec -> implement -> PR -> complete). gcm v1 feature set + hardening all Done."
