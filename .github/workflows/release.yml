@@ -47,16 +47,27 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
           fetch-depth: 0
 
-      - name: Assert Cargo.toml version matches tag
+      - name: Assert tag format & Cargo.toml version match
         shell: bash
         run: |
-          VER="${TAG#v}"           # v0.1.0 -> 0.1.0
-          BASE_VER="${VER%%-*}"    # 0.1.0-rc.1 -> 0.1.0 (pre-release suffix ignored)
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "::error::tag '$TAG' must look like vX.Y.Z (optionally -rc.N)"; exit 1 ;;
+          esac
+          VER="${TAG#v}"           # v0.1.0 -> 0.1.0 ; v0.1.0-rc.1 -> 0.1.0-rc.1
+          BASE_VER="${VER%%-*}"    # 0.1.0-rc.1 -> 0.1.0
           CARGO_VER=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
-          echo "tag=$TAG cargo=$CARGO_VER compare=$BASE_VER"
-          if [ "$CARGO_VER" != "$BASE_VER" ]; then
-            echo "::error::Cargo.toml version ($CARGO_VER) does not match release tag ($TAG)"
-            exit 1
+          echo "tag=$TAG cargo=$CARGO_VER base=$BASE_VER"
+          # Final release tags must match Cargo.toml exactly; pre-release rehearsal
+          # tags (vX.Y.Z-rc.N) only need the base version to match (binary reports base).
+          if [ "$VER" = "$BASE_VER" ]; then
+            if [ "$CARGO_VER" != "$VER" ]; then
+              echo "::error::Cargo.toml version ($CARGO_VER) does not match release tag ($TAG)"; exit 1
+            fi
+          else
+            if [ "$CARGO_VER" != "$BASE_VER" ]; then
+              echo "::error::Cargo.toml version ($CARGO_VER) does not match pre-release base ($BASE_VER)"; exit 1
+            fi
           fi
 
       - name: Install musl tools
@@ -67,7 +78,19 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Build (release)
+        env:
+          # Point cargo at the musl wrapper so the static link finds its CRT objects
+          # (avoids "cannot find crti.o"). Ignored for the darwin targets.
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke test (native runner)   # AC-3: the built binary actually runs
+        shell: bash
+        run: |
+          BIN="target/${{ matrix.target }}/release/gcm"
+          "$BIN" --version
+          "$BIN" --help >/dev/null
 
       - name: Package
         shell: bash
@@ -113,3 +136,4 @@ jobs:
           files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+          overwrite_files: true   # idempotent re-runs: update assets in place (AC-9)

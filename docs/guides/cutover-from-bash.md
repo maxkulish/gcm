@@ -47,29 +47,37 @@ Notes:
 
 ## Repoint your `~/.zshrc`
 
-Replace the old block (the lines pointing at `/opt/script/git-commit-ai.sh`) with:
+**Comment out** your existing bash block (the lines pointing at
+`/opt/script/git-commit-ai.sh`) - do **not** delete it; leaving it in place is what makes
+rollback trivial. Then add the new block right below it:
 
 ```sh
-# gcm (Rust) - https://github.com/maxkulish/gcm
-alias gcm="gcm"                                                   # Anthropic Haiku via `gcm config`
+# --- OLD (bash) - kept commented for one-step rollback ---
+# alias gcmq="/opt/script/git-commit-ai.sh --provider=groq"
+# alias gcmq20="GCM_GROQ_MODEL=openai/gpt-oss-20b /opt/script/git-commit-ai.sh --provider=groq"
+# alias gcmq27="GCM_GROQ_MODEL=qwen/qwen3.6-27b /opt/script/git-commit-ai.sh --provider=groq"
+# alias gcmg="/opt/script/git-commit-ai.sh --provider=google"
+
+# --- NEW (Rust gcm) - https://github.com/maxkulish/gcm ---
 alias gcmq="gcm --provider=groq"                                  # Groq gpt-oss-120b
 alias gcmq20="gcm --provider=groq --model=openai/gpt-oss-20b"     # Groq gpt-oss-20b
 alias gcmq27="gcm --provider=groq --model=qwen/qwen3.6-27b"       # Groq Qwen3.6 27B
 alias gcmg="gcm --provider=google"                                # Gemini 3.1 Flash Lite
 alias gcmo="gcm --provider=openai"                                # OpenAI gpt-4o-mini (new)
 alias gcml="gcm --provider=ollama"                                # local Ollama, zero-egress (new)
-# gcmc (Cerebras) dropped; gcms unchanged (git commit -S -m)
+# bare `gcm` needs no alias; select Anthropic Haiku as your default via `gcm config`.
+# gcmc (Cerebras) dropped; gcms unchanged (git commit -S -m).
 ```
-
-> The `alias gcm="gcm"` line is harmless (an alias may share its command's name); it exists
-> only so the whole block lives together and is trivial to comment out for rollback. You can
-> omit it and just call the binary directly.
 
 Reload your shell:
 
 ```sh
 source ~/.zshrc
 ```
+
+> **Truly-one-line variant:** move the NEW block into `~/.gcm-aliases.zsh` and add a single
+> `source ~/.gcm-aliases.zsh` line to `~/.zshrc` (after the still-commented OLD block).
+> Then cutover/rollback is commenting that one `source` line on or off.
 
 ## Validate side-by-side
 
@@ -84,17 +92,13 @@ Message text need not be byte-identical to the bash output (LLM output is
 non-deterministic), but the **group structure** should look equivalent. The plan cache
 is preserved across runs, so an in-flight grouping session survives the swap.
 
-## Rollback (one line)
+## Rollback
 
-If anything misbehaves, revert in a single change - repoint the aliases back at the
-untouched bash script. Either comment out the `gcm` block above and re-enable your old
-block, or point the aliases back directly:
+If anything misbehaves, revert by flipping the two blocks you set up above: **uncomment the
+OLD block and comment out the NEW block**, then `source ~/.zshrc`. (With the truly-one-line
+variant, just comment the single `source ~/.gcm-aliases.zsh` line - the OLD block is already
+active.)
 
-```sh
-alias gcmq="/opt/script/git-commit-ai.sh --provider=groq"
-# ...and the rest, exactly as before
-source ~/.zshrc
-```
-
-Because `/opt/script/git-commit-ai.sh` was never touched, the bash tool works exactly as
-it did before the cutover.
+Because `/opt/script/git-commit-ai.sh` was never touched and the OLD alias block is still in
+your `~/.zshrc` (commented), the bash tool works exactly as it did before the cutover - no
+re-typing the old commands from memory.

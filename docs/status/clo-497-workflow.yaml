@@ -63,7 +63,8 @@ phases:
       - "AC-4/T9 scoped to README only (guide must name /opt/script as rollback target)"
       - "x86_64-darwin runner macos-13 -> macos-15-intel (macos-13 retired, actionlint)"
       - "version format corrected to gcm 0.1.0+<sha> (semver build metadata)"
-    commits: []
+    commits:
+      - ce23ca1
   pr: { status: pending, pr_url: null, pr_number: null }
   complete: { status: pending }
 
