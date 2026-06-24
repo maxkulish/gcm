@@ -1,0 +1,107 @@
+task: CLO-497
+title: Ship cross-platform releases and the alias cutover
+linear_url: https://linear.app/cloud-ai/issue/CLO-497/ship-cross-platform-releases-and-the-alias-cutover
+git_branch: kmamemo/clo-497-ship-cross-platform-releases-and-the-alias-cutover
+
+task_type: specification
+
+workflow:
+  current_phase: implement
+  status: in_progress
+
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:         { lean: spec, note: "New .github/workflows/release.yml + README install + one cutover doc; zero src/ changes" }
+    architecture_novelty: { lean: spec, note: "Standard Rust cross-compile release matrix; no new dependency/data-model/interface; follows existing ci.yml" }
+    prior_art:            { lean: spec, note: "ci.yml is a template; PRD already carries the full alias matrix to transcribe" }
+    requirement_clarity:  { lean: spec, note: "Acceptance criteria + alias->flag mapping fully resolved in PRD Migration Matrix + ADR-001; no open decisions" }
+    scope_signal:         { lean: spec, note: "Medium estimate; 3 deliverables (builds, install docs, cutover doc)" }
+  rationale: "Concrete buildable artifact (release pipeline producing mac/linux binaries) + docs through a PR, with requirements pre-resolved in the PRD - the spec->implement->PR lean path, not a full dev cycle or a pure operational chore"
+
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-24-clo-497-releases-alias-cutover.md
+    approved: true
+    review_gemini: docs/reviews/clo-497-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-497-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-497-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "Switch Linux targets to static musl (x86_64/aarch64-unknown-linux-musl) - GLIBC portability; gcm has no C deps (rustls confirmed)"
+      - "Add permissions: contents: write to release job (default token is read-only)"
+      - "Two-stage pipeline: matrix build -> upload-artifact, then single release job with needs: (transactionality + idempotency)"
+      - "Specify tarball contents: gcm + LICENSE at root (AC-2)"
+      - "Elevate version parity to Must + workflow assert + version-vs-tag test (AC-8)"
+      - "Add idempotency AC + test (AC-9)"
+      - "Add README->cutover-guide link AC + test (AC-5/test-10)"
+      - "Document both checksum commands (shasum -a 256 / sha256sum) in README"
+      - "Move macOS Gatekeeper unquarantine from Prefer to Must (README steps)"
+      - "Cutover guide must tell user to keep /opt/script intact (rollback target, AC-6)"
+      - "Pin softprops/action-gh-release@v2 + generate_release_notes: true"
+    flagged_suggestions: []
+  implement:
+    status: in_progress
+    branch: feat/clo-497-releases-cutover
+    subtasks_done:
+      - "1: .github/workflows/release.yml (two-stage; musl Linux + native darwin; version assert; contents:write; pinned action+release notes)"
+      - "2: Cargo.toml version - verify-only (already 0.1.0; build.rs SHA stamping confirmed: gcm 0.1.0+<sha>)"
+      - "3: README Install - Option A binary+checksum(both cmds)+Gatekeeper, B cargo install --locked, C build; cutover link"
+      - "4: docs/guides/cutover-from-bash.md - full alias matrix (PRD-parity) + one-line rollback, keep /opt/script intact"
+    local_tests_passed:
+      - "T9 no /opt/script in README; T10 README links guide; T11 alias matrix == PRD; T13 ci.yml untouched"
+      - "release.yml: YAML parse OK + actionlint clean; cargo fmt --check OK; binary smoke gcm --version/--help OK"
+    spec_corrections:
+      - "AC-4/T9 scoped to README only (guide must name /opt/script as rollback target)"
+      - "x86_64-darwin runner macos-13 -> macos-15-intel (macos-13 retired, actionlint)"
+      - "version format corrected to gcm 0.1.0+<sha> (semver build metadata)"
+    commits: []
+  pr: { status: pending, pr_url: null, pr_number: null }
+  complete: { status: pending }
+
+context:
+  covers_fr: [42, 43, 44]
+  deliverables:
+    - "Release builds: macOS + Linux on x86_64 + arm64"
+    - "Install docs (release binary and cargo install); no hardcoded /opt/script"
+    - "Alias migration matrix (gcm/gcmq/gcmq20/gcmq27/gcmg/gcmo/gcml) + reversible-cutover doc"
+  prior_art:
+    - ".github/workflows/ci.yml (existing CI, no release job)"
+    - "docs/prds/prd-gcm.md Alias Parity & Migration Matrix (lines 370-383) - mapping fully resolved"
+    - "docs/adrs/001-foundational-architecture-decisions.md (#5 default Groq, #7 gcmo/OpenAI, #8 gcml/Ollama, #13 Cerebras dropped)"
+    - "Cargo.toml: license MIT, repository github.com/maxkulish/gcm, version 0.1.0"
+  blocked_by_satisfied: "CLO-487..CLO-496 all Done"
+
+history:
+  - timestamp: 2026-06-24T05:31:22Z
+    action: workflow_started
+    phase: spec
+    details: "New workflow for CLO-497 created via /task:orchestrate"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: task_classified
+    phase: spec
+    details: "recommended=specification, chosen=specification, confidence=high (probe: 5/5 lean away from dev; alias matrix pre-resolved in PRD/ADR-001)"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: project_sync_start
+    phase: spec
+    details: "WIP 0/3, unblocked. PROJECT.md Active Work + master table -> In Progress; ROADMAP Phase 1 12/13 In Progress, CLO-497 In Progress (fixed prior 13/13 summary inconsistency); DEPENDENCIES Unblocked & Ready cleared; Linear CLO-497 -> In Progress"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: spec_review_complete
+    phase: spec
+    details: "lok dual-model review: Gemini + Ollama both APPROVE_WITH_SUGGESTIONS, no blockers. Synthesis: docs/reviews/clo-497-spec-review-synthesis.md"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: spec_review_applied
+    phase: spec
+    details: "11 suggestions auto-applied (musl static Linux, contents:write, two-stage pipeline, tarball+LICENSE, version-parity Must+AC-8, idempotency AC-9, README guide link, dual checksum cmds, Gatekeeper->Must, keep /opt/script, pinned action+release notes). 0 contradictions/conflicts."
+  - timestamp: 2026-06-24T05:31:22Z
+    action: spec_approved
+    phase: spec
+    details: "User approved at spec checkpoint -> advancing to implement (plan phase skipped; spec decomposition is the plan)"

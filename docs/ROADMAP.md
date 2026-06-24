@@ -1,12 +1,12 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-23 (CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-497 release/cutover still Ready, the only open slice. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-24 (CLO-497 cross-platform releases + alias cutover started, In Progress — spec task, the last open v1 slice. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-491 merged on main)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
-| Phase 1: Foundations | 13 | 13 | Complete |
+| Phase 1: Foundations | 13 | 12 | In Progress |
 | Phase 2: Hardening | 1 | 1 | Complete |
 
 ## Phase 1: Foundations
@@ -27,7 +27,7 @@ Source: [PRD: gcm](prds/prd-gcm.md) §8 Open Questions; foundational decisions i
 | CLO-494 | Anthropic provider via forced tool-use | Done | CLO-489, CLO-485 |
 | CLO-495 | Ollama local provider (zero-egress) | Done | CLO-489 |
 | CLO-496 | First-run onboarding wizard | Done | CLO-485, CLO-489 |
-| CLO-497 | Cross-platform releases + alias cutover | Ready | CLO-487…CLO-496 |
+| CLO-497 | Cross-platform releases + alias cutover | In Progress | CLO-487…CLO-496 |
 
 ## Phase 2: Hardening
 

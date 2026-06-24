@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-23 (CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-497 release/cutover still Ready, the only open slice. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 merged PR #11; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-24 (CLO-497 cross-platform releases + alias cutover started, In Progress — spec task, last open v1 slice; no open blockers. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 merged PR #11; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 ## Current Blockers
 
@@ -12,7 +12,7 @@
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| CLO-497 | CLO-487…CLO-496, CLO-514 all Done | 2026-06-23 |
+| — | None ready — CLO-497 (last slice) now In Progress | — |
 
 ## Recently Resolved Blockers
 

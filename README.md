@@ -42,11 +42,50 @@ is proxied by the daemon to Ollama Cloud and is therefore **not** zero-egress.
 
 ## Install
 
+### Option A - prebuilt release binary (recommended)
+
+Download the archive for your platform from the [latest release](https://github.com/maxkulish/gcm/releases/latest).
+Prebuilt targets: macOS (`aarch64-apple-darwin`, `x86_64-apple-darwin`) and Linux
+(`aarch64-unknown-linux-musl`, `x86_64-unknown-linux-musl`; the Linux builds are static
+and run on any distro).
+
+```sh
+# pick the archive for your platform, e.g. Apple Silicon macOS:
+VER=v0.1.0
+TARGET=aarch64-apple-darwin
+curl -LO "https://github.com/maxkulish/gcm/releases/download/$VER/gcm-$VER-$TARGET.tar.gz"
+curl -LO "https://github.com/maxkulish/gcm/releases/download/$VER/gcm-$VER-$TARGET.tar.gz.sha256"
+
+# verify the checksum
+shasum -a 256 -c "gcm-$VER-$TARGET.tar.gz.sha256"   # macOS
+# sha256sum -c "gcm-$VER-$TARGET.tar.gz.sha256"      # Linux
+
+tar xzf "gcm-$VER-$TARGET.tar.gz"                    # extracts: gcm, LICENSE
+install -m 0755 gcm ~/.local/bin/gcm                 # put it on your PATH
+
+# macOS only: clear the Gatekeeper quarantine on the unsigned binary
+xattr -d com.apple.quarantine ~/.local/bin/gcm 2>/dev/null || true
+
+gcm --version
+```
+
+### Option B - `cargo install` from source
+
+```sh
+cargo install --git https://github.com/maxkulish/gcm --locked
+```
+
+### Option C - build it yourself
+
 ```sh
 cargo build --release
 # the binary is ./target/release/gcm; copy it onto your PATH, e.g.:
 install -m 0755 target/release/gcm ~/.local/bin/gcm
 ```
+
+> Migrating from the bash `git-commit-ai.sh`? See the
+> [cutover guide](docs/guides/cutover-from-bash.md) for the alias mapping and a
+> one-line rollback.
 
 ## Usage
 

@@ -1,0 +1,115 @@
+name: Release
+
+# Two-stage release pipeline (CLO-497, FR-42):
+#   1. `build` matrix -> one static/portable binary per target, uploaded as an artifact
+#   2. `release`      -> single job that assembles ALL artifacts into ONE GitHub Release
+# Stage 2 needs Stage 1, so a single runner failure can't fragment the release, and
+# re-running on the same tag updates assets in place (idempotent).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build & release (e.g. v0.1.0-rc.1) - dry-run rehearsal path'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: static musl - no glibc dependency, runs on any distro.
+          # gcm has no C deps (TLS is pure-Rust rustls), so a static build is clean.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          # macOS: native per-arch runners.
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Build the tagged commit; fetch-depth 0 keeps build.rs's `git rev-parse`
+          # working so `gcm --version` carries a real short SHA (else "unknown").
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Assert Cargo.toml version matches tag
+        shell: bash
+        run: |
+          VER="${TAG#v}"           # v0.1.0 -> 0.1.0
+          BASE_VER="${VER%%-*}"    # 0.1.0-rc.1 -> 0.1.0 (pre-release suffix ignored)
+          CARGO_VER=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          echo "tag=$TAG cargo=$CARGO_VER compare=$BASE_VER"
+          if [ "$CARGO_VER" != "$BASE_VER" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VER) does not match release tag ($TAG)"
+            exit 1
+          fi
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          DIST="gcm-${TAG}-${{ matrix.target }}"
+          STAGE="$(mktemp -d)"
+          cp "target/${{ matrix.target }}/release/gcm" "$STAGE/"
+          cp LICENSE "$STAGE/"
+          tar czf "${DIST}.tar.gz" -C "$STAGE" .
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${DIST}.tar.gz" > "${DIST}.tar.gz.sha256"
+          else
+            shasum -a 256 "${DIST}.tar.gz" > "${DIST}.tar.gz.sha256"
+          fi
+          echo "DIST=$DIST" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DIST }}
+          path: |
+            ${{ env.DIST }}.tar.gz
+            ${{ env.DIST }}.tar.gz.sha256
+          if-no-files-found: error
+
+  release:
+    name: assemble release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # default GITHUB_TOKEN is read-only; required to create/edit the Release
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
