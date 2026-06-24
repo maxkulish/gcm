@@ -6,7 +6,7 @@ git_branch: kmamemo/clo-497-ship-cross-platform-releases-and-the-alias-cutover
 task_type: specification
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
 
 classification:
@@ -49,8 +49,21 @@ phases:
       - "Pin softprops/action-gh-release@v2 + generate_release_notes: true"
     flagged_suggestions: []
   implement:
-    status: in_progress
+    status: complete
     branch: feat/clo-497-releases-cutover
+    codex_validated: true
+    codex_verdict: "FAIL (initial) -> findings fixed"
+    codex_report: docs/reviews/clo-497-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-497-gemini-validation.md
+    gemini_rereview_report: docs/reviews/clo-497-gemini-validation-2.md
+    gemini_verdict: "PASS_WITH_NOTES (re-review: all prior findings resolved, 9/9 ACs covered)"
+    validation_findings_resolved:
+      - "Codex HIGH: AC-3 smoke test now runs built binary on each native runner pre-package"
+      - "Codex MED: cutover rollback now single-revert (OLD block kept commented)"
+      - "Gemini MED: musl linker set via CARGO_TARGET_*_LINKER (avoids crti.o failure)"
+      - "Gemini HIGH(wording): version assert validates tag format + exact-match final / base-match rc"
+      - "Codex rec: overwrite_files: true + workflow_dispatch tag-format guard"
+      - "Gemini LOW: removed stray test.sh accidentally swept into fix commit by git add -A"
     subtasks_done:
       - "1: .github/workflows/release.yml (two-stage; musl Linux + native darwin; version assert; contents:write; pinned action+release notes)"
       - "2: Cargo.toml version - verify-only (already 0.1.0; build.rs SHA stamping confirmed: gcm 0.1.0+<sha>)"
@@ -64,7 +77,9 @@ phases:
       - "x86_64-darwin runner macos-13 -> macos-15-intel (macos-13 retired, actionlint)"
       - "version format corrected to gcm 0.1.0+<sha> (semver build metadata)"
     commits:
-      - ce23ca1
+      - ce23ca1   # feat: release pipeline + cutover docs
+      - 45382de   # fix: validation gate findings (amended, removed stray test.sh)
+      - d21a4d1   # docs: validation re-review artifact
   pr: { status: pending, pr_url: null, pr_number: null }
   complete: { status: pending }
 
@@ -106,3 +121,15 @@ history:
     action: spec_approved
     phase: spec
     details: "User approved at spec checkpoint -> advancing to implement (plan phase skipped; spec decomposition is the plan)"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: implementation_complete
+    phase: implement
+    details: "4 sub-tasks done on feat/clo-497-releases-cutover; commit ce23ca1. Local gates: actionlint clean, fmt OK, binary smoke OK, doc/alias-parity tests pass"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Codex FAIL (AC-3 smoke, AC-6 rollback) + Gemini PASS_WITH_NOTES (musl linker, version assert) -> all fixed (45382de); Gemini re-review PASS_WITH_NOTES, 9/9 ACs, only stray test.sh which was removed"
+  - timestamp: 2026-06-24T05:31:22Z
+    action: pushed_to_remote
+    phase: implement
+    details: "origin/feat/clo-497-releases-cutover (initial push ce23ca1; fix + review commits pending push at PR phase)"
