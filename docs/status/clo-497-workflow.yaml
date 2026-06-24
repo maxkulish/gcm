@@ -80,7 +80,12 @@ phases:
       - ce23ca1   # feat: release pipeline + cutover docs
       - 45382de   # fix: validation gate findings (amended, removed stray test.sh)
       - d21a4d1   # docs: validation re-review artifact
-  pr: { status: pending, pr_url: null, pr_number: null }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/20
+    pr_number: 20
+    ci_passed: true   # CI green on ubuntu-latest + macos-latest (fmt/clippy/test/build)
+    preflight_passed: true   # fmt + clippy -D warnings + 229 tests, actionlint clean
   complete: { status: pending }
 
 context:
