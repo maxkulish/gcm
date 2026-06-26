@@ -1,9 +1,9 @@
 //! OpenAI backend (CLO-489). OpenAI-compatible chat-completions with strict
 //! `json_schema` Structured Outputs (ADR-001 Decision 7). Default model
-//! `gpt-4o-mini-2024-07-18` - non-reasoning, so zero chain-of-thought to
-//! suppress. Reasoning-family (`o1`/`o3`/`o4`) `--model` overrides get a
-//! dedicated payload path (round-2 review pt 1): no `temperature`, no `system`
-//! role, `reasoning_effort` set - else the o-series API 400s.
+//! `gpt-5.4-mini` - non-reasoning, so zero chain-of-thought to suppress.
+//! Reasoning-family (`o1`/`o3`/`o4`) `--model` overrides get a dedicated payload
+//! path (round-2 review pt 1): no `temperature`, no `system` role,
+//! `reasoning_effort` set - else the o-series API 400s.
 
 use serde_json::{json, Value};
 
@@ -97,7 +97,7 @@ impl Provider for OpenAi {
     }
 
     fn diff_budget(&self) -> DiffBudget {
-        // gpt-4o-mini's 128k-token window -> tighter total than Groq/Google.
+        // Conservative total; gpt-5.4-mini's 400k-token window has ample room.
         DiffBudget::resolve(256_000, DiffBudget::STANDARD_PER_FILE)
     }
 }
@@ -218,6 +218,10 @@ mod tests {
         assert!(is_reasoning_model("o4-mini-2025"));
         assert!(!is_reasoning_model("gpt-4o-mini"));
         assert!(!is_reasoning_model("gpt-4.1"));
+        // The default model must take the non-reasoning payload path (system role
+        // + temperature); `gpt-5.4-mini` starts with `g`, so it is not detected
+        // as an o-series reasoning model.
+        assert!(!is_reasoning_model("gpt-5.4-mini"));
         assert!(!is_reasoning_model("openai/gpt-oss-120b"));
     }
 

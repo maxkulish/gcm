@@ -85,7 +85,7 @@ pub struct Cli {
     #[arg(long, value_enum)]
     pub provider: Option<ProviderId>,
 
-    /// Model id for the selected provider (e.g. gpt-4o-mini-2024-07-18).
+    /// Model id for the selected provider (e.g. gpt-5.4-mini).
     /// Overrides the per-provider model env var.
     #[arg(long)]
     pub model: Option<String>,

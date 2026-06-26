@@ -9,7 +9,6 @@ use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -137,15 +136,19 @@ fn cache_path(repo_root: &Path) -> Option<PathBuf> {
 }
 
 /// The cache directory: `GCM_CACHE_DIR` if set (for tests and users who want to
-/// relocate it), otherwise the OS cache dir via the `directories` crate
-/// (ADR-001 #12, FR-29) - never a hardcoded `/tmp`.
+/// relocate it), otherwise the XDG cache dir `~/.cache/gcm` (`$XDG_CACHE_HOME/gcm`
+/// when set) (ADR-001 #12, FR-29) - never a hardcoded `/tmp`.
 fn cache_dir() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("GCM_CACHE_DIR") {
         if !dir.is_empty() {
             return Some(PathBuf::from(dir));
         }
     }
-    ProjectDirs::from("", "", "gcm").map(|d| d.cache_dir().to_path_buf())
+    crate::paths::xdg_gcm_dir_from(
+        std::env::var_os("XDG_CACHE_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+        ".cache",
+    )
 }
 
 /// The cache file name for a repo: `plan-<sha256(repo-root) hex>.json` (FR-25

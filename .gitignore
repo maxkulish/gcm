@@ -3,6 +3,9 @@
 **/*.rs.bk
 *.pdb
 
+# Release artifacts from `make dist` / `make dist-all`
+/dist/
+
 # env file (never commit secrets)
 .env
 

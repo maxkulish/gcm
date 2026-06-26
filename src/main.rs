@@ -6,6 +6,7 @@ mod diff;
 mod error;
 mod git;
 mod output;
+mod paths;
 mod plan;
 mod privacy;
 mod provider;

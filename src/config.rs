@@ -20,7 +20,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
 use crate::error::GcmError;
@@ -58,6 +57,11 @@ pub struct ProviderConfig {
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+    /// Override the provider's default model. Bridged into the provider layer's
+    /// per-provider model env var (e.g. `GCM_OPENAI_MODEL`) when that var is not
+    /// already set, so resolution stays `--model` flag > env var > this > default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// Why a present config file is not usable; drives the stderr warning in [`load`].
@@ -71,12 +75,19 @@ enum LoadIssue {
 // ── path resolution ────────────────────────────────────────────────────────
 
 /// `$GCM_CONFIG/config.toml` if the override is set (tests / relocation, per
-/// ADR-001 Decision 4), else the OS config dir via `directories` (mirrors
+/// ADR-001 Decision 4), else the XDG config dir `~/.config/gcm` (mirrors
 /// `cache::cache_dir`). `None` if no config dir can be determined.
 pub fn config_path() -> Option<PathBuf> {
-    config_path_from(
-        std::env::var_os("GCM_CONFIG").as_deref(),
-        ProjectDirs::from("", "", "gcm").map(|d| d.config_dir().to_path_buf()),
+    config_path_from(std::env::var_os("GCM_CONFIG").as_deref(), config_dir())
+}
+
+/// The XDG config directory for gcm: `$XDG_CONFIG_HOME/gcm` if set (absolute),
+/// else `~/.config/gcm`. `None` when no usable base exists (no `HOME`).
+fn config_dir() -> Option<PathBuf> {
+    crate::paths::xdg_gcm_dir_from(
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+        ".config",
     )
 }
 
@@ -182,8 +193,59 @@ pub fn save(config: &Config) -> io::Result<()> {
 /// Persist to an explicit path (the body of [`save`]), so the atomic `0600`
 /// write is unit-testable with a temp path and no `GCM_CONFIG` env mutation.
 fn save_to(path: &Path, config: &Config) -> io::Result<()> {
-    let text = toml::to_string_pretty(config).map_err(io::Error::other)?;
+    let text = render_config(config).map_err(io::Error::other)?;
     write_atomic(path, text.as_bytes())
+}
+
+/// The on-disk file body: the live config as TOML, followed by a fully-commented
+/// reference block documenting every provider's overridable settings. Only the
+/// live section is active TOML; the reference is all comments, so the file still
+/// parses. Written on first-run onboarding (and `gcm config`) so the format is
+/// discoverable without reading the docs.
+fn render_config(config: &Config) -> Result<String, toml::ser::Error> {
+    let mut s = toml::to_string_pretty(config)?;
+    if !s.ends_with('\n') {
+        s.push('\n');
+    }
+    s.push('\n');
+    s.push_str(&commented_reference());
+    Ok(s)
+}
+
+/// The commented reference block: each provider with its overridable knobs and
+/// real default model, generated from the live provider tables so it never drifts
+/// from the actual defaults / env-var names.
+fn commented_reference() -> String {
+    let mut s = String::new();
+    s.push_str("# ── Reference: all available settings ──────────────────────────────────────\n");
+    s.push_str("# Copy an entry into the section above, uncomment, and edit. A provider entry\n");
+    s.push_str("# supports: model, key (cloud), endpoint (Ollama only). Matching env vars\n");
+    s.push_str("# override this file (e.g. GCM_OPENAI_MODEL=…, OPENAI_API_KEY=…).\n");
+    s.push_str("#\n");
+    for id in cloud_then_ollama() {
+        let token = provider_token(id);
+        let model = id.default_model();
+        let model_var = id.model_env_vars()[0];
+        s.push_str("# [[providers]]\n");
+        s.push_str(&format!("# id = \"{token}\"\n"));
+        s.push_str(&format!(
+            "# model = \"{model}\"   # default; or set {model_var}\n"
+        ));
+        match id.key_env_var() {
+            Some(key_var) => {
+                s.push_str(&format!(
+                    "# key = \"…\"   # inline secret, or set {key_var}\n"
+                ));
+            }
+            None => {
+                s.push_str(&format!(
+                    "# endpoint = \"{DEFAULT_OLLAMA_ENDPOINT}\"   # or set GCM_OLLAMA_BASE_URL / OLLAMA_HOST\n"
+                ));
+            }
+        }
+        s.push_str("#\n");
+    }
+    s
 }
 
 // ── first-run detection ─────────────────────────────────────────────────────
@@ -255,6 +317,16 @@ fn env_plan(config: &Config, is_set: impl Fn(&str) -> bool) -> Vec<(&'static str
                 }
             }
         }
+        // Bridge a config model into the provider's primary model env var, but
+        // only when NONE of its model env vars is already set - any user-set var
+        // (including an alias like GCM_GOOGLE_MODEL, which resolve_model honors)
+        // must win, keeping precedence flag > env > config > default.
+        if let Some(model) = pc.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+            let vars = pc.id.model_env_vars();
+            if !vars.iter().any(|v| is_set(v)) {
+                out.push((vars[0], model.to_string()));
+            }
+        }
     }
     if !is_set("GCM_PROVIDER") {
         out.push(("GCM_PROVIDER", provider_token(config.default)));
@@ -315,6 +387,7 @@ pub fn run_wizard() -> Result<Config, GcmError> {
                     id,
                     key: None,
                     endpoint,
+                    model: None,
                 });
             }
         }
@@ -406,6 +479,7 @@ fn cloud_provider_config(id: ProviderId, env_present: bool, typed: Option<&str>)
         id,
         key,
         endpoint: None,
+        model: None,
     }
 }
 
@@ -760,6 +834,17 @@ mod tests {
             id,
             key: key.map(String::from),
             endpoint: endpoint.map(String::from),
+            model: None,
+        }
+    }
+
+    /// Like [`pc`] but with a `model` override, for the model-bridge tests.
+    fn pcm(id: ProviderId, model: &str) -> ProviderConfig {
+        ProviderConfig {
+            id,
+            key: None,
+            endpoint: None,
+            model: Some(model.to_string()),
         }
     }
 
@@ -928,6 +1013,98 @@ mod tests {
     }
 
     #[test]
+    fn env_plan_bridges_config_model_when_env_unset() {
+        let cfg = Config {
+            version: 1,
+            default: ProviderId::Openai,
+            providers: vec![pcm(ProviderId::Openai, "gpt-x")],
+        };
+        let plan = env_plan(&cfg, |_| false);
+        assert!(plan.contains(&("GCM_OPENAI_MODEL", "gpt-x".to_string())));
+    }
+
+    #[test]
+    fn env_plan_yields_to_real_model_env_var() {
+        let cfg = Config {
+            version: 1,
+            default: ProviderId::Openai,
+            providers: vec![pcm(ProviderId::Openai, "gpt-x")],
+        };
+        // GCM_OPENAI_MODEL already set -> config model is not bridged (env wins).
+        let plan = env_plan(&cfg, |name| name == "GCM_OPENAI_MODEL");
+        assert!(!plan.iter().any(|(v, _)| *v == "GCM_OPENAI_MODEL"));
+    }
+
+    #[test]
+    fn env_plan_config_model_yields_to_google_alias_env() {
+        let cfg = Config {
+            version: 1,
+            default: ProviderId::Google,
+            providers: vec![pcm(ProviderId::Google, "cfg-model")],
+        };
+        // Only the alias GCM_GOOGLE_MODEL is set (not the primary). The user's env
+        // must win, so the config model is NOT bridged into GCM_GEMINI_MODEL -
+        // otherwise resolve_model would read the primary first and override the
+        // alias, violating env > config.
+        let plan = env_plan(&cfg, |name| name == "GCM_GOOGLE_MODEL");
+        assert!(
+            !plan.iter().any(|(v, _)| *v == "GCM_GEMINI_MODEL"),
+            "config model must not override the alias env var: {plan:?}"
+        );
+    }
+
+    #[test]
+    fn env_plan_bridges_google_model_to_primary_var() {
+        let cfg = Config {
+            version: 1,
+            default: ProviderId::Google,
+            providers: vec![pcm(ProviderId::Google, "gemini-x")],
+        };
+        // Google's primary model var is GCM_GEMINI_MODEL (not the GOOGLE alias).
+        let plan = env_plan(&cfg, |_| false);
+        assert!(plan.contains(&("GCM_GEMINI_MODEL", "gemini-x".to_string())));
+    }
+
+    #[test]
+    fn render_config_includes_live_values_and_commented_reference() {
+        let cfg = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pc(ProviderId::Openai, None, None)],
+        };
+        let text = render_config(&cfg).expect("renders");
+        // The live config still parses - the parser ignores the comment block.
+        let back = parse_config(&text).expect("rendered config parses");
+        assert_eq!(back.default, ProviderId::Openai);
+        assert_eq!(back.providers.len(), 1);
+        // The reference block documents the knobs + every provider + the env note.
+        assert!(text.contains("Reference"), "{text}");
+        assert!(text.contains("# model ="), "{text}");
+        assert!(text.contains("# endpoint ="), "{text}");
+        assert!(
+            text.contains("gpt-5.4-mini"),
+            "openai default in reference: {text}"
+        );
+        assert!(
+            text.contains("GCM_OPENAI_MODEL"),
+            "env override note: {text}"
+        );
+        assert!(text.contains("ollama"), "{text}");
+    }
+
+    #[test]
+    fn config_round_trips_model_field() {
+        let cfg = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pcm(ProviderId::Openai, "gpt-5.4-mini")],
+        };
+        let text = toml::to_string_pretty(&cfg).unwrap();
+        let back = parse_config(&text).unwrap();
+        assert_eq!(back.providers[0].model.as_deref(), Some("gpt-5.4-mini"));
+    }
+
+    #[test]
     fn build_config_rejects_default_not_enabled() {
         let enabled = vec![pc(ProviderId::Groq, None, None)];
         assert!(build_config(&enabled, ProviderId::Openai).is_err());
@@ -1030,11 +1207,13 @@ mod tests {
         save_to(&path, &second).unwrap();
 
         let text = fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            text.matches("[[providers]]").count(),
-            1,
-            "no duplicate provider tables: {text}"
-        );
+        // Count only active table headers - the commented reference block also
+        // contains `# [[providers]]` lines, which are documentation, not tables.
+        let active_tables = text
+            .lines()
+            .filter(|l| l.trim_start() == "[[providers]]")
+            .count();
+        assert_eq!(active_tables, 1, "no duplicate provider tables: {text}");
         assert_eq!(load_from(&path).unwrap(), second);
     }
 
