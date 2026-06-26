@@ -18,7 +18,7 @@ classification:
   rationale: "Well-scoped single-feature read-only subcommand following established Config/Envelope patterns with complete acceptance criteria"
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
 
 phases:
@@ -54,12 +54,20 @@ phases:
     flagged_suggestions:
       - "Exit-code on invalid GCM_PROVIDER: Ollama suggested exit 1; resolved to exit 0 + provider_error field (owner confirmed effective-selection + exit-0 semantics)"
   implement:
-    status: validating
+    status: complete
     commits:
-      - 9368fd2
+      - 9368fd2   # feat: gcm status implementation (7 sub-tasks)
+      - 07f48f0   # fix: Codex validation FAIL findings
+      - af1e198   # fix: Codex re-review PASS_WITH_NOTES items
     last_subtask_completed: "ST6 (tests) - all 7 sub-tasks complete"
-    preflight: "fmt clean, clippy clean, 251 tests pass (234 unit + 6 onboarding + 11 status)"
+    preflight: "fmt clean, clippy clean, 257 tests pass (237 unit + 6 onboarding + 14 status)"
     pushed: true
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES   # run 1 FAIL -> fixed -> run 2 PASS_WITH_NOTES; all notes then addressed
+    codex_report: docs/reviews/clo-515-codex-validation-2.md
+    gemini_validated: true
+    gemini_verdict: PASS
+    gemini_validation_report: docs/reviews/clo-515-gemini-validation.md
   pr: { status: pending }
   complete: { status: pending }
 
@@ -92,3 +100,15 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved spec after implementation-level review + refinements. Transitioning to implement (spec decomposition IS the plan; PLAN phase skipped for spec tasks)."
+  - timestamp: 2026-06-26T09:00:00Z
+    action: implementation_complete
+    phase: implement
+    details: "All 7 sub-tasks done. New src/status.rs (StatusReport + pure attribution), Status subcommand, --json global, provider introspection (ModelSource/resolve_model_with_source, pub(crate) pick_provider_id/default_model/model_env_vars/as_str/normalize_host). tests/status.rs (14 acceptance) + 9 status unit tests. README updated. Commit 9368fd2, pushed."
+  - timestamp: 2026-06-26T09:20:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Gemini PASS (3 LOW, no change needed). Codex run 1 FAIL (invalid-provider fallback to config.default vs spec's groq; unusable-config not surfaced; missing config_dir; coverage gaps) -> all fixed (07f48f0) -> Codex run 2 PASS_WITH_NOTES (exit-code on serialize fail, 2 missing tests) -> all addressed (af1e198). 257 tests pass."
+  - timestamp: 2026-06-26T09:25:00Z
+    action: pushed_to_remote
+    phase: implement
+    details: "Branch feat/clo-515-status pushed through af1e198."
