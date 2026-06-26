@@ -107,6 +107,8 @@ gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for 
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
 gcm config                       # run the interactive provider setup wizard and exit
+gcm status                       # show active providers, models, paths, and config sources (read-only)
+gcm status --json                # the same as a machine-readable JSON object
 gcm --reconfigure                # re-run the wizard (update keys/selection), then continue
 gcm --secret-scan=redact         # redact common credential-looking values before provider egress
 gcm --secret-scan=abort          # abort before provider egress when a credential-looking value is found
@@ -128,6 +130,19 @@ probes the Ollama daemon when selected, and picks a default. The result is writt
 Re-run setup anytime to rotate keys or change selections: `gcm config` (wizard then
 exit) or `gcm --reconfigure` (wizard then continue with the commit flow). The wizard is
 idempotent - it overwrites the existing file cleanly.
+
+### Inspecting the active configuration
+
+`gcm status` answers "what will gcm do right now, and why" without any network call,
+diff read, or LLM request. It prints the build version, the resolved config dir / file
+path and where that path came from (`GCM_CONFIG` vs the OS default), and per-provider:
+whether it is the effective selection, whether it is activated, the key source
+(`config file` / `env var <NAME>` / `not set` - never the key itself), the resolved model
+and its source (`flag` / `env var <NAME>` / `default`), and for Ollama the endpoint and
+whether the model is zero-egress. Add `--json` for a versioned, scriptable object
+(`v: 1`); JSON consumers should ignore unknown fields so the payload can grow without a
+breaking version bump. The command always exits 0 - a misconfiguration (an unknown
+`GCM_PROVIDER`, an unusable config) is reported as a field, not a failure.
 
 Config is a fallback layer between the environment and the built-in default: precedence
 is `--flag` > env var > `config.toml` > default, and a value already in the environment

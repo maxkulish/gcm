@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-24 (CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-26 (CLO-515 `gcm status` command started — first v2 slice, spec phase. CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -33,6 +33,7 @@
 | [CLO-496](https://linear.app/cloud-ai/issue/CLO-496) | S11 | First-run onboarding wizard | HITL | High | Done | CLO-485, CLO-489 | 40,53,54,55 |
 | [CLO-497](https://linear.app/cloud-ai/issue/CLO-497) | S12 | Cross-platform releases + alias cutover | AFK | Medium | Done | CLO-487…CLO-496 | 42,43,44 |
 | [CLO-514](https://linear.app/cloud-ai/issue/CLO-514) | S13 | Replace best-effort secret scanner with rule-pack + entropy engine | AFK | Medium | Done | CLO-490 (related) | 60; hardens 50 |
+| [CLO-515](https://linear.app/cloud-ai/issue/CLO-515) | v2 | Add `gcm status` command (active providers, models, paths, config sources) | AFK | Medium | In Progress | CLO-493, CLO-485, CLO-496 (related) | read-only introspection / source attribution |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514.
 
@@ -63,7 +64,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-515](https://linear.app/cloud-ai/issue/CLO-515) | Add `gcm status` command (active providers, models, paths, config sources) | In Progress | Spec | — |
 
 ## Up Next (Ready - no open blockers)
 
