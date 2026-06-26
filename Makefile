@@ -4,9 +4,7 @@
 BIN     := gcm
 VERSION := $(shell grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
 HOST    := $(shell rustc -vV | sed -n 's/host: //p')
-PREFIX  ?= $(HOME)/.local
-# Where `make release-*` installs the freshly built host binary (override with RELEASE_PREFIX=...).
-RELEASE_PREFIX ?= /usr/local
+PREFIX  ?= /usr/local
 DISTDIR := dist
 
 # Release targets shipped by .github/workflows/release.yml - keep this list in sync.
@@ -36,7 +34,7 @@ help:
 	@echo "  make dist          - Package the host release build ($(HOST)) into $(DISTDIR)/"
 	@echo "  make dist-all      - Cross-build + package all release targets (needs cargo-zigbuild)"
 	@echo ""
-	@echo "Release (bump Cargo.toml + commit + tag, build & install to $(RELEASE_PREFIX)/bin; push for CI):"
+	@echo "Release (bump Cargo.toml + commit + tag, build & install to $(PREFIX)/bin; push for CI):"
 	@echo "  make release-patch - $(VERSION) -> next patch, commit, tag vX.Y.(Z+1), install $(BIN)"
 	@echo "  make release-minor - $(VERSION) -> next minor, commit, tag vX.(Y+1).0, install $(BIN)"
 	@echo "  make release-major - $(VERSION) -> next major, commit, tag v(X+1).0.0, install $(BIN)"
@@ -169,7 +167,7 @@ dist-all:
 # ── release (version bump + tag + local install) ───────────────────────────────
 
 # Bump Cargo.toml, sync Cargo.lock, commit, create an annotated `vX.Y.Z` tag,
-# then build the host release binary and install it to $(RELEASE_PREFIX)/bin so
+# then build the host release binary and install it to $(PREFIX)/bin so
 # the new version is immediately on your PATH. Building the *cross-platform*
 # artifacts is still CI's job: pushing the tag triggers
 # .github/workflows/release.yml (which asserts the tag matches Cargo.toml), and
@@ -201,7 +199,7 @@ _bump-and-tag:
 	git tag -a "v$$NEW" -m "v$$NEW"; \
 	echo ""; \
 	echo "Created commit + annotated tag v$$NEW."
-	@$(MAKE) --no-print-directory install PREFIX=$(RELEASE_PREFIX)
+	@$(MAKE) --no-print-directory install
 	@echo ""
 	@echo "Push to trigger the cross-platform release build (.github/workflows/release.yml):"
 	@echo "    git push --follow-tags"
