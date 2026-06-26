@@ -317,12 +317,14 @@ fn env_plan(config: &Config, is_set: impl Fn(&str) -> bool) -> Vec<(&'static str
                 }
             }
         }
-        // Bridge a config model into the provider's primary model env var when it
-        // is not already set, so resolution stays flag > env > config > default.
+        // Bridge a config model into the provider's primary model env var, but
+        // only when NONE of its model env vars is already set - any user-set var
+        // (including an alias like GCM_GOOGLE_MODEL, which resolve_model honors)
+        // must win, keeping precedence flag > env > config > default.
         if let Some(model) = pc.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
-            let var = pc.id.model_env_vars()[0];
-            if !is_set(var) {
-                out.push((var, model.to_string()));
+            let vars = pc.id.model_env_vars();
+            if !vars.iter().any(|v| is_set(v)) {
+                out.push((vars[0], model.to_string()));
             }
         }
     }
@@ -1031,6 +1033,24 @@ mod tests {
         // GCM_OPENAI_MODEL already set -> config model is not bridged (env wins).
         let plan = env_plan(&cfg, |name| name == "GCM_OPENAI_MODEL");
         assert!(!plan.iter().any(|(v, _)| *v == "GCM_OPENAI_MODEL"));
+    }
+
+    #[test]
+    fn env_plan_config_model_yields_to_google_alias_env() {
+        let cfg = Config {
+            version: 1,
+            default: ProviderId::Google,
+            providers: vec![pcm(ProviderId::Google, "cfg-model")],
+        };
+        // Only the alias GCM_GOOGLE_MODEL is set (not the primary). The user's env
+        // must win, so the config model is NOT bridged into GCM_GEMINI_MODEL -
+        // otherwise resolve_model would read the primary first and override the
+        // alias, violating env > config.
+        let plan = env_plan(&cfg, |name| name == "GCM_GOOGLE_MODEL");
+        assert!(
+            !plan.iter().any(|(v, _)| *v == "GCM_GEMINI_MODEL"),
+            "config model must not override the alias env var: {plan:?}"
+        );
     }
 
     #[test]
