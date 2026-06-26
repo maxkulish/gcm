@@ -103,7 +103,7 @@ gcm --json --plan-only           # JSON plan preview; non-destructive
 gcm --json --yes                 # unattended JSON commit
 gcm --yes                        # auto-confirm (non-interactive / CI / agents); alias --no-input
 gcm --provider=google            # use Gemini (also: --provider=openai, --provider=anthropic); default is groq
-gcm --provider=openai --model=gpt-4o-mini-2024-07-18   # override the model for a provider
+gcm --provider=openai --model=gpt-5.4-mini   # override the model for a provider
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
 gcm config                       # run the interactive provider setup wizard and exit
@@ -179,13 +179,13 @@ Override the model with `--model` or the per-provider env var.
 |----------|--------------|---------|---------------|-----------|-------------------|
 | Groq (default) | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `GCM_GROQ_MODEL` | strict `json_schema` |
 | Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
-| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini-2024-07-18` | `GCM_OPENAI_MODEL` | strict `json_schema` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.4-mini` | `GCM_OPENAI_MODEL` | strict `json_schema` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` | `GCM_ANTHROPIC_MODEL` | forced tool-use (`input_schema`) |
 | Ollama (local) | `ollama` | none | `gemma4:e4b-mlx` | `GCM_OLLAMA_MODEL` | native `format` (model-dependent) |
 
 Reasoning models emit no chain-of-thought into the plan or message (per-provider
 suppression + a `<think>` backstop). OpenAI reasoning models (`o1`/`o3`-style) are
-supported as `--model` overrides; the default `gpt-4o-mini` is non-reasoning.
+supported as `--model` overrides; the default `gpt-5.4-mini` is non-reasoning.
 
 **Ollama (local, zero-egress):** needs a running daemon and a pulled model; no API key.
 The endpoint is `http://localhost:11434` by default - override with `OLLAMA_HOST` (e.g.

@@ -179,7 +179,7 @@ impl ProviderId {
         match self {
             ProviderId::Groq => "openai/gpt-oss-120b",
             ProviderId::Google => "gemini-3.1-flash-lite",
-            ProviderId::Openai => "gpt-4o-mini-2024-07-18",
+            ProviderId::Openai => "gpt-5.4-mini",
             ProviderId::Anthropic => "claude-haiku-4-5",
             // Local, user-pulled model (FR-56; owner default). `:cloud` variants
             // (e.g. deepseek-v4-flash:cloud) work via --model but are NOT zero-egress.
@@ -571,7 +571,7 @@ mod tests {
     fn provider_defaults_and_tokens() {
         assert_eq!(ProviderId::Groq.default_model(), "openai/gpt-oss-120b");
         assert_eq!(ProviderId::Google.default_model(), "gemini-3.1-flash-lite");
-        assert_eq!(ProviderId::Openai.default_model(), "gpt-4o-mini-2024-07-18");
+        assert_eq!(ProviderId::Openai.default_model(), "gpt-5.4-mini");
         assert_eq!(ProviderId::Anthropic.default_model(), "claude-haiku-4-5");
         assert_eq!(ProviderId::Ollama.default_model(), "gemma4:e4b-mlx");
         assert_eq!(ProviderId::Ollama.model_env_vars(), &["GCM_OLLAMA_MODEL"]);
