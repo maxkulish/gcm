@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-06-26 (CLO-515 `gcm status` command started — first v2 slice, no open blockers (reads config plumbing from CLO-485/493/496, all Done). CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 merged PR #11; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-26 (CLO-515 `gcm status` command merged PR #21, Done — first v2 slice, had no open blockers (read config plumbing from CLO-485/493/496, all Done), blocked nothing. CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 merged PR #11; CLO-495 merged PR #14; CLO-493 merged PR #12; CLO-489 merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 ## Current Blockers
 

@@ -18,8 +18,8 @@ classification:
   rationale: "Well-scoped single-feature read-only subcommand following established Config/Envelope patterns with complete acceptance criteria"
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
 
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
@@ -69,12 +69,18 @@ phases:
     gemini_verdict: PASS
     gemini_validation_report: docs/reviews/clo-515-gemini-validation.md
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/21
     pr_number: 21
-    ci_passed: false
-    approved: false
-  complete: { status: pending }
+    ci_passed: true
+    reviews_addressed: 0
+    approved: true
+    merge_commit: fb97c57
+    merged_at: 2026-06-26T14:53:33Z
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: 2026-06-26T14:53:33Z
 
 history:
   - timestamp: 2026-06-26T07:06:14Z
@@ -117,3 +123,19 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "Branch feat/clo-515-status pushed through af1e198."
+  - timestamp: 2026-06-26T14:50:00Z
+    action: ci_passed
+    phase: pr
+    details: "PR #21 CI green on ubuntu-latest + macos-latest; mergeStateStatus CLEAN; no review comments."
+  - timestamp: 2026-06-26T14:53:33Z
+    action: pr_merged
+    phase: pr
+    details: "Owner squash-merged PR #21 (merge commit fb97c57)."
+  - timestamp: 2026-06-26T14:54:30Z
+    action: project_sync_complete
+    phase: complete
+    details: "Linear CLO-515 -> Done + completion comment. PROJECT.md: moved to Recently Completed, master table Done, Active Work cleared. DEPENDENCIES.md timestamp updated (blocked nothing). Not in ROADMAP (v2 task)."
+  - timestamp: 2026-06-26T14:54:45Z
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-515 fully completed."
