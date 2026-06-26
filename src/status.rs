@@ -98,8 +98,11 @@ pub struct ProviderStatus {
 
 /// Entry point for the `status` subcommand. Pure introspection: loads the config
 /// and reads the environment, builds the report, prints it (JSON or human), and
-/// always returns exit code 0 (misconfiguration is reported as fields, not a
-/// failure). Dispatched at the top of `run()` before any repo/provider/LLM work.
+/// returns exit code 0 (misconfiguration is reported as fields, not a failure).
+/// A non-zero exit is reserved for a catastrophic internal error - per AC-9, a
+/// JSON serialization failure (infallible for these owned types in practice) is
+/// the one such case. Dispatched at the top of `run()` before any repo/provider/
+/// LLM work.
 pub fn run_status_subcommand(args: &Cli) -> i32 {
     let config = config::load();
     let report = build_report(
@@ -110,10 +113,14 @@ pub fn run_status_subcommand(args: &Cli) -> i32 {
     );
 
     if args.json {
-        // serde cannot fail on our owned types; fall back to a minimal object.
-        let json = serde_json::to_string(&report)
-            .unwrap_or_else(|_| "{\"v\":1,\"version\":\"unknown\"}".to_string());
-        println!("{json}");
+        match serde_json::to_string(&report) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                // AC-9: catastrophic internal error -> stderr + non-zero exit.
+                eprintln!("gcm: error: could not serialize status report: {e}");
+                return 1;
+            }
+        }
     } else {
         print_human(&report);
     }
@@ -128,7 +135,7 @@ fn build_report(
     config: Option<&Config>,
     env_lookup: impl Fn(&str) -> Option<String>,
 ) -> StatusReport {
-    let paths = paths_status(&env_lookup, config.is_some());
+    let paths = paths_status(&env_lookup, config::config_path(), config.is_some());
     let (selected, provider_error) = selected_provider(cli_provider, config, &env_lookup);
 
     let providers = PROVIDER_ORDER
@@ -173,9 +180,15 @@ fn build_report(
 
 /// Resolve the config dir source, dir, path, existence, and whether a present
 /// file actually loaded. Handles the no-config-dir case gracefully (all `None` /
-/// `false`). `config_loaded` is whether `config::load` returned `Some`, so a
-/// present-but-unusable file is distinguishable from an absent one.
-fn paths_status(env_lookup: &impl Fn(&str) -> Option<String>, config_loaded: bool) -> PathsStatus {
+/// `false`). `config_path` is injected (the resolved `config::config_path()`) so
+/// the no-OS-config-dir branch is unit-testable; `config_loaded` is whether
+/// `config::load` returned `Some`, so a present-but-unusable file is
+/// distinguishable from an absent one.
+fn paths_status(
+    env_lookup: &impl Fn(&str) -> Option<String>,
+    config_path: Option<PathBuf>,
+    config_loaded: bool,
+) -> PathsStatus {
     let from_env = env_lookup("GCM_CONFIG")
         .map(|v| v.trim().to_string())
         .is_some_and(|v| !v.is_empty());
@@ -184,7 +197,7 @@ fn paths_status(env_lookup: &impl Fn(&str) -> Option<String>, config_loaded: boo
     } else {
         "default dir".to_string()
     };
-    let path = config::config_path();
+    let path = config_path;
     let config_dir = path.as_ref().and_then(|p| p.parent().map(PathBuf::from));
     let config_file_exists = path.as_ref().is_some_and(|p| p.exists());
     PathsStatus {
@@ -451,6 +464,27 @@ mod tests {
             key_source(ProviderId::Groq, None, &env(&[("GROQ_API_KEY", "   ")])),
             "not set"
         );
+    }
+
+    #[test]
+    fn key_source_blank_inline_key_is_not_set() {
+        // a blank inline key in config is treated as "not set" (matches env_plan)
+        let c = cfg(
+            ProviderId::Groq,
+            vec![pc(ProviderId::Groq, Some("   "), None)],
+        );
+        assert_eq!(key_source(ProviderId::Groq, Some(&c), &env(&[])), "not set");
+    }
+
+    #[test]
+    fn paths_status_handles_no_config_dir() {
+        // AC-10: config_path() == None (no OS config dir) reported gracefully.
+        let p = paths_status(&env(&[]), None, false);
+        assert!(p.config_dir.is_none());
+        assert!(p.config_file_path.is_none());
+        assert!(!p.config_file_exists);
+        assert!(!p.config_file_loaded);
+        assert_eq!(p.config_dir_source, "default dir");
     }
 
     #[test]
