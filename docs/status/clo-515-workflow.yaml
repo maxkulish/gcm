@@ -68,7 +68,12 @@ phases:
     gemini_validated: true
     gemini_verdict: PASS
     gemini_validation_report: docs/reviews/clo-515-gemini-validation.md
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/21
+    pr_number: 21
+    ci_passed: false
+    approved: false
   complete: { status: pending }
 
 history:
