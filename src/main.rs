@@ -9,6 +9,7 @@ mod output;
 mod plan;
 mod privacy;
 mod provider;
+mod status;
 mod ui;
 
 use std::collections::HashSet;
@@ -37,6 +38,13 @@ fn run(args: &Cli) -> i32 {
     // the wizard, persist, and exit without touching the repo or the commit flow.
     if matches!(args.command, Some(Commands::Config)) {
         return run_config_subcommand();
+    }
+
+    // The `status` subcommand is read-only introspection (CLO-515): print active
+    // providers/models/paths/sources and exit, before any repo read, onboarding,
+    // env hydration, or LLM call.
+    if matches!(args.command, Some(Commands::Status)) {
+        return status::run_status_subcommand(args);
     }
 
     let env = execute(args);

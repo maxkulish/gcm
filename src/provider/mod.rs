@@ -13,7 +13,7 @@ mod anthropic;
 mod gemini;
 mod groq;
 mod http;
-mod ollama;
+pub(crate) mod ollama;
 mod openai;
 
 use std::fmt;
@@ -175,7 +175,7 @@ impl ProviderId {
     }
 
     /// Default model id (ADR-001 Decisions 5/7 + capability matrix).
-    fn default_model(self) -> &'static str {
+    pub(crate) fn default_model(self) -> &'static str {
         match self {
             ProviderId::Groq => "openai/gpt-oss-120b",
             ProviderId::Google => "gemini-3.1-flash-lite",
@@ -190,7 +190,7 @@ impl ProviderId {
     /// Per-provider model env vars, in precedence order (primary first). Google
     /// reads both `GCM_GEMINI_MODEL` (primary, matches `GEMINI_API_KEY`) and the
     /// `GCM_GOOGLE_MODEL` alias (round-2 review pt 4).
-    fn model_env_vars(self) -> &'static [&'static str] {
+    pub(crate) fn model_env_vars(self) -> &'static [&'static str] {
         match self {
             ProviderId::Groq => &["GCM_GROQ_MODEL"],
             ProviderId::Google => &["GCM_GEMINI_MODEL", "GCM_GOOGLE_MODEL"],
@@ -202,8 +202,20 @@ impl ProviderId {
 
     /// Parse a provider name (env), case- and whitespace-insensitive, honoring
     /// the `gemini` alias.
-    fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         <ProviderId as ValueEnum>::from_str(s.trim(), true).ok()
+    }
+
+    /// Canonical lowercase token (the `--provider` / `GCM_PROVIDER` value, e.g.
+    /// `groq`, `google`). Stable identifier used in `gcm status` output (CLO-515).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            ProviderId::Groq => "groq",
+            ProviderId::Google => "google",
+            ProviderId::Openai => "openai",
+            ProviderId::Anthropic => "anthropic",
+            ProviderId::Ollama => "ollama",
+        }
     }
 }
 
@@ -242,7 +254,7 @@ fn resolve_provider_id(cli: Option<ProviderId>) -> Result<ProviderId, ProviderEr
 /// Precedence flag > env > default(groq). An empty/whitespace `GCM_PROVIDER` is
 /// treated as unset (round-2 review pt 4); a non-empty unknown name is a fatal
 /// config error listing the valid names.
-fn pick_provider_id(
+pub(crate) fn pick_provider_id(
     cli: Option<ProviderId>,
     env_raw: Option<&str>,
 ) -> Result<ProviderId, ProviderError> {
@@ -268,28 +280,43 @@ fn pick_provider_id(
     }
 }
 
-fn resolve_model(id: ProviderId, cli: Option<&str>) -> String {
-    let env_vals: Vec<Option<String>> = id
-        .model_env_vars()
-        .iter()
-        .map(|v| std::env::var(v).ok())
-        .collect();
-    pick_model(cli, &env_vals, id.default_model())
+/// Where a resolved model value came from (CLO-515 source attribution). `Env`
+/// carries the winning env-var name, so Google's `GCM_GEMINI_MODEL` >
+/// `GCM_GOOGLE_MODEL` precedence is reportable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelSource {
+    Flag,
+    Env(&'static str),
+    Default,
 }
 
-/// Precedence flag > per-provider env (in order) > default. Empty/whitespace
-/// values (flag or env) are skipped, never treated as a literal model id
-/// (round-2 review / Gemini P1.5).
-fn pick_model(cli: Option<&str>, env_vals: &[Option<String>], default: &str) -> String {
+fn resolve_model(id: ProviderId, cli: Option<&str>) -> String {
+    resolve_model_with_source(id, cli, |v| std::env::var(v).ok()).0
+}
+
+/// Resolve the effective model **and** its source for a provider (CLO-515).
+/// Same precedence as [`resolve_model`] (flag > per-provider env in order >
+/// default), with empty/whitespace flag and env values skipped. `env_lookup` is
+/// injected so `gcm status` can attribute without touching process env directly
+/// (and unit tests stay hermetic).
+pub fn resolve_model_with_source(
+    id: ProviderId,
+    cli: Option<&str>,
+    env_lookup: impl Fn(&str) -> Option<String>,
+) -> (String, ModelSource) {
     if let Some(m) = cli.map(str::trim).filter(|m| !m.is_empty()) {
-        return m.to_string();
+        return (m.to_string(), ModelSource::Flag);
     }
-    for v in env_vals {
-        if let Some(m) = v.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
-            return m.to_string();
+    for &var in id.model_env_vars() {
+        if let Some(m) = env_lookup(var)
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+        {
+            return (m.to_string(), ModelSource::Env(var));
         }
     }
-    default.to_string()
+    (id.default_model().to_string(), ModelSource::Default)
 }
 
 // ---------------------------------------------------------------------------
@@ -496,42 +523,48 @@ mod tests {
     }
 
     #[test]
-    fn pick_model_precedence() {
-        // flag wins
-        assert_eq!(
-            pick_model(Some("m-flag"), &[Some("m-env".to_string())], "m-def"),
-            "m-flag"
-        );
-        // env when no flag; first non-empty env wins (primary before alias)
-        assert_eq!(
-            pick_model(None, &[None, Some("alias".to_string())], "m-def"),
-            "alias"
-        );
-        assert_eq!(
-            pick_model(
-                None,
-                &[Some("primary".to_string()), Some("alias".to_string())],
-                "m-def"
-            ),
-            "primary"
-        );
-        // default when nothing
-        assert_eq!(pick_model(None, &[None], "m-def"), "m-def");
+    fn resolve_model_with_source_precedence() {
+        // flag wins, source Flag
+        let (m, s) = resolve_model_with_source(ProviderId::Groq, Some("m-flag"), |_| {
+            Some("m-env".to_string())
+        });
+        assert_eq!(m, "m-flag");
+        assert_eq!(s, ModelSource::Flag);
+
+        // env when no flag; for Google the primary (GCM_GEMINI_MODEL) wins over the
+        // alias (GCM_GOOGLE_MODEL) and the source names the winning var.
+        let (m, s) = resolve_model_with_source(ProviderId::Google, None, |v| match v {
+            "GCM_GEMINI_MODEL" => Some("primary".to_string()),
+            "GCM_GOOGLE_MODEL" => Some("alias".to_string()),
+            _ => None,
+        });
+        assert_eq!(m, "primary");
+        assert_eq!(s, ModelSource::Env("GCM_GEMINI_MODEL"));
+
+        // alias used when primary unset
+        let (m, s) = resolve_model_with_source(ProviderId::Google, None, |v| match v {
+            "GCM_GOOGLE_MODEL" => Some("alias".to_string()),
+            _ => None,
+        });
+        assert_eq!(m, "alias");
+        assert_eq!(s, ModelSource::Env("GCM_GOOGLE_MODEL"));
+
+        // default when nothing set, source Default
+        let (m, s) = resolve_model_with_source(ProviderId::Groq, None, |_| None);
+        assert_eq!(m, ProviderId::Groq.default_model());
+        assert_eq!(s, ModelSource::Default);
     }
 
     #[test]
-    fn pick_model_empty_flag_and_env_fall_through() {
+    fn resolve_model_with_source_empty_flag_and_env_fall_through() {
         // empty/whitespace --model is not a literal model id (round-2 pt / P1.5)
-        assert_eq!(pick_model(Some("   "), &[None], "m-def"), "m-def");
-        // empty env is skipped
-        assert_eq!(
-            pick_model(
-                None,
-                &[Some("  ".to_string()), Some("real".to_string())],
-                "m-def"
-            ),
-            "real"
-        );
+        let (m, s) = resolve_model_with_source(ProviderId::Groq, Some("   "), |_| None);
+        assert_eq!(m, ProviderId::Groq.default_model());
+        assert_eq!(s, ModelSource::Default);
+        // empty env is skipped, falls to default
+        let (m, s) = resolve_model_with_source(ProviderId::Groq, None, |_| Some("  ".to_string()));
+        assert_eq!(m, ProviderId::Groq.default_model());
+        assert_eq!(s, ModelSource::Default);
     }
 
     #[test]

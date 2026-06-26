@@ -58,8 +58,9 @@ pub struct Cli {
 
     /// Emit a stable JSON envelope on stdout instead of human-oriented prose.
     /// All diagnostics are sent to stderr so stdout contains a single valid
-    /// JSON object.
-    #[arg(long)]
+    /// JSON object. Global so it is accepted after a subcommand too
+    /// (e.g. `gcm status --json`).
+    #[arg(long, global = true)]
     pub json: bool,
 
     /// Generate the plan (or single-commit preview with --all) and exit without
@@ -105,6 +106,8 @@ pub struct Cli {
 pub enum Commands {
     /// Run the interactive provider setup wizard and exit.
     Config,
+    /// Print active providers, models, paths, and config sources, then exit.
+    Status,
 }
 
 #[cfg(test)]
@@ -133,6 +136,23 @@ mod tests {
     fn config_subcommand_parses() {
         let cli = Cli::try_parse_from(["gcm", "config"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Config)));
+    }
+
+    #[test]
+    fn status_subcommand_parses() {
+        let cli = Cli::try_parse_from(["gcm", "status"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Status)));
+    }
+
+    #[test]
+    fn json_is_global_after_subcommand() {
+        // --json is global, so it parses both before and after the subcommand.
+        let cli = Cli::try_parse_from(["gcm", "status", "--json"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Status)));
+        assert!(cli.json);
+        let cli = Cli::try_parse_from(["gcm", "--json", "status"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Status)));
+        assert!(cli.json);
     }
 
     #[test]

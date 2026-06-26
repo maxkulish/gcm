@@ -1,0 +1,91 @@
+task: CLO-515
+title: "Add `gcm status` command to show active providers, models, paths, and config sources"
+linear_url: https://linear.app/cloud-ai/issue/CLO-515/add-gcm-status-command-to-show-active-providers-models-paths-and
+branch: feat/clo-515-status
+task_type: specification
+
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:         { lean: spec, note: "Additive read-only subcommand; new code in cli.rs/main.rs, reads existing config/provider/output modules" }
+    architecture_novelty: { lean: spec, note: "Explicitly follows Commands::Config dispatch + Envelope output patterns; no new data model or dependency" }
+    prior_art:            { lean: spec, note: "Config subcommand and Envelope/emit are direct templates; CLO-493 automation surface already landed" }
+    requirement_clarity:  { lean: spec, note: "Full acceptance criteria; open question pre-resolved (option a: single resolved model + source)" }
+    scope_signal:         { lean: spec, note: "Single read-only subcommand, S/M scope" }
+  rationale: "Well-scoped single-feature read-only subcommand following established Config/Envelope patterns with complete acceptance criteria"
+
+workflow:
+  current_phase: implement
+  status: in_progress
+
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-06-26-clo-515-gcm-status.md
+    approved: true
+    review_gemini: docs/reviews/clo-515-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-515-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-515-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true    # re-run: both Gemini + Ollama produced substantive reviews, both APPROVE_WITH_SUGGESTIONS
+    review_applied: true
+    applied_suggestions:
+      - "Early dispatch before ensure_configured/apply_to_env/onboarding/Repo (synthesis Agreement #1/#2)"
+      - "AC-7 Ollama activation: config OR OLLAMA_HOST/GCM_OLLAMA_BASE_URL only, not active-by-default (Gemini)"
+      - "AC-4: removed masked-suffix option; set/not-set + source only (Gemini, side w/ Gemini)"
+      - "AC-9 exit-code: exit 0 incl. misconfig reported as fields (Ollama, resolved exit-0)"
+      - "AC-10 no-panic: handle config_path None + invalid GCM_PROVIDER by reporting (Gemini)"
+      - "Ollama :cloud zero_egress field (Gemini Novel #1)"
+      - "Provider output order pinned to cloud_then_ollama (Ollama Novel #6)"
+      - "Split ST2 into 2a/2b; added 2c pick_provider_id exposure (Ollama P2)"
+      - "Dedicated ollama_endpoint_source precedence chain in ST3 (Ollama Novel #5)"
+      - "JSON forward-compat note (Ollama Novel #7); hermetic test env (Ollama P2)"
+    owner_review_applied:
+      - "Blind spot 1: --model scoped to selected provider only (constraint + AC-3 + test #7)"
+      - "Blind spot 3: is_default = effective selection, precedence flag>GCM_PROVIDER>config.default>Groq; fixed pick_provider_id gap that omits config.default (constraint + AC-7 + test #11)"
+      - "Code issue A: --json must be global=true so `gcm status --json` parses (AC-5 + ST1 + test #8)"
+      - "Code issue B: tests use CARGO_BIN_EXE_gcm, not assert_cmd (ST6)"
+      - "Code issue C: non-blank env checks for activation (edge case)"
+    flagged_suggestions:
+      - "Exit-code on invalid GCM_PROVIDER: Ollama suggested exit 1; resolved to exit 0 + provider_error field (owner confirmed effective-selection + exit-0 semantics)"
+  implement:
+    status: in_progress
+    commits: []
+    last_subtask_completed: null
+  pr: { status: pending }
+  complete: { status: pending }
+
+history:
+  - timestamp: 2026-06-26T07:06:14Z
+    action: workflow_started
+    phase: init
+    details: "New specification workflow created for CLO-515"
+  - timestamp: 2026-06-26T07:06:14Z
+    action: task_classified
+    phase: init
+    details: "recommended=specification, chosen=specification, confidence=high (5/5 signals aligned, method=probe)"
+  - timestamp: 2026-06-26T07:06:14Z
+    action: project_sync_start
+    phase: init
+    details: "CLO-515 added to PROJECT.md Active Work (1/3) + master table (v2 slice); no blockers in DEPENDENCIES.md"
+  - timestamp: 2026-06-26T07:30:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "lok dual-model review (run 1): Gemini FAILED (TLS cert error), Ollama returned meta-assessment only. No actionable feedback."
+  - timestamp: 2026-06-26T08:00:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "lok dual-model review (run 2, owner-requested): Gemini + Ollama both substantive, both APPROVE_WITH_SUGGESTIONS. ~12 suggestions extracted."
+  - timestamp: 2026-06-26T08:15:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "Applied AI-review suggestions + owner implementation-level review (4 blind spots validated against code: --model scope, Ollama activation, is_default=effective-selection w/ config.default precedence fix, pure Ollama endpoint). Owner decisions: effective-selection, --json global, refine-then-implement. Found/fixed 4 code issues (config.default precedence bug, global --json, assert_cmd dep, non-blank checks)."
+  - timestamp: 2026-06-26T08:20:00Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved spec after implementation-level review + refinements. Transitioning to implement (spec decomposition IS the plan; PLAN phase skipped for spec tasks)."

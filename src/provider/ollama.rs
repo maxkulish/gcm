@@ -15,7 +15,7 @@ use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
 use crate::plan::Plan;
 
 const NAME: &str = "Ollama";
-const DEFAULT_BASE_URL: &str = "http://localhost:11434";
+pub(crate) const DEFAULT_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_PORT: &str = "11434";
 
 pub struct Ollama {
@@ -164,7 +164,7 @@ fn resolve_base_url(gcm_base: Option<String>, ollama_host: Option<String>) -> St
 /// gets `http://` prepended; if it then carries no explicit port, the Ollama
 /// default `:11434` is appended. A value that already has a scheme is taken
 /// as-is (no port forced).
-fn normalize_host(host: &str) -> String {
+pub(crate) fn normalize_host(host: &str) -> String {
     let h = host.trim();
     if h.contains("://") {
         return h.to_string();
