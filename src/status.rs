@@ -146,6 +146,16 @@ fn build_report(
             // resolve from env/default so they aren't mislabeled `flag`.
             let model_flag = if is_selected { cli_model } else { None };
             let (model, msrc) = resolve_model_with_source(id, model_flag, &env_lookup);
+            // If neither a flag nor an env var produced the model, a model set in
+            // the config file is what the next run will actually use (bridged via
+            // apply_to_env), so attribute it to the config rather than `default`.
+            let (model, model_source) = match msrc {
+                ModelSource::Default => match config_model(config, id) {
+                    Some(m) => (m, "config file".to_string()),
+                    None => (model, model_source_label(msrc)),
+                },
+                _ => (model, model_source_label(msrc)),
+            };
 
             let (key_source, endpoint, endpoint_source, zero_egress) = if id == ProviderId::Ollama {
                 let (ep, src) = ollama_endpoint(config, &env_lookup);
@@ -163,7 +173,7 @@ fn build_report(
                 endpoint,
                 endpoint_source,
                 model,
-                model_source: model_source_label(msrc),
+                model_source,
                 zero_egress,
             }
         })
@@ -294,6 +304,17 @@ fn key_source(
     "not set".to_string()
 }
 
+/// A provider's non-blank `model` from the loaded config, if any. Blank/whitespace
+/// is treated as unset, matching the `env_plan` bridge that trims before applying.
+fn config_model(config: Option<&Config>, id: ProviderId) -> Option<String> {
+    config
+        .and_then(|c| c.providers.iter().find(|p| p.id == id))
+        .and_then(|pc| pc.model.as_deref())
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(String::from)
+}
+
 /// Resolve the Ollama endpoint and its source without calling `apply_to_env`.
 fn ollama_endpoint(
     config: Option<&Config>,
@@ -417,6 +438,7 @@ mod tests {
             id,
             key: key.map(String::from),
             endpoint: endpoint.map(String::from),
+            model: None,
         }
     }
 
@@ -648,6 +670,55 @@ mod tests {
             .unwrap();
         assert_eq!(groq.model_source, "default");
         assert_ne!(groq.model, "foo");
+    }
+
+    #[test]
+    fn config_model_attributed_as_config_file() {
+        // A model set in config (no flag, no env) is what the next run will use
+        // (bridged via apply_to_env), so status attributes it to the config file.
+        let config = cfg(
+            ProviderId::Openai,
+            vec![ProviderConfig {
+                id: ProviderId::Openai,
+                key: None,
+                endpoint: None,
+                model: Some("gpt-config".to_string()),
+            }],
+        );
+        let report = build_report(None, None, Some(&config), env(&[]));
+        let openai = report
+            .providers
+            .iter()
+            .find(|p| p.name == ProviderId::Openai)
+            .unwrap();
+        assert_eq!(openai.model, "gpt-config");
+        assert_eq!(openai.model_source, "config file");
+    }
+
+    #[test]
+    fn real_env_model_wins_over_config_model() {
+        let config = cfg(
+            ProviderId::Openai,
+            vec![ProviderConfig {
+                id: ProviderId::Openai,
+                key: None,
+                endpoint: None,
+                model: Some("gpt-config".to_string()),
+            }],
+        );
+        let report = build_report(
+            None,
+            None,
+            Some(&config),
+            env(&[("GCM_OPENAI_MODEL", "gpt-env")]),
+        );
+        let openai = report
+            .providers
+            .iter()
+            .find(|p| p.name == ProviderId::Openai)
+            .unwrap();
+        assert_eq!(openai.model, "gpt-env");
+        assert_eq!(openai.model_source, "env var GCM_OPENAI_MODEL");
     }
 
     #[test]
