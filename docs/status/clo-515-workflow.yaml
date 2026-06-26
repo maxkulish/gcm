@@ -54,9 +54,12 @@ phases:
     flagged_suggestions:
       - "Exit-code on invalid GCM_PROVIDER: Ollama suggested exit 1; resolved to exit 0 + provider_error field (owner confirmed effective-selection + exit-0 semantics)"
   implement:
-    status: in_progress
-    commits: []
-    last_subtask_completed: null
+    status: validating
+    commits:
+      - 9368fd2
+    last_subtask_completed: "ST6 (tests) - all 7 sub-tasks complete"
+    preflight: "fmt clean, clippy clean, 251 tests pass (234 unit + 6 onboarding + 11 status)"
+    pushed: true
   pr: { status: pending }
   complete: { status: pending }
 

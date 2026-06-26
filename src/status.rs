@@ -54,11 +54,20 @@ pub struct StatusReport {
 pub struct PathsStatus {
     /// `env var GCM_CONFIG` or `default dir`.
     pub config_dir_source: String,
+    /// Resolved config directory (parent of the file), or `None` if no OS config
+    /// dir is available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_dir: Option<PathBuf>,
     /// Resolved `config.toml` path, or `None` if no OS config dir is available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_file_path: Option<PathBuf>,
     /// Whether the config file exists on disk.
     pub config_file_exists: bool,
+    /// Whether the config file was parsed and is usable (`config::load` returned
+    /// `Some`). `false` while `config_file_exists` is `true` means the file is
+    /// present but malformed / wrong-version / insecure (a stderr warning was
+    /// emitted); the report falls back to env-derived state.
+    pub config_file_loaded: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -119,7 +128,7 @@ fn build_report(
     config: Option<&Config>,
     env_lookup: impl Fn(&str) -> Option<String>,
 ) -> StatusReport {
-    let paths = paths_status(&env_lookup);
+    let paths = paths_status(&env_lookup, config.is_some());
     let (selected, provider_error) = selected_provider(cli_provider, config, &env_lookup);
 
     let providers = PROVIDER_ORDER
@@ -162,9 +171,11 @@ fn build_report(
     }
 }
 
-/// Resolve the config dir source, path, and existence. Handles the no-config-dir
-/// case gracefully (`config_file_path: None`, `exists: false`).
-fn paths_status(env_lookup: &impl Fn(&str) -> Option<String>) -> PathsStatus {
+/// Resolve the config dir source, dir, path, existence, and whether a present
+/// file actually loaded. Handles the no-config-dir case gracefully (all `None` /
+/// `false`). `config_loaded` is whether `config::load` returned `Some`, so a
+/// present-but-unusable file is distinguishable from an absent one.
+fn paths_status(env_lookup: &impl Fn(&str) -> Option<String>, config_loaded: bool) -> PathsStatus {
     let from_env = env_lookup("GCM_CONFIG")
         .map(|v| v.trim().to_string())
         .is_some_and(|v| !v.is_empty());
@@ -174,18 +185,23 @@ fn paths_status(env_lookup: &impl Fn(&str) -> Option<String>) -> PathsStatus {
         "default dir".to_string()
     };
     let path = config::config_path();
+    let config_dir = path.as_ref().and_then(|p| p.parent().map(PathBuf::from));
     let config_file_exists = path.as_ref().is_some_and(|p| p.exists());
     PathsStatus {
         config_dir_source,
+        config_dir,
         config_file_path: path,
         config_file_exists,
+        config_file_loaded: config_loaded,
     }
 }
 
 /// The effective selected provider and an optional error note. Precedence
 /// `--provider` flag > `GCM_PROVIDER` env > `config.default` > built-in `Groq`.
-/// An unknown non-blank `GCM_PROVIDER` is reported (not fatal); the displayed
-/// selection falls back to `config.default` (if any) else `Groq`.
+/// An unknown non-blank `GCM_PROVIDER` is reported (not fatal): at runtime it
+/// would be a fatal config error regardless of `config.default` (the env bridge
+/// never overwrites a set `GCM_PROVIDER`), so the display falls back to `Groq`,
+/// not `config.default`, to avoid implying a selection the runtime would reject.
 fn selected_provider(
     cli_provider: Option<ProviderId>,
     config: Option<&Config>,
@@ -202,17 +218,14 @@ fn selected_provider(
     {
         return match ProviderId::parse(&raw) {
             Some(id) => (id, None),
-            None => {
-                let fallback = config.map_or(ProviderId::Groq, |c| c.default);
-                (
-                    fallback,
-                    Some(format!(
-                        "unknown provider '{raw}' in GCM_PROVIDER (valid: groq, google, openai, \
-                         anthropic, ollama); showing {} as selected",
-                        fallback.as_str()
-                    )),
-                )
-            }
+            None => (
+                ProviderId::Groq,
+                Some(format!(
+                    "unknown provider '{raw}' in GCM_PROVIDER (valid: groq, google, openai, \
+                     anthropic, ollama); it would be a fatal error on a normal run - showing \
+                     groq as the display fallback"
+                )),
+            ),
         };
     }
     if let Some(c) = config {
@@ -255,8 +268,14 @@ fn key_source(
             return format!("env var {var}");
         }
     }
-    let inline = config.and_then(|c| c.providers.iter().find(|p| p.id == id));
-    if inline.is_some_and(|pc| pc.key.is_some()) {
+    // A blank inline key is treated as "not set" to match the runtime: `env_plan`
+    // trims and filters empty inline keys before bridging them.
+    let inline_nonblank = config
+        .and_then(|c| c.providers.iter().find(|p| p.id == id))
+        .and_then(|pc| pc.key.as_deref())
+        .map(str::trim)
+        .is_some_and(|k| !k.is_empty());
+    if inline_nonblank {
         return "config file".to_string();
     }
     "not set".to_string()
@@ -313,16 +332,25 @@ fn print_human(report: &StatusReport) {
 
     println!("\nPaths:");
     println!("  config dir source: {}", report.paths.config_dir_source);
+    match &report.paths.config_dir {
+        Some(d) => println!("  config dir:        {}", d.display()),
+        None => println!("  config dir:        (no OS config dir available)"),
+    }
     match &report.paths.config_file_path {
-        Some(p) => println!(
-            "  config file:       {} ({})",
-            p.display(),
-            if report.paths.config_file_exists {
-                "exists"
-            } else {
-                "no config file"
-            }
-        ),
+        Some(p) => {
+            // present-but-unusable (exists yet not loaded) vs present vs absent
+            let state = match (
+                report.paths.config_file_exists,
+                report.paths.config_file_loaded,
+            ) {
+                (true, true) => "exists",
+                (true, false) => {
+                    "present but NOT usable (malformed/wrong version/insecure - see stderr)"
+                }
+                (false, _) => "no config file",
+            };
+            println!("  config file:       {} ({state})", p.display());
+        }
         None => println!("  config file:       (no OS config dir available)"),
     }
 
@@ -487,6 +515,16 @@ mod tests {
         assert_eq!(id, ProviderId::Groq);
         let err = err.expect("invalid provider reported");
         assert!(err.contains("bogus"), "{err}");
+    }
+
+    #[test]
+    fn selected_provider_invalid_env_falls_back_to_groq_even_with_config_default() {
+        // Even with config.default = openai, an invalid GCM_PROVIDER displays Groq
+        // (runtime would fatally error, not silently use config.default).
+        let c = cfg(ProviderId::Openai, vec![pc(ProviderId::Openai, None, None)]);
+        let (id, err) = selected_provider(None, Some(&c), &env(&[("GCM_PROVIDER", "bogus")]));
+        assert_eq!(id, ProviderId::Groq);
+        assert!(err.expect("reported").contains("bogus"));
     }
 
     #[test]

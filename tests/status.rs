@@ -27,10 +27,14 @@ const CLEARED_ENV: &[&str] = &[
 ];
 
 /// Run `gcm` with a cleared provider env, `GCM_CONFIG` pointed at `config_dir`,
-/// plus any `extra_env` (name, value) pairs. Returns the captured output.
+/// plus any `extra_env` (name, value) pairs. The working directory is set to a
+/// throwaway non-git temp dir so the test also proves `gcm status` works outside
+/// any repository (AC-1). Returns the captured output.
 fn run_status(config_dir: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> Output {
+    let cwd = tempfile::tempdir().expect("cwd tempdir"); // not a git repo
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_gcm"));
-    cmd.args(args)
+    cmd.current_dir(cwd.path())
+        .args(args)
         .env("GCM_CONFIG", config_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -229,6 +233,63 @@ fn status_malformed_config_falls_back_to_env_state() {
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["v"], 1);
     assert_eq!(json["providers"].as_array().unwrap().len(), 5);
+    // machine-readable: the file exists but is not usable (distinguishable from absent)
+    assert_eq!(json["paths"]["config_file_exists"], true);
+    assert_eq!(json["paths"]["config_file_loaded"], false);
+}
+
+#[test]
+fn status_reports_config_dir_and_loaded_state() {
+    // AC-2: resolved config dir is present; a good config loads.
+    let cfg = tempfile::tempdir().unwrap();
+    write_config(
+        cfg.path(),
+        "version = 1\ndefault = \"groq\"\n\n[[providers]]\nid = \"groq\"\n",
+    );
+    let out = run_status(cfg.path(), &["status", "--json"], &[]);
+    assert!(out.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["paths"]["config_dir"], cfg.path().to_str().unwrap());
+    assert_eq!(json["paths"]["config_dir_source"], "env var GCM_CONFIG");
+    assert_eq!(json["paths"]["config_file_loaded"], true);
+}
+
+#[test]
+fn status_help_lists_subcommand() {
+    // AC-8: the subcommand is discoverable in help output.
+    let cfg = tempfile::tempdir().unwrap();
+    let out = run_status(cfg.path(), &["--help"], &[]);
+    assert!(out.status.success());
+    assert!(stdout_of(&out).contains("status"), "status in --help");
+    // `gcm status --help` also works (subcommand help)
+    let out = run_status(cfg.path(), &["status", "--help"], &[]);
+    assert!(out.status.success());
+}
+
+#[test]
+fn status_invalid_gcm_provider_with_config_default_still_shows_groq() {
+    // config.default = openai, but GCM_PROVIDER=bogus -> groq displayed + error.
+    let cfg = tempfile::tempdir().unwrap();
+    write_config(
+        cfg.path(),
+        "version = 1\ndefault = \"openai\"\n\n[[providers]]\nid = \"openai\"\n",
+    );
+    let out = run_status(
+        cfg.path(),
+        &["status", "--json"],
+        &[("GCM_PROVIDER", "bogus")],
+    );
+    assert!(out.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(json["provider_error"].as_str().unwrap().contains("bogus"));
+    let providers = json["providers"].as_array().unwrap();
+    let groq = providers.iter().find(|p| p["name"] == "groq").unwrap();
+    let openai = providers.iter().find(|p| p["name"] == "openai").unwrap();
+    assert_eq!(groq["selected"], true, "groq is the display fallback");
+    assert_eq!(
+        openai["selected"], false,
+        "config.default is NOT shown selected"
+    );
 }
 
 #[test]
