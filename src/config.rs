@@ -632,6 +632,7 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         .items(&provider_items)
         .initial_value(current_default)
         .filter_mode()
+        .max_rows(15)
         .interact()
     {
         Ok(v) => v,
@@ -734,6 +735,7 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         .initial_values(initial_enabled)
         .required(true)
         .filter_mode()
+        .max_rows(15)
         .interact()
     {
         Ok(v) => v,
@@ -747,7 +749,8 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         .collect();
     let mut default_select = select::<String>("Default model")
         .items(&default_items)
-        .filter_mode();
+        .filter_mode()
+        .max_rows(15);
     if let Some(d) = initial_default_model(&selected, current_model.as_deref()) {
         default_select = default_select.initial_value(d);
     }
