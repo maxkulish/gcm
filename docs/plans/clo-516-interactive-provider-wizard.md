@@ -4,7 +4,7 @@
 **Design Document**: docs/designs/clo-516-interactive-provider-wizard.md (Finalized)
 **Architecture Reference**: docs/adrs/001-foundational-architecture-decisions.md (Decisions 2, 4, 11)
 **Created**: 2026-06-28
-**Overall Progress**: 77% (20/26 top-level tasks completed) — Phases 1-4 done; validation + PR remain
+**Overall Progress**: 96% (25/26 top-level tasks) — implementation + validation done; PR remains (Task 24 manual TTY verify = owner step)
 
 ---
 
@@ -101,11 +101,11 @@ manual-verify only). Implement strictly Phase 1 -> 4 so each layer is green befo
 
 ### Phase 5: Testing & Validation
 
-- [ ] Task 21: `cargo fmt --check` clean
-- [ ] Task 22: `cargo clippy --all-targets -- -D warnings` clean
-- [ ] Task 23: `cargo test` full suite green (existing + new unit + `tests/provider.rs`)
+- [x] Task 21: `cargo fmt --check` clean
+- [x] Task 22: `cargo clippy --all-targets -- -D warnings` clean
+- [x] Task 23: `cargo test` full suite green (existing + new unit + `tests/provider.rs`)
 - [ ] Task 24: Manual TTY verification of the cliclack flow against a large list (Ollama/OpenAI) — record screenshot/recording for the PR (covers AC-1, AC-3)
-- [ ] Task 25: Codex + (best-effort) Gemini pre-PR validation gate; address findings
+- [x] Task 25: Codex + (best-effort) Gemini pre-PR validation gate; address findings
 
 ### Phase 6: Finalization
 

@@ -18,7 +18,7 @@ classification:
   rationale: "Clear ticket but the how hides real architecture decisions (config migration, fetch_supported_models trait shape/async, wizard module placement, runtime-validation UX) across 9+ files - design-doc-worthy"
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
 
 phases:
@@ -75,7 +75,7 @@ phases:
     plan_file: docs/plans/clo-516-interactive-provider-wizard.md
     approved: true
   implement:
-    status: in_progress
+    status: complete
     commits:
       - 24603cc   # Phase 1: config v2 schema + enabled-model whitelist + enforcement
       - e5c85a5   # Phase 2: model-list discovery + hygiene (http::get_json, models.rs)
@@ -184,3 +184,7 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Validation gate (Codex gpt-5.4 + Gemini 3.1-pro). Codex FAIL (2 MEDIUM endpoint-precedence bugs: Google alias base-url, Ollama env-vs-config; 2 LOW: canonicalize preselect, AC-4 helper). Gemini PASS_WITH_NOTES (build_provider_config helper, wizard placement). Validated each vs code; fixed all 4 concrete findings + a self-review key-preservation edge. 302 tests pass, clippy clean. Commit addresses M1/M2/L1/AC-4. Wizard-placement (config.rs vs provider/wizard.rs) flagged to owner as a defensible documented divergence (not a bug)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: implementation_complete
+    phase: implement
+    details: "All implementation phases complete (1-4 + validation fixes). Owner chose to keep the wizard in config.rs (not extract). 302 tests pass, fmt+clippy clean. Manual TTY verify of the cliclack flow (AC-1/AC-3) is the owner's pre/post-merge step. Transitioning to PR phase."
