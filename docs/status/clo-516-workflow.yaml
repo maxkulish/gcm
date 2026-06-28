@@ -86,6 +86,24 @@ phases:
     preflight: "fmt+clippy clean, 298 tests pass (273 unit + 6 onboarding + 5 provider + 14 status); Phases 1-4 pushed"
     pushed: true
     notes: "Phase 2 centralized per-backend model-fetch in models.rs (vs plan Task 9 per-backend helpers): discovery is fallback-safe, keeps hot commit path untouched. Phase 3 wizard lives in config.rs (resolves pt14 module-visibility by placement). pt4 .max_rows added (no longer deferred). Remaining deferred: pt12 (gcm status whitelist awareness, separate task). Manual TTY verify (AC-1/AC-3) pending. dead_code gates removed in Phase 3."
+  implement_validation:
+    codex_validated: true
+    codex_verdict: FAIL   # run 1 FAIL -> all 4 findings fixed; not re-run (tooling slow), fixes unit-tested
+    codex_report: docs/reviews/clo-516-codex-validation.md
+    gemini_validated: true
+    gemini_verdict: PASS_WITH_NOTES
+    gemini_report: docs/reviews/clo-516-gemini-validation.md
+    findings_addressed:
+      - "M1 (Codex): model-fetch honors GCM_GOOGLE_BASE_URL alias for Google (mirrors gemini.rs) + hermetic test"
+      - "M2 (Codex): Ollama wizard endpoint default mirrors runtime precedence (env > config > default) + test"
+      - "L1 (Codex): wizard candidate list + preselect/default canonicalized (Gemini models/, Ollama :latest) + tests"
+      - "AC-4 (Codex L2 + Gemini M2): pure build_provider_config (>=1 enabled, default in set) + test"
+      - "Self-review: wizard preserves existing inline key when env key set (no erase)"
+    flagged_for_owner:
+      - "Gemini M1: wizard in config.rs not provider/wizard.rs. Documented divergence (reuses config's private helpers; avoids a config<->provider module cycle since config already calls provider::fetch). Recommend keeping; possible follow-up: split to a config/wizard.rs submodule if file size matters. NOT a bug."
+    not_addressed:
+      - "Codex/Gemini: e2e subprocess test for gcm config preserving a whitelist - needs a PTY harness (none in repo); logic is unit-tested via preserve_existing_models. Manual-verify like the rest of the TUI."
+    post_fix_preflight: "fmt+clippy clean, 302 tests pass (277 unit + 6 onboarding + 5 provider + 14 status)"
   pr: { status: pending }
   complete: { status: pending }
 
@@ -162,3 +180,7 @@ history:
     action: phase_completed
     phase: implement
     details: "Phase 4 (integration tests + docs) complete. tests/provider.rs (5 cases: non-TTY guard, v1 migration hydration, out-of-set --model rejected (code Config), empty models unrestricted, enforcement on clean repo pt13). README documents gcm provider. Task 18/pt14 resolved by wizard-in-config.rs placement. 298 tests green, fmt+clippy clean. Commit c208fa5, pushed."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Validation gate (Codex gpt-5.4 + Gemini 3.1-pro). Codex FAIL (2 MEDIUM endpoint-precedence bugs: Google alias base-url, Ollama env-vs-config; 2 LOW: canonicalize preselect, AC-4 helper). Gemini PASS_WITH_NOTES (build_provider_config helper, wizard placement). Validated each vs code; fixed all 4 concrete findings + a self-review key-preservation edge. 302 tests pass, clippy clean. Commit addresses M1/M2/L1/AC-4. Wizard-placement (config.rs vs provider/wizard.rs) flagged to owner as a defensible documented divergence (not a bug)."
