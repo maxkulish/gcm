@@ -18,8 +18,8 @@ classification:
   rationale: "Clear ticket but the how hides real architecture decisions (config migration, fetch_supported_models trait shape/async, wizard module placement, runtime-validation UX) across 9+ files - design-doc-worthy"
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
 
 phases:
   discovery:
@@ -105,13 +105,18 @@ phases:
       - "Codex/Gemini: e2e subprocess test for gcm config preserving a whitelist - needs a PTY harness (none in repo); logic is unit-tested via preserve_existing_models. Manual-verify like the rest of the TUI."
     post_fix_preflight: "fmt+clippy clean, 302 tests pass (277 unit + 6 onboarding + 5 provider + 14 status)"
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/23
     pr_number: 23
     ci_passed: true
     reviews_addressed: 0
-    approved: false
-  complete: { status: pending }
+    approved: true
+    merge_commit: 81067e7
+    merged_at: 2026-06-28T16:54:14Z
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: 2026-06-28T16:54:14Z
 
 history:
   - timestamp: 2026-06-28T07:20:39Z
@@ -206,3 +211,15 @@ history:
     action: ci_passed
     phase: pr
     details: "CI green: build/test pass on ubuntu-latest + macos-latest. mergeStateStatus CLEAN, mergeable MERGEABLE. No review comments yet. Awaiting owner review + squash-merge (PR checkpoint)."
+  - timestamp: 2026-06-28T16:54:14Z
+    action: pr_merged
+    phase: pr
+    details: "Owner merged PR #23 (merge commit 81067e7). No review comments to address."
+  - timestamp: 2026-06-28T16:56:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "Linear CLO-516 -> Done (status had not auto-moved: Linear expected branch kmamemo/clo-516-... but actual was feat/clo-516-providers) + completion comment. PROJECT.md: moved to Recently Completed, master table Done, Active Work cleared. DEPENDENCIES.md timestamp updated (blocked nothing). Not in ROADMAP (v2 task, like CLO-515)."
+  - timestamp: 2026-06-28T16:56:00Z
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-516 fully completed. Manual TTY verification of the cliclack flow (AC-1/AC-3) remains an owner visual check."
