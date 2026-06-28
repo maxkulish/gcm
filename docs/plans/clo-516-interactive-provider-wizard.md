@@ -4,7 +4,7 @@
 **Design Document**: docs/designs/clo-516-interactive-provider-wizard.md (Finalized)
 **Architecture Reference**: docs/adrs/001-foundational-architecture-decisions.md (Decisions 2, 4, 11)
 **Created**: 2026-06-28
-**Overall Progress**: 23% (6/26 top-level tasks completed) — Phase 1 done (commit 24603cc)
+**Overall Progress**: 42% (11/26 top-level tasks completed) — Phases 1-2 done (24603cc, e5c85a5)
 
 ---
 
@@ -49,23 +49,23 @@ manual-verify only). Implement strictly Phase 1 -> 4 so each layer is green befo
 
 ### Phase 2: Model fetching + hygiene (sync, fallback, injectable) — D2, D6, D7
 
-- [ ] Task 7: GET transport (`src/provider/http.rs`)
-  - [ ] Subtask 7.1: `get_json` (small GET request struct: endpoint + `auth` + `extra_headers`, no payload) reusing classify/timeout machinery
-  - [ ] Subtask 7.2: Short-timeout / low-retry path for wizard fetches (don't stall the spinner); large first page where paginated (`pageSize=1000`/`limit=1000`)
-- [ ] Task 8: `ModelFetchOutcome` + dispatcher (`src/provider/models.rs` NEW) — D7, pt 10
-  - [ ] Subtask 8.1: `pub struct ModelFetchOutcome { models, source, warning }` + `enum ModelSource { Live, Fallback }`
-  - [ ] Subtask 8.2: `fetch_supported_models(id, key, endpoint) -> ModelFetchOutcome` orchestrating: no-key short-circuit (pt 3) -> GET -> parse -> filter -> merge-baselines -> dedupe/sort
-  - [ ] Subtask 8.3: `static_fallback_models(id)` per provider (each includes its `default_model()`)
-- [ ] Task 9: Per-backend endpoint + parse + filter (`src/provider/{openai,groq,anthropic,gemini,ollama}.rs`)
-  - [ ] Subtask 9.1: `pub(crate)` models-endpoint URL builder per backend (reusing each `base_url()`/`API_KEY_ENV`; Gemini uses `x-goog-api-key` header at `/v1beta/models`)
-  - [ ] Subtask 9.2: `pub(crate)` parse fn per response shape (`data[].id`; Gemini `models[].name` strip `models/`; Ollama `models[].name`)
-  - [ ] Subtask 9.3: `keep_chat_model` per provider (OpenAI/Groq exclude-list whisper/tts/dall-e/embedding/moderation/guard; Gemini `supportedGenerationMethods ∋ generateContent`; Anthropic/Ollama passthrough) — pt 2
-  - [ ] Subtask 9.4: static `*_FALLBACK_MODELS` per backend
-- [ ] Task 10: Re-exports (`src/provider/mod.rs`)
-  - [ ] Subtask 10.1: `mod models;` + re-export `fetch_supported_models` / `ModelFetchOutcome`
-- [ ] Task 11: Phase 2 unit tests (network-free, `&str` bodies / `Vec` inputs)
-  - [ ] Subtask 11.1: each provider sample JSON -> ids; filter drops whisper/tts/dall-e/embedding, keeps `gpt-*`/`claude-*`/Gemini `generateContent`
-  - [ ] Subtask 11.2: no-key -> fallback (no network); failure/empty -> fallback; merged list ⊇ `{default_model(), current default}`; `source`/`warning` set correctly
+- [x] Task 7: GET transport (`src/provider/http.rs`)
+  - [x] Subtask 7.1: `get_json` (small GET request struct: endpoint + `auth` + `extra_headers`, no payload) reusing classify/timeout machinery
+  - [x] Subtask 7.2: Short-timeout / low-retry path for wizard fetches (don't stall the spinner); large first page where paginated (`pageSize=1000`/`limit=1000`)
+- [x] Task 8: `ModelFetchOutcome` + dispatcher (`src/provider/models.rs` NEW) — D7, pt 10
+  - [x] Subtask 8.1: `pub struct ModelFetchOutcome { models, source, warning }` + `enum ModelSource { Live, Fallback }`
+  - [x] Subtask 8.2: `fetch_supported_models(id, key, endpoint) -> ModelFetchOutcome` orchestrating: no-key short-circuit (pt 3) -> GET -> parse -> filter -> merge-baselines -> dedupe/sort
+  - [x] Subtask 8.3: `static_fallback_models(id)` per provider (each includes its `default_model()`)
+- [x] Task 9: Per-backend endpoint + parse + filter (`src/provider/{openai,groq,anthropic,gemini,ollama}.rs`)
+  - [x] Subtask 9.1: `pub(crate)` models-endpoint URL builder per backend (reusing each `base_url()`/`API_KEY_ENV`; Gemini uses `x-goog-api-key` header at `/v1beta/models`)
+  - [x] Subtask 9.2: `pub(crate)` parse fn per response shape (`data[].id`; Gemini `models[].name` strip `models/`; Ollama `models[].name`)
+  - [x] Subtask 9.3: `keep_chat_model` per provider (OpenAI/Groq exclude-list whisper/tts/dall-e/embedding/moderation/guard; Gemini `supportedGenerationMethods ∋ generateContent`; Anthropic/Ollama passthrough) — pt 2
+  - [x] Subtask 9.4: static `*_FALLBACK_MODELS` per backend
+- [x] Task 10: Re-exports (`src/provider/mod.rs`)
+  - [x] Subtask 10.1: `mod models;` + re-export `fetch_supported_models` / `ModelFetchOutcome`
+- [x] Task 11: Phase 2 unit tests (network-free, `&str` bodies / `Vec` inputs)
+  - [x] Subtask 11.1: each provider sample JSON -> ids; filter drops whisper/tts/dall-e/embedding, keeps `gpt-*`/`claude-*`/Gemini `generateContent`
+  - [x] Subtask 11.2: no-key -> fallback (no network); failure/empty -> fallback; merged list ⊇ `{default_model(), current default}`; `source`/`warning` set correctly
 
 ### Phase 3: CLI + cliclack wizard — D1, D5
 
