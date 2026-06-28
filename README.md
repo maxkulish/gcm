@@ -107,6 +107,7 @@ gcm --provider=openai --model=gpt-5.4-mini   # override the model for a provider
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
 gcm config                       # run the interactive provider setup wizard and exit
+gcm provider                     # interactively pick a provider, fetch + enable its models, set a default
 gcm status                       # show active providers, models, paths, and config sources (read-only)
 gcm status --json                # the same as a machine-readable JSON object
 gcm --reconfigure                # re-run the wizard (update keys/selection), then continue
@@ -130,6 +131,26 @@ probes the Ollama daemon when selected, and picks a default. The result is writt
 Re-run setup anytime to rotate keys or change selections: `gcm config` (wizard then
 exit) or `gcm --reconfigure` (wizard then continue with the commit flow). The wizard is
 idempotent - it overwrites the existing file cleanly.
+
+### Selecting which models to use (`gcm provider`)
+
+`gcm provider` opens a richer, model-aware wizard (a polished `cliclack` interface).
+Pick a provider, and gcm fetches that provider's available models live from its API
+(falling back to a built-in list if there is no key or the fetch fails). Type to filter
+the list, `space` to toggle the models you want to **enable**, `enter` to submit, then
+choose one as the default. The selection is saved to `config.toml`, preserving every
+other provider you have configured.
+
+Once a provider has a non-empty enabled set, gcm enforces it: a `--model` (or per-provider
+model env var, or config default) outside that set is rejected with a clear message, so
+you cannot accidentally use a disabled or non-text model. Leaving the set empty (the
+default, and how existing configs migrate) keeps models unrestricted - any model is
+allowed, exactly as before. The cloud-provider key is read from the environment or your
+existing config, and only prompted (masked, never echoed) when none is found; nothing is
+written until you finish the wizard.
+
+`gcm provider` needs an interactive terminal. The config-file format version is bumped to
+2 to record the enabled-model set; existing v1 configs load unchanged.
 
 ### Inspecting the active configuration
 
