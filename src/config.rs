@@ -654,7 +654,11 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
             let env_key = env_value(var);
             let cfg_key = existing_pc.and_then(|p| p.key.clone());
             if let Some(k) = env_key {
-                fetch_key = Some(k); // env wins -> store env-only (persist None)
+                // Env wins for the fetch, but never copy an env-derived secret into
+                // the file; preserve any existing inline key (a fallback for when the
+                // env var is unset) rather than erasing it.
+                fetch_key = Some(k);
+                persist_key = cfg_key;
             } else if let Some(k) = cfg_key {
                 fetch_key = Some(k.clone());
                 persist_key = Some(k); // preserve the existing inline key
