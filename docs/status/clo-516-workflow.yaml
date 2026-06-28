@@ -108,7 +108,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/23
     pr_number: 23
-    ci_passed: false
+    ci_passed: true
     reviews_addressed: 0
     approved: false
   complete: { status: pending }
@@ -202,3 +202,7 @@ history:
     action: pr_created
     phase: pr
     details: "PR #23 opened: https://github.com/maxkulish/gcm/pull/23 (base main). Health gate: MERGEABLE (UNSTABLE=CI pending, not conflict). CI in_progress."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: ci_passed
+    phase: pr
+    details: "CI green: build/test pass on ubuntu-latest + macos-latest. mergeStateStatus CLEAN, mergeable MERGEABLE. No review comments yet. Awaiting owner review + squash-merge (PR checkpoint)."
