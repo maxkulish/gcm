@@ -25,9 +25,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::GcmError;
 use crate::provider::ProviderId;
 
-/// On-disk config format version (mirrors `cache::CacheFile.version`); a mismatch
-/// on read is treated as "no usable config" so a future schema can evolve.
-const CONFIG_FORMAT_VERSION: u32 = 1;
+/// On-disk config format version (mirrors `cache::CacheFile.version`). v2 (CLO-516)
+/// added the per-provider `models` enabled-set whitelist. A v1 file is accepted and
+/// migrated up on read (its `models` default empty = unrestricted); an unknown
+/// version (0 or > current) is treated as "no usable config" so a future schema can
+/// still evolve. A *newer* binary's v2 file read by an old v1-only binary is a
+/// `WrongVersion` miss there (forward-compat: it re-onboards, never mis-enforces).
+const CONFIG_FORMAT_VERSION: u32 = 2;
 /// Config file name within the config dir (or the `GCM_CONFIG` override dir).
 const CONFIG_FILE_NAME: &str = "config.toml";
 /// Default Ollama endpoint (mirrors `provider::ollama`'s default base URL).
@@ -62,6 +66,12 @@ pub struct ProviderConfig {
     /// already set, so resolution stays `--model` flag > env var > this > default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Enabled-model whitelist (CLO-516). Empty = unrestricted (v1 migration and
+    /// pre-`gcm provider` state); non-empty restricts runtime model resolution to
+    /// this set (membership checked after per-provider canonicalization). `model`
+    /// is the chosen default and is always a member when this is non-empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
 }
 
 /// Why a present config file is not usable; drives the stderr warning in [`load`].
@@ -152,10 +162,17 @@ fn load_from(path: &Path) -> Option<Config> {
 /// Parse + validate the on-disk text (pure: no I/O, no warnings), so the
 /// malformed / wrong-version / default-not-enabled cases are unit-testable.
 fn parse_config(data: &str) -> Result<Config, LoadIssue> {
-    let cfg: Config = toml::from_str(data).map_err(|e| LoadIssue::Malformed(e.to_string()))?;
-    if cfg.version != CONFIG_FORMAT_VERSION {
+    let mut cfg: Config = toml::from_str(data).map_err(|e| LoadIssue::Malformed(e.to_string()))?;
+    // Accept any known version (1..=current) and migrate up; reject unknown
+    // (0 or newer-than-this-binary). The v1 -> v2 migration is purely additive:
+    // `models` deserializes empty (= unrestricted), so nothing is rejected that a
+    // v1 user relied on. Stamping the version means a re-save persists v2 (without
+    // this, `render_config` would re-emit the old version and the bump would never
+    // take effect).
+    if cfg.version == 0 || cfg.version > CONFIG_FORMAT_VERSION {
         return Err(LoadIssue::WrongVersion);
     }
+    cfg.version = CONFIG_FORMAT_VERSION;
     if !cfg.providers.iter().any(|p| p.id == cfg.default) {
         return Err(LoadIssue::DefaultNotEnabled);
     }
@@ -203,7 +220,15 @@ fn save_to(path: &Path, config: &Config) -> io::Result<()> {
 /// parses. Written on first-run onboarding (and `gcm config`) so the format is
 /// discoverable without reading the docs.
 fn render_config(config: &Config) -> Result<String, toml::ser::Error> {
-    let mut s = toml::to_string_pretty(config)?;
+    // Force the serialized version to the current format regardless of the
+    // in-memory value, so a config loaded as v1 (migrated up by `parse_config`)
+    // is always persisted as the current version - belt-and-suspenders with the
+    // migration's version stamp (CLO-516).
+    let config = Config {
+        version: CONFIG_FORMAT_VERSION,
+        ..config.clone()
+    };
+    let mut s = toml::to_string_pretty(&config)?;
     if !s.ends_with('\n') {
         s.push('\n');
     }
@@ -219,8 +244,10 @@ fn commented_reference() -> String {
     let mut s = String::new();
     s.push_str("# ── Reference: all available settings ──────────────────────────────────────\n");
     s.push_str("# Copy an entry into the section above, uncomment, and edit. A provider entry\n");
-    s.push_str("# supports: model, key (cloud), endpoint (Ollama only). Matching env vars\n");
-    s.push_str("# override this file (e.g. GCM_OPENAI_MODEL=…, OPENAI_API_KEY=…).\n");
+    s.push_str("# supports: model (chosen default), models (enabled set), key (cloud),\n");
+    s.push_str("# endpoint (Ollama only). Matching env vars override this file\n");
+    s.push_str("# (e.g. GCM_OPENAI_MODEL=…, OPENAI_API_KEY=…). An empty/absent `models`\n");
+    s.push_str("# means unrestricted; set it via `gcm provider` to restrict usage.\n");
     s.push_str("#\n");
     for id in cloud_then_ollama() {
         let token = provider_token(id);
@@ -230,6 +257,9 @@ fn commented_reference() -> String {
         s.push_str(&format!("# id = \"{token}\"\n"));
         s.push_str(&format!(
             "# model = \"{model}\"   # default; or set {model_var}\n"
+        ));
+        s.push_str(&format!(
+            "# models = [\"{model}\"]   # enabled set (only these are usable); empty = any\n"
         ));
         match id.key_env_var() {
             Some(key_var) => {
@@ -388,6 +418,7 @@ pub fn run_wizard() -> Result<Config, GcmError> {
                     key: None,
                     endpoint,
                     model: None,
+                    models: Vec::new(),
                 });
             }
         }
@@ -405,6 +436,10 @@ pub fn run_wizard() -> Result<Config, GcmError> {
             None => eprintln!("  Please enter a number from the list."),
         }
     };
+
+    // Carry forward any enabled-model whitelist (and inline model default) the user
+    // set previously via `gcm provider`, so this minimal wizard never erases it.
+    preserve_existing_models(&mut enabled, load().as_ref());
 
     build_config(&enabled, default).map_err(|msg| {
         // Unreachable: `default` is chosen from `enabled`. Surfaced defensively.
@@ -447,6 +482,91 @@ fn prompt_ollama_endpoint() -> Result<Option<String>, GcmError> {
     })
 }
 
+// ── enabled-model whitelist + enforcement (CLO-516) ─────────────────────────
+
+/// Canonicalize a model id for enabled-set comparison, per provider, so a value
+/// that differs only by a provider alias is not falsely rejected: Gemini strips a
+/// leading `models/` (its list endpoint returns prefixed names); Ollama treats a
+/// tagless name as `:latest` (what `/api/tags` reports); all values are trimmed.
+/// No general case-folding - model ids are case-sensitive.
+pub(crate) fn canonicalize_model(id: ProviderId, model: &str) -> String {
+    let m = model.trim();
+    match id {
+        ProviderId::Google => m.strip_prefix("models/").unwrap_or(m).to_string(),
+        ProviderId::Ollama if !m.contains(':') => format!("{m}:latest"),
+        _ => m.to_string(),
+    }
+}
+
+/// Enforce that `model` is in provider `id`'s enabled set. Returns `Ok` when the
+/// provider has no entry, or an empty `models` (= unrestricted, the v1-migration /
+/// pre-`gcm provider` state). A non-empty set rejects an out-of-set model with an
+/// actionable message (compared after [`canonicalize_model`]).
+pub(crate) fn model_is_enabled(cfg: &Config, id: ProviderId, model: &str) -> Result<(), String> {
+    let Some(pc) = cfg.providers.iter().find(|p| p.id == id) else {
+        return Ok(());
+    };
+    if pc.models.is_empty() {
+        return Ok(());
+    }
+    let want = canonicalize_model(id, model);
+    if pc.models.iter().any(|m| canonicalize_model(id, m) == want) {
+        Ok(())
+    } else {
+        Err(format!(
+            "model '{model}' is not enabled for {}. Enabled: {}. \
+             Run `gcm provider` to change the enabled models (or clear the list to allow any).",
+            provider_token(id),
+            pc.models.join(", ")
+        ))
+    }
+}
+
+/// Update exactly one provider in an existing config (add it if absent),
+/// preserving every other provider verbatim; optionally make it the new default.
+/// Pure (no I/O). The wizard (CLO-516) uses this so configuring one provider never
+/// deletes the others' keys/endpoints/models. Always stamps the current version.
+pub(crate) fn merge_provider_config(
+    existing: Option<&Config>,
+    updated: ProviderConfig,
+    make_default: bool,
+) -> Config {
+    let mut providers: Vec<ProviderConfig> =
+        existing.map(|c| c.providers.clone()).unwrap_or_default();
+    match providers.iter_mut().find(|p| p.id == updated.id) {
+        Some(slot) => *slot = updated.clone(),
+        None => providers.push(updated.clone()),
+    }
+    let default = if make_default {
+        updated.id
+    } else {
+        existing.map(|c| c.default).unwrap_or(updated.id)
+    };
+    Config {
+        version: CONFIG_FORMAT_VERSION,
+        default,
+        providers,
+    }
+}
+
+/// Carry forward each re-enabled provider's existing `models` whitelist (and inline
+/// `model` default) from a prior config, so re-running the minimal onboarding wizard
+/// (`gcm config` / `--reconfigure`) never erases a whitelist set by `gcm provider`.
+/// Pure; only fills fields the wizard left empty.
+fn preserve_existing_models(enabled: &mut [ProviderConfig], existing: Option<&Config>) {
+    let Some(prev) = existing else { return };
+    for pc in enabled.iter_mut() {
+        if let Some(prev_pc) = prev.providers.iter().find(|p| p.id == pc.id) {
+            if pc.models.is_empty() {
+                pc.models = prev_pc.models.clone();
+            }
+            if pc.model.is_none() {
+                pc.model = prev_pc.model.clone();
+            }
+        }
+    }
+}
+
 /// Assemble a validated `Config` from collected answers (pure; no I/O). Errors
 /// if `default` is not among `enabled`.
 fn build_config(enabled: &[ProviderConfig], default: ProviderId) -> Result<Config, String> {
@@ -480,6 +600,303 @@ fn cloud_provider_config(id: ProviderId, env_present: bool, typed: Option<&str>)
         key,
         endpoint: None,
         model: None,
+        models: Vec::new(),
+    }
+}
+
+// ── interactive `gcm provider` wizard (CLO-516, cliclack) ────────────────────
+
+/// Run the interactive `gcm provider` wizard: pick a provider, fetch its models
+/// (live + static fallback), multiselect the enabled set (type-to-filter), choose
+/// one default, and persist - preserving every other provider (D8). Returns
+/// `Ok(true)` on a saved change, `Ok(false)` if the user cancelled (nothing
+/// written). cliclack reads `/dev/tty`; the testable logic is the pure helpers
+/// ([`wizard_model_list`], [`initial_default_model`], [`wizard_persist_key`]).
+pub fn run_provider_wizard() -> Result<bool, GcmError> {
+    use cliclack::{intro, multiselect, outro, password, select, spinner};
+    use console::style;
+
+    let existing = load();
+
+    intro(style(" gcm-provider ").on_cyan().black()).map_err(wizard_io)?;
+
+    // 1. Provider (radio list, current default pre-highlighted, type-to-filter).
+    let all = cloud_then_ollama();
+    let current_default = existing
+        .as_ref()
+        .map(|c| c.default)
+        .unwrap_or(ProviderId::Groq);
+    let provider_items: Vec<(ProviderId, &'static str, &'static str)> =
+        all.iter().map(|&id| (id, provider_label(id), "")).collect();
+    let id = match select::<ProviderId>("Provider")
+        .items(&provider_items)
+        .initial_value(current_default)
+        .filter_mode()
+        .max_rows(15)
+        .interact()
+    {
+        Ok(v) => v,
+        Err(_) => return wizard_cancelled(),
+    };
+
+    let existing_pc = existing
+        .as_ref()
+        .and_then(|c| c.providers.iter().find(|p| p.id == id));
+
+    // 2. Credential / endpoint resolution BEFORE the fetch (D5 step 3). The key is
+    // held only in memory and persisted (inline `0600`) solely on completion.
+    let mut fetch_key: Option<String> = None;
+    let mut persist_key: Option<String> = None;
+    let mut fetch_endpoint: Option<String> = None;
+    let mut persist_endpoint: Option<String> = None;
+    match id.key_env_var() {
+        Some(var) => {
+            let env_key = env_value(var);
+            let cfg_key = existing_pc.and_then(|p| p.key.clone());
+            if let Some(k) = env_key {
+                // Env wins for the fetch, but never copy an env-derived secret into
+                // the file; preserve any existing inline key (a fallback for when the
+                // env var is unset) rather than erasing it.
+                fetch_key = Some(k);
+                persist_key = cfg_key;
+            } else if let Some(k) = cfg_key {
+                fetch_key = Some(k.clone());
+                persist_key = Some(k); // preserve the existing inline key
+            } else {
+                let typed = match password(format!(
+                    "{} API key (press Enter to skip)",
+                    provider_label(id)
+                ))
+                .mask('*')
+                .interact()
+                {
+                    Ok(s) => s,
+                    Err(_) => return wizard_cancelled(),
+                };
+                let (f, p) = wizard_persist_key(&typed);
+                fetch_key = f;
+                persist_key = p;
+            }
+        }
+        None => {
+            // Ollama: resolve/prompt the endpoint before `/api/tags`. An env override
+            // wins over the saved config (matching runtime precedence, review M2).
+            let default_ep = ollama_wizard_default_endpoint(
+                &effective_ollama_endpoint(),
+                existing_pc.and_then(|p| p.endpoint.as_deref()),
+            );
+            let ep = match cliclack::input("Ollama endpoint")
+                .default_input(&default_ep)
+                .validate(|s: &String| validate_endpoint_url(s).map(|_| ()))
+                .interact::<String>()
+            {
+                Ok(s) => s,
+                Err(_) => return wizard_cancelled(),
+            };
+            let ep = ep.trim().to_string();
+            fetch_endpoint = Some(ep.clone());
+            if ep != DEFAULT_OLLAMA_ENDPOINT {
+                persist_endpoint = Some(ep);
+            }
+        }
+    }
+
+    // 3. Fetch the model list (spinner; never fails - falls back).
+    let sp = spinner();
+    sp.start("Fetching supported models...");
+    let outcome = crate::provider::fetch_supported_models(
+        id,
+        fetch_key.as_deref(),
+        fetch_endpoint.as_deref(),
+    );
+    match outcome.source {
+        crate::provider::FetchSource::Live => {
+            sp.stop(format!("Fetched {} models", outcome.models.len()))
+        }
+        crate::provider::FetchSource::Fallback => sp.stop(
+            outcome
+                .warning
+                .clone()
+                .unwrap_or_else(|| "Using the built-in model list".to_string()),
+        ),
+    }
+
+    // 4. Multiselect the enabled set (type-to-filter; >=1 required). The candidate
+    // list keeps the current enabled set + default selectable even if the live list
+    // omitted them (D7.3 wizard-side merge).
+    let current_enabled: Vec<String> = existing_pc.map(|p| p.models.clone()).unwrap_or_default();
+    let current_model = existing_pc.and_then(|p| p.model.clone());
+    let candidates = wizard_model_list(
+        id,
+        &outcome.models,
+        &current_enabled,
+        current_model.as_deref(),
+    );
+    let model_items: Vec<(String, String, &'static str)> = candidates
+        .iter()
+        .map(|m| (m.clone(), m.clone(), ""))
+        .collect();
+    // Pre-select the candidates whose canonical form matches a currently-enabled
+    // model, so a migrated `llama3` / `models/gemini-x` still highlights (review L1).
+    let initial_enabled: Vec<String> = candidates
+        .iter()
+        .filter(|c| {
+            current_enabled
+                .iter()
+                .any(|e| canonicalize_model(id, e) == canonicalize_model(id, c))
+        })
+        .cloned()
+        .collect();
+    let selected = match multiselect::<String>("Enable models (space toggles, type to filter)")
+        .items(&model_items)
+        .initial_values(initial_enabled)
+        .required(true)
+        .filter_mode()
+        .max_rows(15)
+        .interact()
+    {
+        Ok(v) => v,
+        Err(_) => return wizard_cancelled(),
+    };
+
+    // 5. Choose exactly one default among the selected models.
+    let default_items: Vec<(String, String, &'static str)> = selected
+        .iter()
+        .map(|m| (m.clone(), m.clone(), ""))
+        .collect();
+    let mut default_select = select::<String>("Default model")
+        .items(&default_items)
+        .filter_mode()
+        .max_rows(15);
+    if let Some(d) = initial_default_model(id, &selected, current_model.as_deref()) {
+        default_select = default_select.initial_value(d);
+    }
+    let default_model = match default_select.interact() {
+        Ok(v) => v,
+        Err(_) => return wizard_cancelled(),
+    };
+
+    // 6. Build (pure, AC-4 invariants), merge (preserving other providers), persist.
+    let updated = build_provider_config(id, persist_key, persist_endpoint, default_model, selected)
+        .map_err(GcmError::Git)?;
+    let merged = merge_provider_config(existing.as_ref(), updated, true);
+    save(&merged).map_err(|e| GcmError::Git(format!("could not save configuration: {e}")))?;
+    let where_ = config_path()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "the config file".to_string());
+    outro(format!(
+        "Saved {} configuration to {where_}",
+        provider_label(id)
+    ))
+    .map_err(wizard_io)?;
+    Ok(true)
+}
+
+/// Print the cancellation outro and signal "no change" (nothing persisted).
+fn wizard_cancelled() -> Result<bool, GcmError> {
+    let _ = cliclack::outro_cancel("Cancelled - no changes made.");
+    Ok(false)
+}
+
+/// Map a wizard I/O error into the workflow error type.
+fn wizard_io(e: io::Error) -> GcmError {
+    GcmError::Git(format!("provider wizard I/O error: {e}"))
+}
+
+/// The multiselect candidate list (D7.3, wizard side): fetched ∪ current enabled ∪
+/// current default, deduped, fetched first - so the user's existing selections and
+/// default stay selectable even if the live list omitted them. Membership is by
+/// canonical form (review L1), so a migrated `llama3` doesn't duplicate a fetched
+/// `llama3:latest`. Pure.
+fn wizard_model_list(
+    id: ProviderId,
+    fetched: &[String],
+    current_enabled: &[String],
+    current_default: Option<&str>,
+) -> Vec<String> {
+    let mut out: Vec<String> = fetched.to_vec();
+    let push_if_new = |m: &str, out: &mut Vec<String>| {
+        let c = canonicalize_model(id, m);
+        if !out.iter().any(|x| canonicalize_model(id, x) == c) {
+            out.push(m.to_string());
+        }
+    };
+    for m in current_enabled {
+        push_if_new(m, &mut out);
+    }
+    if let Some(d) = current_default {
+        push_if_new(d, &mut out);
+    }
+    out
+}
+
+/// The pre-selected default model: the current default if it survived into
+/// `selected` (canonical match, review L1), else the first selected (None only when
+/// `selected` is empty). Returns the matching `selected` entry. Pure.
+fn initial_default_model(
+    id: ProviderId,
+    selected: &[String],
+    current_default: Option<&str>,
+) -> Option<String> {
+    if let Some(d) = current_default {
+        let c = canonicalize_model(id, d);
+        if let Some(hit) = selected.iter().find(|m| canonicalize_model(id, m) == c) {
+            return Some(hit.clone());
+        }
+    }
+    selected.first().cloned()
+}
+
+/// The wizard's Ollama endpoint default, mirroring runtime precedence
+/// (`GCM_OLLAMA_BASE_URL` > `OLLAMA_HOST` > saved config > default): a non-default
+/// `effective` means an env override is present and wins over the saved config;
+/// otherwise the saved config, else the default. Pure (review M2).
+fn ollama_wizard_default_endpoint(effective: &str, config_endpoint: Option<&str>) -> String {
+    if effective != DEFAULT_OLLAMA_ENDPOINT {
+        effective.to_string()
+    } else {
+        config_endpoint
+            .map(str::to_string)
+            .unwrap_or_else(|| effective.to_string())
+    }
+}
+
+/// Assemble the wizard's `ProviderConfig` (pure), enforcing the AC-4 invariants so
+/// they are unit-testable rather than only guaranteed by the cliclack flow: at
+/// least one enabled model, and the default among them.
+fn build_provider_config(
+    id: ProviderId,
+    key: Option<String>,
+    endpoint: Option<String>,
+    default_model: String,
+    models: Vec<String>,
+) -> Result<ProviderConfig, String> {
+    if models.is_empty() {
+        return Err("at least one model must be enabled".to_string());
+    }
+    if !models.iter().any(|m| m == &default_model) {
+        return Err(format!(
+            "default model '{default_model}' is not among the enabled models"
+        ));
+    }
+    Ok(ProviderConfig {
+        id,
+        key,
+        endpoint,
+        model: Some(default_model),
+        models,
+    })
+}
+
+/// Decide `(fetch_key, persist_key)` from a freshly-typed key: a blank entry is
+/// "skip" (no key, nothing stored); a non-blank entry is used for the fetch and
+/// stored inline. Pure (keeps the secret-handling rule unit-testable). Pure.
+fn wizard_persist_key(typed: &str) -> (Option<String>, Option<String>) {
+    let t = typed.trim();
+    if t.is_empty() {
+        (None, None)
+    } else {
+        (Some(t.to_string()), Some(t.to_string()))
     }
 }
 
@@ -506,12 +923,13 @@ pub fn non_tty_instructions() -> String {
 
 /// A minimal, copy-pasteable `config.toml` template for the non-TTY path.
 fn sample_toml_template() -> &'static str {
-    "version = 1\n\
+    "version = 2\n\
      default = \"groq\"\n\
      \n\
      [[providers]]\n\
      id = \"groq\"\n\
      # key = \"<inline-secret>\"   # omit to read GROQ_API_KEY from the environment\n\
+     # models = [\"openai/gpt-oss-120b\"]   # enabled set (only these usable); empty = any\n\
      \n\
      [[providers]]\n\
      id = \"ollama\"\n\
@@ -835,6 +1253,7 @@ mod tests {
             key: key.map(String::from),
             endpoint: endpoint.map(String::from),
             model: None,
+            models: Vec::new(),
         }
     }
 
@@ -845,6 +1264,18 @@ mod tests {
             key: None,
             endpoint: None,
             model: Some(model.to_string()),
+            models: Vec::new(),
+        }
+    }
+
+    /// Like [`pc`] but with an enabled-models whitelist, for the enforcement tests.
+    fn pcw(id: ProviderId, default: Option<&str>, models: &[&str]) -> ProviderConfig {
+        ProviderConfig {
+            id,
+            key: None,
+            endpoint: None,
+            model: default.map(String::from),
+            models: models.iter().map(|s| s.to_string()).collect(),
         }
     }
 
@@ -1135,7 +1566,7 @@ mod tests {
     fn non_tty_instructions_lists_each_enabled_provider() {
         let out = non_tty_instructions();
         // a TOML template...
-        assert!(out.contains("version = 1"), "{out}");
+        assert!(out.contains("version = 2"), "{out}");
         assert!(out.contains("[[providers]]"), "{out}");
         // ...and an export line per cloud provider key
         for var in [
@@ -1326,5 +1757,342 @@ mod tests {
         assert!(load_from(&path).is_none(), "0644 file is ignored");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         assert!(load_from(&path).is_some(), "0600 file loads");
+    }
+
+    // ── CLO-516: v2 migration, enabled-model enforcement, provider merge ──────
+
+    #[test]
+    fn migration_v1_config_loads_and_stamps_v2() {
+        // A pre-CLO-516 v1 file must load without error and be migrated up: the
+        // version is stamped to the current format and `models` defaults empty
+        // (= unrestricted), so a v1 user's free-form model keeps working.
+        let cfg = parse_config("version = 1\ndefault = \"groq\"\n\n[[providers]]\nid = \"groq\"\n")
+            .expect("v1 migrates");
+        assert_eq!(cfg.version, CONFIG_FORMAT_VERSION);
+        assert!(cfg.providers[0].models.is_empty());
+    }
+
+    #[test]
+    fn migration_rejects_unknown_versions() {
+        // 0 and any version newer than this binary are a "no usable config" miss.
+        assert!(matches!(
+            parse_config("version = 0\ndefault = \"groq\"\n\n[[providers]]\nid = \"groq\"\n"),
+            Err(LoadIssue::WrongVersion)
+        ));
+        assert!(matches!(
+            parse_config("version = 3\ndefault = \"groq\"\n\n[[providers]]\nid = \"groq\"\n"),
+            Err(LoadIssue::WrongVersion)
+        ));
+    }
+
+    #[test]
+    fn v2_config_round_trips_models() {
+        let cfg = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pcw(
+                ProviderId::Openai,
+                Some("gpt-5.4-mini"),
+                &["gpt-5.4-mini", "gpt-5.4"],
+            )],
+        };
+        let text = render_config(&cfg).unwrap();
+        let back = parse_config(&text).unwrap();
+        assert_eq!(back.providers[0].models, vec!["gpt-5.4-mini", "gpt-5.4"]);
+        assert_eq!(back.version, CONFIG_FORMAT_VERSION);
+    }
+
+    #[test]
+    fn render_config_forces_current_version_from_v1() {
+        // Even if an in-memory config still carries version 1, the serialized file
+        // is the current format (closes the version-write trap).
+        let cfg = Config {
+            version: 1,
+            default: ProviderId::Groq,
+            providers: vec![pc(ProviderId::Groq, None, None)],
+        };
+        let text = render_config(&cfg).unwrap();
+        assert!(text.contains("version = 2"), "forces v2: {text}");
+        assert!(!text.contains("version = 1"), "no stale v1: {text}");
+    }
+
+    #[test]
+    fn model_is_enabled_empty_set_is_unrestricted() {
+        let cfg = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Groq,
+            providers: vec![pc(ProviderId::Groq, None, None)], // models empty
+        };
+        assert!(model_is_enabled(&cfg, ProviderId::Groq, "anything-goes").is_ok());
+        // a provider with no config entry at all is also unrestricted
+        assert!(model_is_enabled(&cfg, ProviderId::Openai, "whatever").is_ok());
+    }
+
+    #[test]
+    fn model_is_enabled_non_empty_set_enforces_membership() {
+        let cfg = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pcw(
+                ProviderId::Openai,
+                Some("gpt-5.4-mini"),
+                &["gpt-5.4-mini", "gpt-5.4"],
+            )],
+        };
+        assert!(model_is_enabled(&cfg, ProviderId::Openai, "gpt-5.4-mini").is_ok());
+        let err = model_is_enabled(&cfg, ProviderId::Openai, "dall-e-3").unwrap_err();
+        assert!(err.contains("dall-e-3"), "names offender: {err}");
+        assert!(err.contains("gpt-5.4-mini"), "lists set: {err}");
+        assert!(err.contains("gcm provider"), "actionable: {err}");
+    }
+
+    #[test]
+    fn model_is_enabled_canonicalizes_ollama_tag_and_gemini_prefix() {
+        // Ollama: a tagless `--model` matches an enabled `:latest` entry.
+        let ollama = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Ollama,
+            providers: vec![pcw(
+                ProviderId::Ollama,
+                Some("llama3:latest"),
+                &["llama3:latest"],
+            )],
+        };
+        assert!(model_is_enabled(&ollama, ProviderId::Ollama, "llama3").is_ok());
+        assert!(model_is_enabled(&ollama, ProviderId::Ollama, "llama3:latest").is_ok());
+        // Gemini: the `models/`-prefixed list value matches the bare resolved id.
+        let gem = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Google,
+            providers: vec![pcw(
+                ProviderId::Google,
+                Some("gemini-x"),
+                &["models/gemini-x"],
+            )],
+        };
+        assert!(model_is_enabled(&gem, ProviderId::Google, "gemini-x").is_ok());
+        assert!(model_is_enabled(&gem, ProviderId::Google, "models/gemini-x").is_ok());
+    }
+
+    #[test]
+    fn canonicalize_model_rules() {
+        assert_eq!(canonicalize_model(ProviderId::Google, "models/g"), "g");
+        assert_eq!(canonicalize_model(ProviderId::Google, "g"), "g");
+        assert_eq!(
+            canonicalize_model(ProviderId::Ollama, "llama3"),
+            "llama3:latest"
+        );
+        assert_eq!(
+            canonicalize_model(ProviderId::Ollama, "llama3:8b"),
+            "llama3:8b"
+        );
+        assert_eq!(canonicalize_model(ProviderId::Openai, "  gpt-x  "), "gpt-x");
+    }
+
+    #[test]
+    fn merge_provider_config_preserves_others_and_sets_default() {
+        let existing = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Groq,
+            providers: vec![
+                pcw(ProviderId::Groq, Some("g"), &["g"]),
+                pc(ProviderId::Ollama, None, Some("http://h:1")),
+            ],
+        };
+        let updated = pcw(ProviderId::Groq, Some("g2"), &["g2", "g3"]);
+        let merged = merge_provider_config(Some(&existing), updated, true);
+        assert_eq!(merged.version, CONFIG_FORMAT_VERSION);
+        assert_eq!(merged.default, ProviderId::Groq);
+        // Groq slot updated...
+        let groq = merged
+            .providers
+            .iter()
+            .find(|p| p.id == ProviderId::Groq)
+            .unwrap();
+        assert_eq!(groq.models, vec!["g2", "g3"]);
+        // ...Ollama preserved verbatim.
+        let ollama = merged
+            .providers
+            .iter()
+            .find(|p| p.id == ProviderId::Ollama)
+            .unwrap();
+        assert_eq!(ollama.endpoint.as_deref(), Some("http://h:1"));
+    }
+
+    #[test]
+    fn merge_provider_config_appends_absent_and_handles_no_existing() {
+        // append when absent
+        let existing = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Groq,
+            providers: vec![pc(ProviderId::Groq, Some("k"), None)],
+        };
+        let merged = merge_provider_config(
+            Some(&existing),
+            pcw(ProviderId::Openai, Some("o"), &["o"]),
+            false,
+        );
+        assert_eq!(merged.providers.len(), 2);
+        assert_eq!(
+            merged.default,
+            ProviderId::Groq,
+            "make_default=false keeps prior default"
+        );
+        // no existing config -> just the updated provider, it becomes default
+        let fresh = merge_provider_config(None, pcw(ProviderId::Openai, Some("o"), &["o"]), true);
+        assert_eq!(fresh.providers.len(), 1);
+        assert_eq!(fresh.default, ProviderId::Openai);
+    }
+
+    #[test]
+    fn preserve_existing_models_carries_forward_whitelist_and_default() {
+        // a freshly-built (empty models) enabled set...
+        let mut enabled = vec![
+            pc(ProviderId::Openai, None, None),
+            pc(ProviderId::Groq, None, None),
+        ];
+        // ...against a prior config where openai had a whitelist + default model.
+        let prev = Config {
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pcw(
+                ProviderId::Openai,
+                Some("gpt-5.4-mini"),
+                &["gpt-5.4-mini", "gpt-5.4"],
+            )],
+        };
+        preserve_existing_models(&mut enabled, Some(&prev));
+        let openai = enabled.iter().find(|p| p.id == ProviderId::Openai).unwrap();
+        assert_eq!(
+            openai.models,
+            vec!["gpt-5.4-mini", "gpt-5.4"],
+            "whitelist preserved"
+        );
+        assert_eq!(
+            openai.model.as_deref(),
+            Some("gpt-5.4-mini"),
+            "default preserved"
+        );
+        // groq had no prior entry -> unchanged (empty)
+        let groq = enabled.iter().find(|p| p.id == ProviderId::Groq).unwrap();
+        assert!(groq.models.is_empty());
+    }
+
+    // ── CLO-516: pure `gcm provider` wizard helpers ──────────────────────────
+
+    #[test]
+    fn wizard_model_list_unions_fetched_enabled_and_default() {
+        let id = ProviderId::Openai;
+        let fetched = vec!["a".to_string(), "b".to_string()];
+        let enabled = vec!["b".to_string(), "c".to_string()]; // c not in fetched
+                                                              // d is the current default, present in neither -> appended last
+        let list = wizard_model_list(id, &fetched, &enabled, Some("d"));
+        assert_eq!(
+            list,
+            vec!["a", "b", "c", "d"],
+            "fetched first, then missing enabled, then default"
+        );
+        // no duplicates when the default is already present
+        assert_eq!(
+            wizard_model_list(id, &fetched, &[], Some("a")),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn wizard_model_list_dedupes_by_canonical_form() {
+        // Ollama: a migrated tagless `llama3` must not duplicate a fetched
+        // `llama3:latest` (review L1).
+        let fetched = vec!["llama3:latest".to_string()];
+        let enabled = vec!["llama3".to_string()];
+        let list = wizard_model_list(ProviderId::Ollama, &fetched, &enabled, Some("llama3"));
+        assert_eq!(
+            list,
+            vec!["llama3:latest"],
+            "canonical dedupe keeps the fetched form"
+        );
+    }
+
+    #[test]
+    fn initial_default_model_prefers_current_then_first() {
+        let id = ProviderId::Openai;
+        let selected = vec!["x".to_string(), "y".to_string()];
+        assert_eq!(
+            initial_default_model(id, &selected, Some("y")).as_deref(),
+            Some("y")
+        );
+        // current default no longer selected -> fall back to the first selected
+        assert_eq!(
+            initial_default_model(id, &selected, Some("z")).as_deref(),
+            Some("x")
+        );
+        assert_eq!(
+            initial_default_model(id, &selected, None).as_deref(),
+            Some("x")
+        );
+        assert_eq!(initial_default_model(id, &[], Some("z")), None);
+        // canonical match: a tagless current default selects the `:latest` entry
+        let sel = vec!["llama3:latest".to_string()];
+        assert_eq!(
+            initial_default_model(ProviderId::Ollama, &sel, Some("llama3")).as_deref(),
+            Some("llama3:latest")
+        );
+    }
+
+    #[test]
+    fn ollama_wizard_default_endpoint_env_beats_config() {
+        // env override present (effective != default) -> wins over saved config
+        assert_eq!(
+            ollama_wizard_default_endpoint("http://env:1", Some("http://cfg:2")),
+            "http://env:1"
+        );
+        // no env override -> saved config, else the default
+        assert_eq!(
+            ollama_wizard_default_endpoint(DEFAULT_OLLAMA_ENDPOINT, Some("http://cfg:2")),
+            "http://cfg:2"
+        );
+        assert_eq!(
+            ollama_wizard_default_endpoint(DEFAULT_OLLAMA_ENDPOINT, None),
+            DEFAULT_OLLAMA_ENDPOINT
+        );
+    }
+
+    #[test]
+    fn build_provider_config_enforces_ac4_invariants() {
+        // default must be among the enabled models, and >=1 enabled
+        assert!(build_provider_config(
+            ProviderId::Openai,
+            Some("k".into()),
+            None,
+            "gpt-x".into(),
+            vec![]
+        )
+        .is_err());
+        assert!(build_provider_config(
+            ProviderId::Openai,
+            None,
+            None,
+            "gpt-x".into(),
+            vec!["gpt-y".into()]
+        )
+        .is_err());
+        let ok = build_provider_config(
+            ProviderId::Openai,
+            None,
+            None,
+            "gpt-x".into(),
+            vec!["gpt-x".into(), "gpt-y".into()],
+        )
+        .unwrap();
+        assert_eq!(ok.model.as_deref(), Some("gpt-x"));
+        assert_eq!(ok.models, vec!["gpt-x", "gpt-y"]);
+    }
+
+    #[test]
+    fn wizard_persist_key_blank_is_skip_else_inline() {
+        assert_eq!(wizard_persist_key("   "), (None, None));
+        let (fetch, persist) = wizard_persist_key("  sk-123 ");
+        assert_eq!(fetch.as_deref(), Some("sk-123"));
+        assert_eq!(persist.as_deref(), Some("sk-123"));
     }
 }

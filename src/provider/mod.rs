@@ -13,8 +13,11 @@ mod anthropic;
 mod gemini;
 mod groq;
 mod http;
+mod models;
 pub(crate) mod ollama;
 mod openai;
+
+pub(crate) use models::{fetch_supported_models, FetchSource};
 
 use std::fmt;
 use std::time::Duration;

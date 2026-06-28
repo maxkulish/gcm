@@ -22,6 +22,10 @@ const MAX_ERROR_BODY_BYTES: u64 = 4096;
 const DEFAULT_MAX_RETRIES: u32 = 3;
 const DEFAULT_RETRY_BASE: Duration = Duration::from_millis(500);
 const DEFAULT_RETRY_MAX: Duration = Duration::from_secs(8);
+/// Short timeout for the interactive model-list fetch (CLO-516): the `gcm provider`
+/// wizard spinner must not hang on a flaky network - one light retry then fall back
+/// to the static list. Deliberately separate from the 60s generation timeout.
+const MODEL_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn timeout_secs() -> u64 {
     env_u64("GCM_HTTP_TIMEOUT_SECS")
@@ -52,6 +56,78 @@ pub(super) struct HttpRequest<'a> {
 pub(super) fn post_json(req: &HttpRequest) -> Result<String, ProviderError> {
     let cfg = RetryConfig::from_env();
     retry_with(&cfg, std::thread::sleep, || send_once(req))
+}
+
+/// A model-list discovery GET (CLO-516): like [`HttpRequest`] but no payload.
+pub(super) struct HttpGet {
+    pub provider: &'static str,
+    /// API-key env var, surfaced in an `Auth` (401/403) error; `""` for no-auth.
+    pub auth_env_var: &'static str,
+    pub endpoint: String,
+    pub auth: Option<(&'static str, String)>,
+    pub extra_headers: Vec<(&'static str, String)>,
+}
+
+/// GET a JSON body for model-list discovery. Short timeout + a single light retry
+/// on transient failures so the wizard spinner can't hang; the caller falls back
+/// to a static list on any `Err`.
+pub(super) fn get_json(req: &HttpGet) -> Result<String, ProviderError> {
+    let cfg = RetryConfig {
+        max_retries: 1,
+        base: Duration::from_millis(200),
+        max: Duration::from_secs(2),
+    };
+    retry_with(&cfg, std::thread::sleep, || get_once(req))
+}
+
+/// One GET attempt (mirrors [`send_once`] but with no request body and the short
+/// [`MODEL_FETCH_TIMEOUT`]). Non-2xx is classified into a typed [`ErrorKind`].
+fn get_once(req: &HttpGet) -> Result<String, ProviderError> {
+    let provider = req.provider;
+    let wrap = |kind| ProviderError { provider, kind };
+
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(MODEL_FETCH_TIMEOUT))
+        .http_status_as_error(false)
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let mut builder = agent.get(&req.endpoint);
+    if let Some((name, value)) = req.auth.as_ref() {
+        builder = builder.header(*name, value.as_str());
+    }
+    for (name, value) in &req.extra_headers {
+        builder = builder.header(*name, value.as_str());
+    }
+    let mut response = builder.call().map_err(|e| wrap(map_ureq_error(e)))?;
+
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        return response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| wrap(ErrorKind::Transport(e.to_string())));
+    }
+    let retry_after = parse_retry_after(
+        response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok()),
+    );
+    let mut buf = Vec::new();
+    let _ = response
+        .body_mut()
+        .as_reader()
+        .take(MAX_ERROR_BODY_BYTES)
+        .read_to_end(&mut buf);
+    let err_body = String::from_utf8_lossy(&buf);
+    let kind = classify_status(
+        status,
+        retry_after,
+        bad_request_detail(&err_body),
+        req.auth.as_ref().map(|_| req.auth_env_var),
+    );
+    crate::debug_log!("{provider} model-list response error: {kind:?}");
+    Err(wrap(kind))
 }
 
 /// One HTTP attempt. Non-2xx responses are inspected (status + `Retry-After` +

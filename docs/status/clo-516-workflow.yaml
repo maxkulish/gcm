@@ -1,0 +1,208 @@
+task: CLO-516
+title: "Add interactive `gcm provider` setting with cliclack (Goose-style provider/model picker)"
+linear_url: https://linear.app/cloud-ai/issue/CLO-516/add-interactive-gcm-provider-setting-with-cliclack-goose-style
+branch: feat/clo-516-providers
+task_type: development
+
+classification:
+  recommended: development
+  chosen: development
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius:         { lean: dev, note: "Touches cli.rs, main.rs, config.rs, provider/mod.rs + all 5 backends (groq/gemini/openai/anthropic/ollama); 9+ files across 3 modules" }
+    architecture_novelty: { lean: dev, note: "New deps cliclack+console (no TUI today), new fetch_supported_models() trait method (greenfield), config schema change + version bump + migration" }
+    prior_art:            { lean: neutral, note: "Goose configure.rs is a direct UI template and gcm Config subcommand/atomic-write/version-check patterns exist; runtime model-fetch is new for gcm" }
+    requirement_clarity:  { lean: spec, note: "Very detailed ticket: full acceptance criteria, file/line targets, per-provider API endpoints" }
+    scope_signal:         { lean: dev, note: "No Linear estimate but clearly L: network calls + fallback, config migration, new dep, runtime validation enforcement" }
+  rationale: "Clear ticket but the how hides real architecture decisions (config migration, fetch_supported_models trait shape/async, wizard module placement, runtime-validation UX) across 9+ files - design-doc-worthy"
+
+workflow:
+  current_phase: pr
+  status: in_progress
+
+phases:
+  discovery:
+    status: skipped
+    skip_reason: "--skip-discovery (owner): ticket already supplies prior-art (Goose cliclack) + chosen approach"
+    approved: true
+  design:
+    status: complete
+    design_doc: docs/designs/clo-516-interactive-provider-wizard.md
+    draft_ready: true
+    finalized: true
+    discovery_context_used: false   # discovery skipped
+    review_gemini: null             # lok design-review template bug; Gemini health-check unavailable
+    review_ollama: null             # lok parallel block aborted before Ollama produced output
+    review_verdict: null            # automated dual-model review failed (infra); review is advisory
+    review_completed: false         # automated review did not complete
+    review_method: self_review      # adversarial self-critique + independent Codex attempt (Codex runtime returned no content)
+    review_applied: true
+    applied_suggestions:
+      - "FIX (blind spot 1): enforcement hook relocated from provider/mod.rs resolution path to main.rs::ensure_configured() after apply_to_env, where the loaded Config is still in scope (select() resolves from env after cfg is dropped, so models whitelist never reaches it)"
+      - "REFINE: get_json payload nuance - HttpRequest requires payload:&Value (POST-only); GET needs a slim request or ignored payload"
+      - "REFINE: noted static fallback lists are discovery catalogs (like default_model), not the resolved model - no ADR 'no hardcoded model IDs' violation"
+    owner_review_applied:
+      - "Pt2 (chat-only filter, D7.1): per-provider keep_chat_model - OpenAI/Groq exclude-list (whisper/tts/dall-e/embedding/moderation/guard), Gemini supportedGenerationMethods ∋ generateContent, Anthropic/Ollama passthrough. Verified Groq also serves whisper-large-v3."
+      - "Pt3 (no-key short-circuit, D7.2): gcm provider READS keys (env/config), does not capture; no key -> skip fetch + explicit notice. Fixed an internal D5 inconsistency (had implied key capture)."
+      - "Pt4 (baseline merge, D7.3): merge fetched ∪ static_fallback ∪ {current default, current enabled}, dedupe, so .initial_value() always resolves even if live list omits the default."
+      - "Pt6 (pagination, D7.4): Gemini (nextPageToken) + Anthropic (has_more/last_id) paginate, OpenAI/Groq don't; v1 requests large first page (pageSize=1000/limit=1000), >1000 truncation noted as known limitation."
+      - "Pt1 (trait vs free fn): kept free function dispatched by ProviderId; recorded as owner-ratified divergence; per-backend logic still lives in each backend module as pub(crate) fn."
+      - "Pt5 (empty models=[] = unrestricted): kept (migration requires it); documented trade-off + Option<Vec> alternative considered-and-rejected (degenerate 0-enabled state)."
+      - "Doc fix found while validating: Gemini auth is x-goog-api-key HEADER at /v1beta/models (not ?key= query) - corrected the endpoints table to match gemini.rs."
+    owner_review_round2:
+      # 17-point implementation-level review; validated each vs code, applied HIGH, deferred low/middle per owner instruction
+      - "HIGH pt1 (data loss): D8 merge_provider_config - wizard updates ONE provider, preserves others, sets default. Verified save() overwrites whole file via write_atomic."
+      - "HIGH pt2 (data loss): gcm config/run_wizard must preserve existing per-provider models when rebuilding (else reconfigure erases the whitelist). Verified run_wizard builds fresh + save overwrites."
+      - "HIGH pt3: explicit credential step BEFORE fetch (env > inline config > cliclack::password > skip->fallback); never echo; persist only on completion. Reverses round-1 read-only decision (owner-requested)."
+      - "HIGH pt9 (correctness): migration version-write trap - migrate stamps cfg.version=CONFIG_FORMAT_VERSION AND render_config forces v2; sample/non-tty templates ->v2. Verified render_config serializes config.version directly."
+      - "HIGH pt17 (false-rejection): enforcement compares after per-provider canonicalization (Gemini strip models/, Ollama :latest, trim; no case-fold)."
+      - "pt10: fetch_supported_models returns ModelFetchOutcome{models,source,warning} (needed to realize the D7.2 notice)."
+      - "pt13: enforcement-on-clean-repo is intentional (mirrors onboarding pre-check) + covered by a test."
+      - "pt16: cancel/Esc/Ctrl-C -> outro_cancel + non-zero, no partial write, config untouched (Must-not)."
+      - "pt15: cliclack/console default-features=false (Goose-style, lean posture) + cargo tree check."
+      - "pt5: corrected filter caveat - cliclack 0.5 .filter_mode() is jaro_winkler+containment fuzzy-ish, not plain substring (owner inspected the crate)."
+      - "Already fixed round 1 (skipped): pt6 chat-only filter (D7.1), pt7 pagination (D7.4), pt8 baseline merge (D7.3), Gemini x-goog-api-key header."
+    deferred_middle:
+      - "pt4 .max_rows(~20) on multiselect (cheap at impl)"
+      - "pt11 concrete fast-fetch transport (3-5s timeout, 0-1 retries)"
+      - "pt12 gcm status whitelist awareness (out of scope, follow-up)"
+      - "pt14 module visibility - lift shared provider label/order/token helpers to provider/mod.rs at impl (no duplication)"
+    flagged_suggestions:
+      - "Pt5 lock-to-zero: a hand-edited models=[] cannot lock a provider to 0 usable models (reverts to unrestricted). Intentional back-compat trade-off, not changed."
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-516-interactive-provider-wizard.md
+    approved: true
+  implement:
+    status: complete
+    commits:
+      - 24603cc   # Phase 1: config v2 schema + enabled-model whitelist + enforcement
+      - e5c85a5   # Phase 2: model-list discovery + hygiene (http::get_json, models.rs)
+      - eaaf93f   # Phase 3: interactive gcm provider cliclack wizard
+      - c208fa5   # Phase 4: provider enforcement + migration integration tests; README
+      - 994a111   # Phase 3 polish: .max_rows(15) on wizard lists (pt 4)
+    last_phase_completed: "Phase 4 - integration tests + docs"
+    preflight: "fmt+clippy clean, 298 tests pass (273 unit + 6 onboarding + 5 provider + 14 status); Phases 1-4 pushed"
+    pushed: true
+    notes: "Phase 2 centralized per-backend model-fetch in models.rs (vs plan Task 9 per-backend helpers): discovery is fallback-safe, keeps hot commit path untouched. Phase 3 wizard lives in config.rs (resolves pt14 module-visibility by placement). pt4 .max_rows added (no longer deferred). Remaining deferred: pt12 (gcm status whitelist awareness, separate task). Manual TTY verify (AC-1/AC-3) pending. dead_code gates removed in Phase 3."
+  implement_validation:
+    codex_validated: true
+    codex_verdict: FAIL   # run 1 FAIL -> all 4 findings fixed; not re-run (tooling slow), fixes unit-tested
+    codex_report: docs/reviews/clo-516-codex-validation.md
+    gemini_validated: true
+    gemini_verdict: PASS_WITH_NOTES
+    gemini_report: docs/reviews/clo-516-gemini-validation.md
+    findings_addressed:
+      - "M1 (Codex): model-fetch honors GCM_GOOGLE_BASE_URL alias for Google (mirrors gemini.rs) + hermetic test"
+      - "M2 (Codex): Ollama wizard endpoint default mirrors runtime precedence (env > config > default) + test"
+      - "L1 (Codex): wizard candidate list + preselect/default canonicalized (Gemini models/, Ollama :latest) + tests"
+      - "AC-4 (Codex L2 + Gemini M2): pure build_provider_config (>=1 enabled, default in set) + test"
+      - "Self-review: wizard preserves existing inline key when env key set (no erase)"
+    flagged_for_owner:
+      - "Gemini M1: wizard in config.rs not provider/wizard.rs. Documented divergence (reuses config's private helpers; avoids a config<->provider module cycle since config already calls provider::fetch). Recommend keeping; possible follow-up: split to a config/wizard.rs submodule if file size matters. NOT a bug."
+    not_addressed:
+      - "Codex/Gemini: e2e subprocess test for gcm config preserving a whitelist - needs a PTY harness (none in repo); logic is unit-tested via preserve_existing_models. Manual-verify like the rest of the TUI."
+    post_fix_preflight: "fmt+clippy clean, 302 tests pass (277 unit + 6 onboarding + 5 provider + 14 status)"
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/23
+    pr_number: 23
+    ci_passed: true
+    reviews_addressed: 0
+    approved: false
+  complete: { status: pending }
+
+history:
+  - timestamp: 2026-06-28T07:20:39Z
+    action: workflow_started
+    phase: init
+    details: "New development workflow created for CLO-516 (after correcting an orchestrate request originally typed as clo-511, which is a completed rs-wisper task)"
+  - timestamp: 2026-06-28T07:20:39Z
+    action: task_classified
+    phase: init
+    details: "recommended=development, chosen=development, confidence=medium (3 dev / 1 neutral / 1 spec, method=probe); owner chose --skip-discovery so discovery skipped, entering design"
+  - timestamp: 2026-06-28T07:20:39Z
+    action: project_sync_start
+    phase: init
+    details: "CLO-516 added to PROJECT.md Active Work (1/3) + master table (v2 slice, In Progress). No blockers (DEPENDENCIES.md unchanged except timestamp). Not in ROADMAP (v2 task, like CLO-515)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: design_started
+    phase: design
+    details: "Design phase started. Discovery skipped -> Linear task context only. Complexity check tripped (multiple distinct components: cli/main/config/provider/mod + 5 backends, config migration, wizard module, fetch_supported_models trait)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: design_draft_ready
+    phase: design
+    details: "Design doc drafted at docs/designs/clo-516-interactive-provider-wizard.md after grounding in actual code (config.rs/provider.rs/http.rs/groq.rs/cli.rs/main.rs/Cargo.toml/ADR-001). Key decisions: D1 gcm provider is a new command (not replacing gcm config/onboarding); D2 fetch_supported_models as a free fn dispatched by ProviderId (not a trait method - trait is model-bound + sync); D3 config v1->v2 migration (empty models = unrestricted, mandatory for back-compat); D4 runtime enforcement only when models non-empty; thin cliclack shell over pure logic (TUI not auto-testable - reads /dev/tty, no PTY harness)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: design_review_failed
+    phase: design
+    details: "lok design-review workflow aborted on a template bug (step 'gemini_review' unknown variable '{{ steps.health_check.output }}'); Gemini health-check also unavailable. Both review output files empty. Same flakiness CLO-515 hit. Recovering review value via independent Codex review + adversarial self-critique instead (review is advisory per design phase)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: design_review_complete
+    phase: design
+    details: "Automated dual-model review failed (lok template bug + Codex runtime returned no content after 2 round-trips ~6min). Fell back to adversarial self-critique as review of record. Found 1 substantive flaw (enforcement hook mislocated) + 2 refinements; all applied to the design doc. Verdict: self-reviewed, APPROVE_WITH_CHANGES (changes applied)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: review_applied
+    phase: design
+    details: "Applied 3 self-review fixes: (1) enforcement hook -> main.rs::ensure_configured after apply_to_env (cfg in scope); (2) get_json payload nuance; (3) fallback-catalog vs resolved-model note. Verified GcmError::Config(String) exists in src/error.rs. Transitioned design to checkpoint."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: review_applied
+    phase: design
+    details: "Owner implementation-level review at design checkpoint: 6 points, each validated against the code before applying. Applied D7 model-list hygiene (chat-only filter, no-key short-circuit, baseline merge, pagination page-size bump), ratified the free-function divergence (pt1), documented the empty=unrestricted trade-off + rejected Option<Vec> (pt5), and corrected a Gemini auth detail (x-goog-api-key header) found while validating. 1 flagged (pt5 lock-to-zero, intentional). Design doc re-presented for approval."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: review_applied
+    phase: design
+    details: "Owner round-2 review (17 points). Validated each vs code; skipped 4 already-fixed; sorted by severity. Applied HIGH: D8 provider-config merge (pt1 data loss), gcm-config whitelist preservation (pt2 data loss), explicit credential step before fetch (pt3), migration version-write trap fix (pt9), enforcement canonicalization (pt17), ModelFetchOutcome (pt10); plus cheap correctness/safety (pt13 note, pt16 no-partial-write, pt15 dep flags, pt5 filter-caveat fact). Deferred middle (pt4/11/12/14) with tracked rationale. Verified save() overwrites whole file + run_wizard rebuilds fresh (both data-loss facts confirmed). Re-presented for approval."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: design_finalized
+    phase: design
+    details: "Owner approved after 2 review rounds. Design doc status -> Finalized (docs/designs/clo-516-interactive-provider-wizard.md). Transitioning to plan phase. Open questions Q1-Q3 are intentional deferrals to address during implementation. Committed 5871bf1; Linear comment posted."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: plan_created
+    phase: plan
+    details: "Implementation plan at docs/plans/clo-516-interactive-provider-wizard.md. 26 top-level tasks across 6 phases (config schema+enforcement -> fetch+hygiene -> CLI+wizard -> integration tests/docs -> validation -> PR). Decomposes D1-D8 + ACs + deferred items with file-path subtasks. Awaiting plan checkpoint approval."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: plan_approved
+    phase: plan
+    details: "Owner approved the plan. Transitioning to implement phase (Phase 1: config schema + enforcement first, strict build order)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 1 (config schema + enforcement) complete. config.rs: models field, v1->v2 migration + version-write-trap fix, model_is_enabled + canonicalize_model, merge_provider_config, run_wizard whitelist preservation. main.rs: enforcement hook in ensure_configured. 14 new unit tests. fmt+clippy clean, 281 tests green. Commit 24603cc."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: pushed_to_remote
+    phase: implement
+    details: "Branch feat/clo-516-providers pushed (new remote branch) through 24603cc."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 2 (model-list discovery + hygiene) complete. http::get_json + HttpGet (5s timeout, 1 retry); src/provider/models.rs with fetch_supported_models -> ModelFetchOutcome, per-provider live endpoint+parse, chat-only filter (D7.1), no-key short-circuit (D7.2), baseline merge (D7.3), static fallback. 8 unit tests. fmt+clippy clean, 289 tests green. Commit e5c85a5, pushed."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 3 (CLI + cliclack wizard) complete. cliclack 0.5 + console 0.16 (default-features=false); Commands::Provider + run_provider_subcommand dispatch + non-TTY guard; config::run_provider_wizard (intro chip -> provider select.filter_mode.max_rows -> credential/endpoint resolution before fetch -> spinner over fetch_supported_models -> multiselect.filter_mode.required -> default select -> merge_provider_config -> save -> outro; cancel-safe, no partial write). Pure helpers unit-tested. Commits eaaf93f + 994a111 (max_rows). 293 tests green; non-TTY guard smoke-tested."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 4 (integration tests + docs) complete. tests/provider.rs (5 cases: non-TTY guard, v1 migration hydration, out-of-set --model rejected (code Config), empty models unrestricted, enforcement on clean repo pt13). README documents gcm provider. Task 18/pt14 resolved by wizard-in-config.rs placement. 298 tests green, fmt+clippy clean. Commit c208fa5, pushed."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Validation gate (Codex gpt-5.4 + Gemini 3.1-pro). Codex FAIL (2 MEDIUM endpoint-precedence bugs: Google alias base-url, Ollama env-vs-config; 2 LOW: canonicalize preselect, AC-4 helper). Gemini PASS_WITH_NOTES (build_provider_config helper, wizard placement). Validated each vs code; fixed all 4 concrete findings + a self-review key-preservation edge. 302 tests pass, clippy clean. Commit addresses M1/M2/L1/AC-4. Wizard-placement (config.rs vs provider/wizard.rs) flagged to owner as a defensible documented divergence (not a bug)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: implementation_complete
+    phase: implement
+    details: "All implementation phases complete (1-4 + validation fixes). Owner chose to keep the wizard in config.rs (not extract). 302 tests pass, fmt+clippy clean. Manual TTY verify of the cliclack flow (AC-1/AC-3) is the owner's pre/post-merge step. Transitioning to PR phase."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt --check clean, clippy --all-targets -D warnings clean, 302 tests pass. Removed stray transient files (diff.txt, codex-stdout.log)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: pr_created
+    phase: pr
+    details: "PR #23 opened: https://github.com/maxkulish/gcm/pull/23 (base main). Health gate: MERGEABLE (UNSTABLE=CI pending, not conflict). CI in_progress."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: ci_passed
+    phase: pr
+    details: "CI green: build/test pass on ubuntu-latest + macos-latest. mergeStateStatus CLEAN, mergeable MERGEABLE. No review comments yet. Awaiting owner review + squash-merge (PR checkpoint)."

@@ -48,6 +48,13 @@ fn run(args: &Cli) -> i32 {
         return status::run_status_subcommand(args);
     }
 
+    // The `provider` subcommand is a standalone interactive action (CLO-516): run
+    // the cliclack provider/model wizard, persist, and exit without touching the
+    // repo or the commit flow.
+    if matches!(args.command, Some(Commands::Provider)) {
+        return run_provider_subcommand();
+    }
+
     let env = execute(args);
     let is_error = env.status == output::STATUS_ERROR;
 
@@ -94,6 +101,26 @@ fn run_config_subcommand() -> i32 {
     }
 }
 
+/// Run the `gcm provider` subcommand (CLO-516): launch the cliclack wizard and
+/// return the process exit code (0 saved, 1 cancelled or failed). Interactive, so
+/// without a terminal it fails fast with guidance rather than erroring on the first
+/// `/dev/tty` read.
+fn run_provider_subcommand() -> i32 {
+    if !std::io::stdin().is_terminal() {
+        eprintln!("gcm: `gcm provider` needs an interactive terminal to run the wizard.");
+        eprintln!("{}", config::non_tty_instructions());
+        return 1;
+    }
+    match config::run_provider_wizard() {
+        Ok(true) => 0,
+        Ok(false) => 1, // user cancelled; the wizard already printed the cancel notice
+        Err(e) => {
+            eprintln!("gcm: {e}");
+            1
+        }
+    }
+}
+
 /// Ensure a provider is configured before the commit flow (CLO-496). With
 /// `--reconfigure`, always re-run the wizard. Otherwise: hydrate an existing
 /// config into the environment, or - on an unconfigured first run - launch the
@@ -110,16 +137,17 @@ fn ensure_configured(args: &Cli) -> Result<(), GcmError> {
         let cfg = config::run_wizard()?;
         save_config_best_effort(&cfg);
         config::apply_to_env(&cfg);
-        return Ok(());
+        return enforce_enabled_model(&cfg, args);
     }
 
     if let Some(cfg) = config::load() {
         config::apply_to_env(&cfg);
-        return Ok(());
+        return enforce_enabled_model(&cfg, args);
     }
 
     if !config::needs_onboarding(args.provider) {
-        // Env-configured (or flag-driven): proceed without interruption.
+        // Env-configured (or flag-driven): proceed without interruption. No config
+        // is loaded, so there is no enabled-set to enforce (unrestricted).
         return Ok(());
     }
 
@@ -127,10 +155,24 @@ fn ensure_configured(args: &Cli) -> Result<(), GcmError> {
         let cfg = config::run_wizard()?;
         save_config_best_effort(&cfg);
         config::apply_to_env(&cfg);
-        Ok(())
+        enforce_enabled_model(&cfg, args)
     } else {
         Err(GcmError::OnboardingRequired)
     }
+}
+
+/// Reject a resolved model outside the selected provider's enabled set (CLO-516).
+/// A no-op when the provider has an empty/absent `models` (unrestricted). Runs
+/// after `apply_to_env`, so it resolves the exact model `provider::select` will
+/// use (the config `model` is already bridged into the env the resolver reads):
+/// precedence stays `--model` flag > per-provider env > config > default.
+fn enforce_enabled_model(cfg: &config::Config, args: &Cli) -> Result<(), GcmError> {
+    let env = std::env::var("GCM_PROVIDER").ok();
+    let id =
+        provider::pick_provider_id(args.provider, env.as_deref()).map_err(GcmError::Provider)?;
+    let (model, _src) =
+        provider::resolve_model_with_source(id, args.model.as_deref(), |v| std::env::var(v).ok());
+    config::model_is_enabled(cfg, id, &model).map_err(GcmError::Config)
 }
 
 /// Persist the config, warning (not failing the run) if the write fails - the

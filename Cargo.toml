@@ -20,6 +20,10 @@ toml = "0.8"
 regex = "1"
 tempfile = "3"
 sha2 = "0.11.0"
+# Interactive `gcm provider` wizard (CLO-516); same crates + lean feature flags as
+# Goose's `goose configure`, so we get its diamond-marker UI / filter / spinner.
+cliclack = { version = "0.5", default-features = false }
+console = { version = "0.16", default-features = false, features = ["std"] }
 
 [profile.release]
 strip = true
