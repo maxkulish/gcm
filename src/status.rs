@@ -439,6 +439,7 @@ mod tests {
             key: key.map(String::from),
             endpoint: endpoint.map(String::from),
             model: None,
+            models: Vec::new(),
         }
     }
 
@@ -683,6 +684,7 @@ mod tests {
                 key: None,
                 endpoint: None,
                 model: Some("gpt-config".to_string()),
+                models: Vec::new(),
             }],
         );
         let report = build_report(None, None, Some(&config), env(&[]));
@@ -704,6 +706,7 @@ mod tests {
                 key: None,
                 endpoint: None,
                 model: Some("gpt-config".to_string()),
+                models: Vec::new(),
             }],
         );
         let report = build_report(

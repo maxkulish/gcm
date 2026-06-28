@@ -110,16 +110,17 @@ fn ensure_configured(args: &Cli) -> Result<(), GcmError> {
         let cfg = config::run_wizard()?;
         save_config_best_effort(&cfg);
         config::apply_to_env(&cfg);
-        return Ok(());
+        return enforce_enabled_model(&cfg, args);
     }
 
     if let Some(cfg) = config::load() {
         config::apply_to_env(&cfg);
-        return Ok(());
+        return enforce_enabled_model(&cfg, args);
     }
 
     if !config::needs_onboarding(args.provider) {
-        // Env-configured (or flag-driven): proceed without interruption.
+        // Env-configured (or flag-driven): proceed without interruption. No config
+        // is loaded, so there is no enabled-set to enforce (unrestricted).
         return Ok(());
     }
 
@@ -127,10 +128,24 @@ fn ensure_configured(args: &Cli) -> Result<(), GcmError> {
         let cfg = config::run_wizard()?;
         save_config_best_effort(&cfg);
         config::apply_to_env(&cfg);
-        Ok(())
+        enforce_enabled_model(&cfg, args)
     } else {
         Err(GcmError::OnboardingRequired)
     }
+}
+
+/// Reject a resolved model outside the selected provider's enabled set (CLO-516).
+/// A no-op when the provider has an empty/absent `models` (unrestricted). Runs
+/// after `apply_to_env`, so it resolves the exact model `provider::select` will
+/// use (the config `model` is already bridged into the env the resolver reads):
+/// precedence stays `--model` flag > per-provider env > config > default.
+fn enforce_enabled_model(cfg: &config::Config, args: &Cli) -> Result<(), GcmError> {
+    let env = std::env::var("GCM_PROVIDER").ok();
+    let id =
+        provider::pick_provider_id(args.provider, env.as_deref()).map_err(GcmError::Provider)?;
+    let (model, _src) =
+        provider::resolve_model_with_source(id, args.model.as_deref(), |v| std::env::var(v).ok());
+    config::model_is_enabled(cfg, id, &model).map_err(GcmError::Config)
 }
 
 /// Persist the config, warning (not failing the run) if the write fails - the
