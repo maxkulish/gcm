@@ -79,10 +79,13 @@ phases:
     commits:
       - 24603cc   # Phase 1: config v2 schema + enabled-model whitelist + enforcement
       - e5c85a5   # Phase 2: model-list discovery + hygiene (http::get_json, models.rs)
-    last_phase_completed: "Phase 2 - model-list discovery + hygiene"
-    preflight: "fmt+clippy clean, 289 tests pass (269 unit + 6 onboarding + 14 status); Phases 1-2 pushed"
+      - eaaf93f   # Phase 3: interactive gcm provider cliclack wizard
+      - c208fa5   # Phase 4: provider enforcement + migration integration tests; README
+      - 994a111   # Phase 3 polish: .max_rows(15) on wizard lists (pt 4)
+    last_phase_completed: "Phase 4 - integration tests + docs"
+    preflight: "fmt+clippy clean, 298 tests pass (273 unit + 6 onboarding + 5 provider + 14 status); Phases 1-4 pushed"
     pushed: true
-    notes: "Phase 2 centralized per-backend model-fetch in models.rs (vs plan Task 9 per-backend helpers): discovery is fallback-safe, keeps hot commit path untouched. dead_code on the fetch chain gated to non-test until Phase 3 wizard wires it."
+    notes: "Phase 2 centralized per-backend model-fetch in models.rs (vs plan Task 9 per-backend helpers): discovery is fallback-safe, keeps hot commit path untouched. Phase 3 wizard lives in config.rs (resolves pt14 module-visibility by placement). pt4 .max_rows added (no longer deferred). Remaining deferred: pt12 (gcm status whitelist awareness, separate task). Manual TTY verify (AC-1/AC-3) pending. dead_code gates removed in Phase 3."
   pr: { status: pending }
   complete: { status: pending }
 
@@ -151,3 +154,11 @@ history:
     action: phase_completed
     phase: implement
     details: "Phase 2 (model-list discovery + hygiene) complete. http::get_json + HttpGet (5s timeout, 1 retry); src/provider/models.rs with fetch_supported_models -> ModelFetchOutcome, per-provider live endpoint+parse, chat-only filter (D7.1), no-key short-circuit (D7.2), baseline merge (D7.3), static fallback. 8 unit tests. fmt+clippy clean, 289 tests green. Commit e5c85a5, pushed."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 3 (CLI + cliclack wizard) complete. cliclack 0.5 + console 0.16 (default-features=false); Commands::Provider + run_provider_subcommand dispatch + non-TTY guard; config::run_provider_wizard (intro chip -> provider select.filter_mode.max_rows -> credential/endpoint resolution before fetch -> spinner over fetch_supported_models -> multiselect.filter_mode.required -> default select -> merge_provider_config -> save -> outro; cancel-safe, no partial write). Pure helpers unit-tested. Commits eaaf93f + 994a111 (max_rows). 293 tests green; non-TTY guard smoke-tested."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 4 (integration tests + docs) complete. tests/provider.rs (5 cases: non-TTY guard, v1 migration hydration, out-of-set --model rejected (code Config), empty models unrestricted, enforcement on clean repo pt13). README documents gcm provider. Task 18/pt14 resolved by wizard-in-config.rs placement. 298 tests green, fmt+clippy clean. Commit c208fa5, pushed."

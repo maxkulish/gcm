@@ -4,7 +4,7 @@
 **Design Document**: docs/designs/clo-516-interactive-provider-wizard.md (Finalized)
 **Architecture Reference**: docs/adrs/001-foundational-architecture-decisions.md (Decisions 2, 4, 11)
 **Created**: 2026-06-28
-**Overall Progress**: 42% (11/26 top-level tasks completed) — Phases 1-2 done (24603cc, e5c85a5)
+**Overall Progress**: 77% (20/26 top-level tasks completed) — Phases 1-4 done; validation + PR remain
 
 ---
 
@@ -69,35 +69,35 @@ manual-verify only). Implement strictly Phase 1 -> 4 so each layer is green befo
 
 ### Phase 3: CLI + cliclack wizard — D1, D5
 
-- [ ] Task 12: Dependencies (`Cargo.toml`)
-  - [ ] Subtask 12.1: Add `cliclack = { version = "0.5", default-features = false }` + `console = { version = "0.16", default-features = false, features = ["std"] }`
-  - [ ] Subtask 12.2: Record the `cargo tree` delta (lean-binary check) for the PR
-- [ ] Task 13: CLI surface (`src/cli.rs`)
-  - [ ] Subtask 13.1: Add `Provider` variant to `Commands` (doc-comment mirroring `Config`/`Status`) + a parse test
-- [ ] Task 14: Dispatch (`src/main.rs`)
-  - [ ] Subtask 14.1: `run_provider_subcommand()` dispatched early in `run()` (before repo/onboarding), non-TTY guard -> guidance + exit 1 (mirror `gcm config`)
-- [ ] Task 15: Wizard module (`src/provider/wizard.rs` NEW)
-  - [ ] Subtask 15.1: Pure helpers: `build_provider_config(...)` (default ∈ enabled, >=1 enabled), list assembly; reuse shared provider label/order/token helpers (see Task 18)
-  - [ ] Subtask 15.2: cliclack flow: intro chip -> provider `select(.filter_mode)` -> credential/endpoint resolution (env > config > `password` prompt, before fetch, no echo) -> spinner over `fetch_supported_models` (uses `ModelFetchOutcome`) -> `multiselect(.filter_mode)` >=1 -> default `select` -> `merge_provider_config` + `config::save` -> outro
-  - [ ] Subtask 15.3: Cancellation (Esc/Ctrl-C) -> `outro_cancel` + non-zero exit, no partial write, config untouched (pt 16)
-- [ ] Task 16: Phase 3 unit tests for the pure assembly/validation helpers in `wizard.rs`
+- [x] Task 12: Dependencies (`Cargo.toml`)
+  - [x] Subtask 12.1: Add `cliclack = { version = "0.5", default-features = false }` + `console = { version = "0.16", default-features = false, features = ["std"] }`
+  - [x] Subtask 12.2: Record the `cargo tree` delta (lean-binary check) for the PR
+- [x] Task 13: CLI surface (`src/cli.rs`)
+  - [x] Subtask 13.1: Add `Provider` variant to `Commands` (doc-comment mirroring `Config`/`Status`) + a parse test
+- [x] Task 14: Dispatch (`src/main.rs`)
+  - [x] Subtask 14.1: `run_provider_subcommand()` dispatched early in `run()` (before repo/onboarding), non-TTY guard -> guidance + exit 1 (mirror `gcm config`)
+- [x] Task 15: Wizard module (`src/provider/wizard.rs` NEW)
+  - [x] Subtask 15.1: Pure helpers: `build_provider_config(...)` (default ∈ enabled, >=1 enabled), list assembly; reuse shared provider label/order/token helpers (see Task 18)
+  - [x] Subtask 15.2: cliclack flow: intro chip -> provider `select(.filter_mode)` -> credential/endpoint resolution (env > config > `password` prompt, before fetch, no echo) -> spinner over `fetch_supported_models` (uses `ModelFetchOutcome`) -> `multiselect(.filter_mode)` >=1 -> default `select` -> `merge_provider_config` + `config::save` -> outro
+  - [x] Subtask 15.3: Cancellation (Esc/Ctrl-C) -> `outro_cancel` + non-zero exit, no partial write, config untouched (pt 16)
+- [x] Task 16: Phase 3 unit tests for the pure assembly/validation helpers in `wizard.rs`
 
 ### Phase 4: Integration tests, docs, polish
 
-- [ ] Task 17: Acceptance tests (`tests/provider.rs` NEW, subprocess + `GCM_CONFIG` + `stdin` null, mirror `tests/onboarding.rs`, no network)
-  - [ ] Subtask 17.1: `gcm provider` non-TTY -> exit != 0 + guidance on stderr
-  - [ ] Subtask 17.2: a saved v1 config hydrates after the bump (not `OnboardingRequired`)
-  - [ ] Subtask 17.3: `models = ["a"]` + `--model b` -> error code `Config` (names `b` + lists set); empty `models` allows free-form `--model`
-  - [ ] Subtask 17.4: enforcement on a clean/no-op repo errors (intentional, pt 13)
-  - [ ] Subtask 17.5: `gcm config` after a `gcm provider` whitelist preserves `models` (pt 2)
-- [ ] Task 18: Module-visibility cleanup (pt 14)
-  - [ ] Subtask 18.1: Lift shared provider label/order/token helpers (`cloud_then_ollama`, `provider_label`, `provider_token`) to `src/provider/mod.rs` (single source) or mark needed `config.rs` helpers `pub(crate)`; no duplication
-- [ ] Task 19: Documentation
-  - [ ] Subtask 19.1: README — document `gcm provider` (flow, enabled-models whitelist, env interplay)
-  - [ ] Subtask 19.2: Confirm `commented_reference`/templates reflect `models`
-- [ ] Task 20: Deferred middle-severity items (apply if cheap during impl, else leave noted)
-  - [ ] Subtask 20.1: `.max_rows(~20)` on the model multiselect (pt 4)
-  - [ ] Subtask 20.2: concrete fast-fetch transport tuning already in Task 7.2 (pt 11); confirm values (3-5s, 0-1 retries)
+- [x] Task 17: Acceptance tests (`tests/provider.rs` NEW, subprocess + `GCM_CONFIG` + `stdin` null, mirror `tests/onboarding.rs`, no network)
+  - [x] Subtask 17.1: `gcm provider` non-TTY -> exit != 0 + guidance on stderr
+  - [x] Subtask 17.2: a saved v1 config hydrates after the bump (not `OnboardingRequired`)
+  - [x] Subtask 17.3: `models = ["a"]` + `--model b` -> error code `Config` (names `b` + lists set); empty `models` allows free-form `--model`
+  - [x] Subtask 17.4: enforcement on a clean/no-op repo errors (intentional, pt 13)
+  - [x] Subtask 17.5: `gcm config` after a `gcm provider` whitelist preserves `models` (pt 2)
+- [x] Task 18: Module-visibility cleanup (pt 14)
+  - [x] Subtask 18.1: Lift shared provider label/order/token helpers (`cloud_then_ollama`, `provider_label`, `provider_token`) to `src/provider/mod.rs` (single source) or mark needed `config.rs` helpers `pub(crate)`; no duplication
+- [x] Task 19: Documentation
+  - [x] Subtask 19.1: README — document `gcm provider` (flow, enabled-models whitelist, env interplay)
+  - [x] Subtask 19.2: Confirm `commented_reference`/templates reflect `models`
+- [x] Task 20: Deferred middle-severity items (apply if cheap during impl, else leave noted)
+  - [x] Subtask 20.1: `.max_rows(~20)` on the model multiselect (pt 4)
+  - [x] Subtask 20.2: concrete fast-fetch transport tuning already in Task 7.2 (pt 11); confirm values (3-5s, 0-1 retries)
 
 ### Phase 5: Testing & Validation
 
