@@ -108,6 +108,8 @@ pub enum Commands {
     Config,
     /// Print active providers, models, paths, and config sources, then exit.
     Status,
+    /// Interactively pick a provider, fetch and enable its models, choose a default.
+    Provider,
 }
 
 #[cfg(test)]
@@ -160,5 +162,11 @@ mod tests {
         let cli = Cli::try_parse_from(["gcm", "--reconfigure"]).unwrap();
         assert!(cli.reconfigure);
         assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn provider_subcommand_parses() {
+        let cli = Cli::try_parse_from(["gcm", "provider"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Provider)));
     }
 }

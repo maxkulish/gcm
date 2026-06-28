@@ -48,6 +48,13 @@ fn run(args: &Cli) -> i32 {
         return status::run_status_subcommand(args);
     }
 
+    // The `provider` subcommand is a standalone interactive action (CLO-516): run
+    // the cliclack provider/model wizard, persist, and exit without touching the
+    // repo or the commit flow.
+    if matches!(args.command, Some(Commands::Provider)) {
+        return run_provider_subcommand();
+    }
+
     let env = execute(args);
     let is_error = env.status == output::STATUS_ERROR;
 
@@ -87,6 +94,26 @@ fn run_config_subcommand() -> i32 {
             }
             0
         }
+        Err(e) => {
+            eprintln!("gcm: {e}");
+            1
+        }
+    }
+}
+
+/// Run the `gcm provider` subcommand (CLO-516): launch the cliclack wizard and
+/// return the process exit code (0 saved, 1 cancelled or failed). Interactive, so
+/// without a terminal it fails fast with guidance rather than erroring on the first
+/// `/dev/tty` read.
+fn run_provider_subcommand() -> i32 {
+    if !std::io::stdin().is_terminal() {
+        eprintln!("gcm: `gcm provider` needs an interactive terminal to run the wizard.");
+        eprintln!("{}", config::non_tty_instructions());
+        return 1;
+    }
+    match config::run_provider_wizard() {
+        Ok(true) => 0,
+        Ok(false) => 1, // user cancelled; the wizard already printed the cancel notice
         Err(e) => {
             eprintln!("gcm: {e}");
             1

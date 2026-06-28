@@ -526,10 +526,6 @@ pub(crate) fn model_is_enabled(cfg: &Config, id: ProviderId, model: &str) -> Res
 /// preserving every other provider verbatim; optionally make it the new default.
 /// Pure (no I/O). The wizard (CLO-516) uses this so configuring one provider never
 /// deletes the others' keys/endpoints/models. Always stamps the current version.
-// Consumed by the `gcm provider` wizard (Phase 3); until then only the unit test
-// exercises it, so the non-test bin build would see it as dead. Drop this attr
-// when `wizard.rs` calls it.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn merge_provider_config(
     existing: Option<&Config>,
     updated: ProviderConfig,
@@ -605,6 +601,235 @@ fn cloud_provider_config(id: ProviderId, env_present: bool, typed: Option<&str>)
         endpoint: None,
         model: None,
         models: Vec::new(),
+    }
+}
+
+// ── interactive `gcm provider` wizard (CLO-516, cliclack) ────────────────────
+
+/// Run the interactive `gcm provider` wizard: pick a provider, fetch its models
+/// (live + static fallback), multiselect the enabled set (type-to-filter), choose
+/// one default, and persist - preserving every other provider (D8). Returns
+/// `Ok(true)` on a saved change, `Ok(false)` if the user cancelled (nothing
+/// written). cliclack reads `/dev/tty`; the testable logic is the pure helpers
+/// ([`wizard_model_list`], [`initial_default_model`], [`wizard_persist_key`]).
+pub fn run_provider_wizard() -> Result<bool, GcmError> {
+    use cliclack::{intro, multiselect, outro, password, select, spinner};
+    use console::style;
+
+    let existing = load();
+
+    intro(style(" gcm-provider ").on_cyan().black()).map_err(wizard_io)?;
+
+    // 1. Provider (radio list, current default pre-highlighted, type-to-filter).
+    let all = cloud_then_ollama();
+    let current_default = existing
+        .as_ref()
+        .map(|c| c.default)
+        .unwrap_or(ProviderId::Groq);
+    let provider_items: Vec<(ProviderId, &'static str, &'static str)> =
+        all.iter().map(|&id| (id, provider_label(id), "")).collect();
+    let id = match select::<ProviderId>("Provider")
+        .items(&provider_items)
+        .initial_value(current_default)
+        .filter_mode()
+        .interact()
+    {
+        Ok(v) => v,
+        Err(_) => return wizard_cancelled(),
+    };
+
+    let existing_pc = existing
+        .as_ref()
+        .and_then(|c| c.providers.iter().find(|p| p.id == id));
+
+    // 2. Credential / endpoint resolution BEFORE the fetch (D5 step 3). The key is
+    // held only in memory and persisted (inline `0600`) solely on completion.
+    let mut fetch_key: Option<String> = None;
+    let mut persist_key: Option<String> = None;
+    let mut fetch_endpoint: Option<String> = None;
+    let mut persist_endpoint: Option<String> = None;
+    match id.key_env_var() {
+        Some(var) => {
+            let env_key = env_value(var);
+            let cfg_key = existing_pc.and_then(|p| p.key.clone());
+            if let Some(k) = env_key {
+                fetch_key = Some(k); // env wins -> store env-only (persist None)
+            } else if let Some(k) = cfg_key {
+                fetch_key = Some(k.clone());
+                persist_key = Some(k); // preserve the existing inline key
+            } else {
+                let typed = match password(format!(
+                    "{} API key (press Enter to skip)",
+                    provider_label(id)
+                ))
+                .mask('*')
+                .interact()
+                {
+                    Ok(s) => s,
+                    Err(_) => return wizard_cancelled(),
+                };
+                let (f, p) = wizard_persist_key(&typed);
+                fetch_key = f;
+                persist_key = p;
+            }
+        }
+        None => {
+            // Ollama: resolve/prompt the endpoint before `/api/tags`.
+            let default_ep = existing_pc
+                .and_then(|p| p.endpoint.clone())
+                .unwrap_or_else(effective_ollama_endpoint);
+            let ep = match cliclack::input("Ollama endpoint")
+                .default_input(&default_ep)
+                .validate(|s: &String| validate_endpoint_url(s).map(|_| ()))
+                .interact::<String>()
+            {
+                Ok(s) => s,
+                Err(_) => return wizard_cancelled(),
+            };
+            let ep = ep.trim().to_string();
+            fetch_endpoint = Some(ep.clone());
+            if ep != DEFAULT_OLLAMA_ENDPOINT {
+                persist_endpoint = Some(ep);
+            }
+        }
+    }
+
+    // 3. Fetch the model list (spinner; never fails - falls back).
+    let sp = spinner();
+    sp.start("Fetching supported models...");
+    let outcome = crate::provider::fetch_supported_models(
+        id,
+        fetch_key.as_deref(),
+        fetch_endpoint.as_deref(),
+    );
+    match outcome.source {
+        crate::provider::FetchSource::Live => {
+            sp.stop(format!("Fetched {} models", outcome.models.len()))
+        }
+        crate::provider::FetchSource::Fallback => sp.stop(
+            outcome
+                .warning
+                .clone()
+                .unwrap_or_else(|| "Using the built-in model list".to_string()),
+        ),
+    }
+
+    // 4. Multiselect the enabled set (type-to-filter; >=1 required). The candidate
+    // list keeps the current enabled set + default selectable even if the live list
+    // omitted them (D7.3 wizard-side merge).
+    let current_enabled: Vec<String> = existing_pc.map(|p| p.models.clone()).unwrap_or_default();
+    let current_model = existing_pc.and_then(|p| p.model.clone());
+    let candidates = wizard_model_list(&outcome.models, &current_enabled, current_model.as_deref());
+    let model_items: Vec<(String, String, &'static str)> = candidates
+        .iter()
+        .map(|m| (m.clone(), m.clone(), ""))
+        .collect();
+    let initial_enabled: Vec<String> = current_enabled
+        .iter()
+        .filter(|m| candidates.contains(m))
+        .cloned()
+        .collect();
+    let selected = match multiselect::<String>("Enable models (space toggles, type to filter)")
+        .items(&model_items)
+        .initial_values(initial_enabled)
+        .required(true)
+        .filter_mode()
+        .interact()
+    {
+        Ok(v) => v,
+        Err(_) => return wizard_cancelled(),
+    };
+
+    // 5. Choose exactly one default among the selected models.
+    let default_items: Vec<(String, String, &'static str)> = selected
+        .iter()
+        .map(|m| (m.clone(), m.clone(), ""))
+        .collect();
+    let mut default_select = select::<String>("Default model")
+        .items(&default_items)
+        .filter_mode();
+    if let Some(d) = initial_default_model(&selected, current_model.as_deref()) {
+        default_select = default_select.initial_value(d);
+    }
+    let default_model = match default_select.interact() {
+        Ok(v) => v,
+        Err(_) => return wizard_cancelled(),
+    };
+
+    // 6. Build, merge (preserving other providers), persist, confirm.
+    let updated = ProviderConfig {
+        id,
+        key: persist_key,
+        endpoint: persist_endpoint,
+        model: Some(default_model),
+        models: selected,
+    };
+    let merged = merge_provider_config(existing.as_ref(), updated, true);
+    save(&merged).map_err(|e| GcmError::Git(format!("could not save configuration: {e}")))?;
+    let where_ = config_path()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "the config file".to_string());
+    outro(format!(
+        "Saved {} configuration to {where_}",
+        provider_label(id)
+    ))
+    .map_err(wizard_io)?;
+    Ok(true)
+}
+
+/// Print the cancellation outro and signal "no change" (nothing persisted).
+fn wizard_cancelled() -> Result<bool, GcmError> {
+    let _ = cliclack::outro_cancel("Cancelled - no changes made.");
+    Ok(false)
+}
+
+/// Map a wizard I/O error into the workflow error type.
+fn wizard_io(e: io::Error) -> GcmError {
+    GcmError::Git(format!("provider wizard I/O error: {e}"))
+}
+
+/// The multiselect candidate list (D7.3, wizard side): fetched ∪ current enabled ∪
+/// current default, deduped, fetched first - so the user's existing selections and
+/// default stay selectable even if the live list omitted them. Pure.
+fn wizard_model_list(
+    fetched: &[String],
+    current_enabled: &[String],
+    current_default: Option<&str>,
+) -> Vec<String> {
+    let mut out: Vec<String> = fetched.to_vec();
+    for m in current_enabled {
+        if !out.contains(m) {
+            out.push(m.clone());
+        }
+    }
+    if let Some(d) = current_default {
+        if !out.iter().any(|m| m == d) {
+            out.push(d.to_string());
+        }
+    }
+    out
+}
+
+/// The pre-selected default model: the current default if it survived into
+/// `selected`, else the first selected (None only when `selected` is empty). Pure.
+fn initial_default_model(selected: &[String], current_default: Option<&str>) -> Option<String> {
+    if let Some(d) = current_default {
+        if selected.iter().any(|m| m == d) {
+            return Some(d.to_string());
+        }
+    }
+    selected.first().cloned()
+}
+
+/// Decide `(fetch_key, persist_key)` from a freshly-typed key: a blank entry is
+/// "skip" (no key, nothing stored); a non-blank entry is used for the fetch and
+/// stored inline. Pure (keeps the secret-handling rule unit-testable). Pure.
+fn wizard_persist_key(typed: &str) -> (Option<String>, Option<String>) {
+    let t = typed.trim();
+    if t.is_empty() {
+        (None, None)
+    } else {
+        (Some(t.to_string()), Some(t.to_string()))
     }
 }
 
@@ -1684,5 +1909,46 @@ mod tests {
         // groq had no prior entry -> unchanged (empty)
         let groq = enabled.iter().find(|p| p.id == ProviderId::Groq).unwrap();
         assert!(groq.models.is_empty());
+    }
+
+    // ── CLO-516: pure `gcm provider` wizard helpers ──────────────────────────
+
+    #[test]
+    fn wizard_model_list_unions_fetched_enabled_and_default() {
+        let fetched = vec!["a".to_string(), "b".to_string()];
+        let enabled = vec!["b".to_string(), "c".to_string()]; // c not in fetched
+                                                              // d is the current default, present in neither -> appended last
+        let list = wizard_model_list(&fetched, &enabled, Some("d"));
+        assert_eq!(
+            list,
+            vec!["a", "b", "c", "d"],
+            "fetched first, then missing enabled, then default"
+        );
+        // no duplicates when the default is already present
+        assert_eq!(wizard_model_list(&fetched, &[], Some("a")), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn initial_default_model_prefers_current_then_first() {
+        let selected = vec!["x".to_string(), "y".to_string()];
+        assert_eq!(
+            initial_default_model(&selected, Some("y")).as_deref(),
+            Some("y")
+        );
+        // current default no longer selected -> fall back to the first selected
+        assert_eq!(
+            initial_default_model(&selected, Some("z")).as_deref(),
+            Some("x")
+        );
+        assert_eq!(initial_default_model(&selected, None).as_deref(), Some("x"));
+        assert_eq!(initial_default_model(&[], Some("z")), None);
+    }
+
+    #[test]
+    fn wizard_persist_key_blank_is_skip_else_inline() {
+        assert_eq!(wizard_persist_key("   "), (None, None));
+        let (fetch, persist) = wizard_persist_key("  sk-123 ");
+        assert_eq!(fetch.as_deref(), Some("sk-123"));
+        assert_eq!(persist.as_deref(), Some("sk-123"));
     }
 }

@@ -13,13 +13,11 @@ mod anthropic;
 mod gemini;
 mod groq;
 mod http;
-// Consumed by the `gcm provider` wizard (Phase 3); until then only its own unit
-// tests exercise it, so the non-test bin build sees it as dead. Drop the gate when
-// `wizard.rs` calls `models::fetch_supported_models`.
-#[cfg_attr(not(test), allow(dead_code))]
 mod models;
 pub(crate) mod ollama;
 mod openai;
+
+pub(crate) use models::{fetch_supported_models, FetchSource};
 
 use std::fmt;
 use std::time::Duration;
