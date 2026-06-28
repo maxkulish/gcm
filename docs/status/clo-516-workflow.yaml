@@ -74,7 +74,13 @@ phases:
     status: complete
     plan_file: docs/plans/clo-516-interactive-provider-wizard.md
     approved: true
-  implement: { status: pending }
+  implement:
+    status: in_progress
+    commits:
+      - 24603cc   # Phase 1: config v2 schema + enabled-model whitelist + enforcement
+    last_phase_completed: "Phase 1 - config schema + enforcement"
+    preflight: "fmt+clippy clean, 281 tests pass (261 unit + 6 onboarding + 14 status); Phase 1 pushed"
+    pushed: true
   pr: { status: pending }
   complete: { status: pending }
 
@@ -131,3 +137,11 @@ history:
     action: plan_approved
     phase: plan
     details: "Owner approved the plan. Transitioning to implement phase (Phase 1: config schema + enforcement first, strict build order)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: phase_completed
+    phase: implement
+    details: "Phase 1 (config schema + enforcement) complete. config.rs: models field, v1->v2 migration + version-write-trap fix, model_is_enabled + canonicalize_model, merge_provider_config, run_wizard whitelist preservation. main.rs: enforcement hook in ensure_configured. 14 new unit tests. fmt+clippy clean, 281 tests green. Commit 24603cc."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: pushed_to_remote
+    phase: implement
+    details: "Branch feat/clo-516-providers pushed (new remote branch) through 24603cc."

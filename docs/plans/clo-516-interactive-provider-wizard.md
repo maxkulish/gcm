@@ -4,7 +4,7 @@
 **Design Document**: docs/designs/clo-516-interactive-provider-wizard.md (Finalized)
 **Architecture Reference**: docs/adrs/001-foundational-architecture-decisions.md (Decisions 2, 4, 11)
 **Created**: 2026-06-28
-**Overall Progress**: 0% (0/26 top-level tasks completed; ~74 checkboxes incl. subtasks)
+**Overall Progress**: 23% (6/26 top-level tasks completed) — Phase 1 done (commit 24603cc)
 
 ---
 
@@ -25,27 +25,27 @@ manual-verify only). Implement strictly Phase 1 -> 4 so each layer is green befo
 
 ### Phase 1: Config schema + enforcement (pure; no TUI, no network) — D3, D4, D8
 
-- [ ] Task 1: Add the enabled-models field + version bump (`src/config.rs`)
-  - [ ] Subtask 1.1: Add `pub models: Vec<String>` to `ProviderConfig` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]`
-  - [ ] Subtask 1.2: Bump `CONFIG_FORMAT_VERSION` 1 -> 2
-  - [ ] Subtask 1.3: Update the test `pc`/`pcm` helpers + any literal `ProviderConfig {…}` constructions to include `models: vec![]`
-- [ ] Task 2: Migration in `parse_config` (`src/config.rs`)
-  - [ ] Subtask 2.1: Accept `version == 1` (stamp `cfg.version = CONFIG_FORMAT_VERSION`, leave `models` empty) and `version == 2` natively; reject 0 / >2 as `WrongVersion`
-  - [ ] Subtask 2.2: Force `render_config` to serialize `version = CONFIG_FORMAT_VERSION` regardless of the in-memory value (closes the version-write trap, pt 9)
-  - [ ] Subtask 2.3: Bump literal `version = 1` -> `2` in `sample_toml_template()` and `non_tty_instructions()`; add a `models = [...]` example to `commented_reference()`
-- [ ] Task 3: Pure enforcement helper + canonicalization (`src/config.rs`)
-  - [ ] Subtask 3.1: `model_is_enabled(cfg, id, model) -> Result<(), String>` (empty `models` = Ok; non-empty = membership; error names the model + lists the set + `gcm provider`)
-  - [ ] Subtask 3.2: `canonicalize_model(id, model)` (Gemini strip `models/`, Ollama tagless -> `:latest`, trim; no case-fold); apply on both sides of the membership check (pt 17)
-- [ ] Task 4: Provider-config merge + cross-wizard preservation (`src/config.rs`) — D8
-  - [ ] Subtask 4.1: `merge_provider_config(existing: Option<&Config>, updated: ProviderConfig, make_default: bool) -> Config` (replace one by `id`, append if absent, preserve the rest, set default) (pt 1)
-  - [ ] Subtask 4.2: Make `run_wizard`/`build_config` load the existing config and carry forward each re-enabled provider's existing `models` (and inline default `model`) so `gcm config`/`--reconfigure` never erase a whitelist (pt 2)
-- [ ] Task 5: Wire enforcement into the runtime (`src/main.rs`)
-  - [ ] Subtask 5.1: In `ensure_configured()`, after `apply_to_env(&cfg)` (cfg still in scope), compute `id = pick_provider_id(...)` + `(model,_) = resolve_model_with_source(...)`, call `model_is_enabled(&cfg, id, &model)` mapped to `GcmError::Config`
-  - [ ] Subtask 5.2: Confirm the `pub`/`pub(crate)` visibility of `pick_provider_id` / `resolve_model_with_source` (widen if needed)
-- [ ] Task 6: Phase 1 unit tests (`src/config.rs` `#[cfg(test)]`)
-  - [ ] Subtask 6.1: migration (v1 loads + stamps v2; v2 round-trips with `models`; v0/v3 rejected); `render_config` writes `version = 2`
-  - [ ] Subtask 6.2: enforcement matrix (empty = allow-any; non-empty rejects out-of-set; canonicalized `llama3` matches `llama3:latest`; Gemini `models/x` vs `x`)
-  - [ ] Subtask 6.3: `merge_provider_config` preserves other providers + sets default; `run_wizard`/`build_config` preserve existing `models`
+- [x] Task 1: Add the enabled-models field + version bump (`src/config.rs`)
+  - [x] Subtask 1.1: Add `pub models: Vec<String>` to `ProviderConfig` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]`
+  - [x] Subtask 1.2: Bump `CONFIG_FORMAT_VERSION` 1 -> 2
+  - [x] Subtask 1.3: Update the test `pc`/`pcm` helpers + any literal `ProviderConfig {…}` constructions to include `models: vec![]`
+- [x] Task 2: Migration in `parse_config` (`src/config.rs`)
+  - [x] Subtask 2.1: Accept `version == 1` (stamp `cfg.version = CONFIG_FORMAT_VERSION`, leave `models` empty) and `version == 2` natively; reject 0 / >2 as `WrongVersion`
+  - [x] Subtask 2.2: Force `render_config` to serialize `version = CONFIG_FORMAT_VERSION` regardless of the in-memory value (closes the version-write trap, pt 9)
+  - [x] Subtask 2.3: Bump literal `version = 1` -> `2` in `sample_toml_template()` and `non_tty_instructions()`; add a `models = [...]` example to `commented_reference()`
+- [x] Task 3: Pure enforcement helper + canonicalization (`src/config.rs`)
+  - [x] Subtask 3.1: `model_is_enabled(cfg, id, model) -> Result<(), String>` (empty `models` = Ok; non-empty = membership; error names the model + lists the set + `gcm provider`)
+  - [x] Subtask 3.2: `canonicalize_model(id, model)` (Gemini strip `models/`, Ollama tagless -> `:latest`, trim; no case-fold); apply on both sides of the membership check (pt 17)
+- [x] Task 4: Provider-config merge + cross-wizard preservation (`src/config.rs`) — D8
+  - [x] Subtask 4.1: `merge_provider_config(existing: Option<&Config>, updated: ProviderConfig, make_default: bool) -> Config` (replace one by `id`, append if absent, preserve the rest, set default) (pt 1)
+  - [x] Subtask 4.2: Make `run_wizard`/`build_config` load the existing config and carry forward each re-enabled provider's existing `models` (and inline default `model`) so `gcm config`/`--reconfigure` never erase a whitelist (pt 2)
+- [x] Task 5: Wire enforcement into the runtime (`src/main.rs`)
+  - [x] Subtask 5.1: In `ensure_configured()`, after `apply_to_env(&cfg)` (cfg still in scope), compute `id = pick_provider_id(...)` + `(model,_) = resolve_model_with_source(...)`, call `model_is_enabled(&cfg, id, &model)` mapped to `GcmError::Config`
+  - [x] Subtask 5.2: Confirm the `pub`/`pub(crate)` visibility of `pick_provider_id` / `resolve_model_with_source` (widen if needed)
+- [x] Task 6: Phase 1 unit tests (`src/config.rs` `#[cfg(test)]`)
+  - [x] Subtask 6.1: migration (v1 loads + stamps v2; v2 round-trips with `models`; v0/v3 rejected); `render_config` writes `version = 2`
+  - [x] Subtask 6.2: enforcement matrix (empty = allow-any; non-empty rejects out-of-set; canonicalized `llama3` matches `llama3:latest`; Gemini `models/x` vs `x`)
+  - [x] Subtask 6.3: `merge_provider_config` preserves other providers + sets default; `run_wizard`/`build_config` preserve existing `models`
 
 ### Phase 2: Model fetching + hygiene (sync, fallback, injectable) — D2, D6, D7
 
