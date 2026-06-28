@@ -104,7 +104,13 @@ phases:
     not_addressed:
       - "Codex/Gemini: e2e subprocess test for gcm config preserving a whitelist - needs a PTY harness (none in repo); logic is unit-tested via preserve_existing_models. Manual-verify like the rest of the TUI."
     post_fix_preflight: "fmt+clippy clean, 302 tests pass (277 unit + 6 onboarding + 5 provider + 14 status)"
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/23
+    pr_number: 23
+    ci_passed: false
+    reviews_addressed: 0
+    approved: false
   complete: { status: pending }
 
 history:
@@ -188,3 +194,11 @@ history:
     action: implementation_complete
     phase: implement
     details: "All implementation phases complete (1-4 + validation fixes). Owner chose to keep the wizard in config.rs (not extract). 302 tests pass, fmt+clippy clean. Manual TTY verify of the cliclack flow (AC-1/AC-3) is the owner's pre/post-merge step. Transitioning to PR phase."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt --check clean, clippy --all-targets -D warnings clean, 302 tests pass. Removed stray transient files (diff.txt, codex-stdout.log)."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: pr_created
+    phase: pr
+    details: "PR #23 opened: https://github.com/maxkulish/gcm/pull/23 (base main). Health gate: MERGEABLE (UNSTABLE=CI pending, not conflict). CI in_progress."
