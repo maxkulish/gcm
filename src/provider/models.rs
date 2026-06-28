@@ -141,23 +141,38 @@ fn fetch_live(
 /// Mirrors the backends' base URLs (the runtime source of truth); a drift only
 /// costs a fallback since fetch is best-effort.
 fn resolved_base_url(id: ProviderId, endpoint: Option<&str>) -> String {
+    resolved_base_url_with(id, endpoint, |v| std::env::var(v).ok())
+}
+
+/// Body of [`resolved_base_url`] with the env lookup injected (hermetic tests).
+/// Env var precedence per provider mirrors the backends. Google reads both
+/// `GCM_GEMINI_BASE_URL` (primary) and the `GCM_GOOGLE_BASE_URL` alias, matching
+/// `gemini.rs` - otherwise an alias-based setup fetches from the wrong endpoint.
+fn resolved_base_url_with(
+    id: ProviderId,
+    endpoint: Option<&str>,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> String {
     if let Some(e) = endpoint.map(str::trim).filter(|e| !e.is_empty()) {
         return e.to_string();
     }
-    let (env_var, default) = match id {
-        ProviderId::Groq => ("GCM_GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-        ProviderId::Openai => ("GCM_OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        ProviderId::Anthropic => ("GCM_ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+    let (env_vars, default): (&[&str], &str) = match id {
+        ProviderId::Groq => (&["GCM_GROQ_BASE_URL"], "https://api.groq.com/openai/v1"),
+        ProviderId::Openai => (&["GCM_OPENAI_BASE_URL"], "https://api.openai.com/v1"),
+        ProviderId::Anthropic => (&["GCM_ANTHROPIC_BASE_URL"], "https://api.anthropic.com"),
         ProviderId::Google => (
-            "GCM_GEMINI_BASE_URL",
+            &["GCM_GEMINI_BASE_URL", "GCM_GOOGLE_BASE_URL"],
             "https://generativelanguage.googleapis.com",
         ),
-        ProviderId::Ollama => ("GCM_OLLAMA_BASE_URL", "http://localhost:11434"),
+        ProviderId::Ollama => (&["GCM_OLLAMA_BASE_URL"], "http://localhost:11434"),
     };
-    std::env::var(env_var)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+    env_vars
+        .iter()
+        .find_map(|var| {
+            lookup(var)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        })
         .unwrap_or_else(|| default.to_string())
 }
 
@@ -396,6 +411,32 @@ mod tests {
         assert_eq!(
             dedupe(vec!["a".into(), "b".into(), "a".into(), "c".into()]),
             vec!["a", "b", "c"]
+        );
+    }
+
+    #[test]
+    fn base_url_google_honors_gemini_then_google_alias() {
+        // explicit endpoint wins
+        assert_eq!(
+            resolved_base_url_with(ProviderId::Ollama, Some("http://h:1"), |_| None),
+            "http://h:1"
+        );
+        // Google primary GCM_GEMINI_BASE_URL wins over the GCM_GOOGLE_BASE_URL alias
+        let g = resolved_base_url_with(ProviderId::Google, None, |v| match v {
+            "GCM_GEMINI_BASE_URL" => Some("https://primary".to_string()),
+            "GCM_GOOGLE_BASE_URL" => Some("https://alias".to_string()),
+            _ => None,
+        });
+        assert_eq!(g, "https://primary");
+        // the GCM_GOOGLE_BASE_URL alias is honored when the primary is unset
+        let a = resolved_base_url_with(ProviderId::Google, None, |v| {
+            (v == "GCM_GOOGLE_BASE_URL").then(|| "https://alias".to_string())
+        });
+        assert_eq!(a, "https://alias", "alias must be honored (review M1)");
+        // default when neither is set
+        assert_eq!(
+            resolved_base_url_with(ProviderId::Google, None, |_| None),
+            "https://generativelanguage.googleapis.com"
         );
     }
 }

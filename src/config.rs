@@ -679,10 +679,12 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
             }
         }
         None => {
-            // Ollama: resolve/prompt the endpoint before `/api/tags`.
-            let default_ep = existing_pc
-                .and_then(|p| p.endpoint.clone())
-                .unwrap_or_else(effective_ollama_endpoint);
+            // Ollama: resolve/prompt the endpoint before `/api/tags`. An env override
+            // wins over the saved config (matching runtime precedence, review M2).
+            let default_ep = ollama_wizard_default_endpoint(
+                &effective_ollama_endpoint(),
+                existing_pc.and_then(|p| p.endpoint.as_deref()),
+            );
             let ep = match cliclack::input("Ollama endpoint")
                 .default_input(&default_ep)
                 .validate(|s: &String| validate_endpoint_url(s).map(|_| ()))
@@ -724,14 +726,25 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
     // omitted them (D7.3 wizard-side merge).
     let current_enabled: Vec<String> = existing_pc.map(|p| p.models.clone()).unwrap_or_default();
     let current_model = existing_pc.and_then(|p| p.model.clone());
-    let candidates = wizard_model_list(&outcome.models, &current_enabled, current_model.as_deref());
+    let candidates = wizard_model_list(
+        id,
+        &outcome.models,
+        &current_enabled,
+        current_model.as_deref(),
+    );
     let model_items: Vec<(String, String, &'static str)> = candidates
         .iter()
         .map(|m| (m.clone(), m.clone(), ""))
         .collect();
-    let initial_enabled: Vec<String> = current_enabled
+    // Pre-select the candidates whose canonical form matches a currently-enabled
+    // model, so a migrated `llama3` / `models/gemini-x` still highlights (review L1).
+    let initial_enabled: Vec<String> = candidates
         .iter()
-        .filter(|m| candidates.contains(m))
+        .filter(|c| {
+            current_enabled
+                .iter()
+                .any(|e| canonicalize_model(id, e) == canonicalize_model(id, c))
+        })
         .cloned()
         .collect();
     let selected = match multiselect::<String>("Enable models (space toggles, type to filter)")
@@ -755,7 +768,7 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         .items(&default_items)
         .filter_mode()
         .max_rows(15);
-    if let Some(d) = initial_default_model(&selected, current_model.as_deref()) {
+    if let Some(d) = initial_default_model(id, &selected, current_model.as_deref()) {
         default_select = default_select.initial_value(d);
     }
     let default_model = match default_select.interact() {
@@ -763,14 +776,9 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         Err(_) => return wizard_cancelled(),
     };
 
-    // 6. Build, merge (preserving other providers), persist, confirm.
-    let updated = ProviderConfig {
-        id,
-        key: persist_key,
-        endpoint: persist_endpoint,
-        model: Some(default_model),
-        models: selected,
-    };
+    // 6. Build (pure, AC-4 invariants), merge (preserving other providers), persist.
+    let updated = build_provider_config(id, persist_key, persist_endpoint, default_model, selected)
+        .map_err(GcmError::Git)?;
     let merged = merge_provider_config(existing.as_ref(), updated, true);
     save(&merged).map_err(|e| GcmError::Git(format!("could not save configuration: {e}")))?;
     let where_ = config_path()
@@ -797,35 +805,87 @@ fn wizard_io(e: io::Error) -> GcmError {
 
 /// The multiselect candidate list (D7.3, wizard side): fetched ∪ current enabled ∪
 /// current default, deduped, fetched first - so the user's existing selections and
-/// default stay selectable even if the live list omitted them. Pure.
+/// default stay selectable even if the live list omitted them. Membership is by
+/// canonical form (review L1), so a migrated `llama3` doesn't duplicate a fetched
+/// `llama3:latest`. Pure.
 fn wizard_model_list(
+    id: ProviderId,
     fetched: &[String],
     current_enabled: &[String],
     current_default: Option<&str>,
 ) -> Vec<String> {
     let mut out: Vec<String> = fetched.to_vec();
-    for m in current_enabled {
-        if !out.contains(m) {
-            out.push(m.clone());
+    let push_if_new = |m: &str, out: &mut Vec<String>| {
+        let c = canonicalize_model(id, m);
+        if !out.iter().any(|x| canonicalize_model(id, x) == c) {
+            out.push(m.to_string());
         }
+    };
+    for m in current_enabled {
+        push_if_new(m, &mut out);
     }
     if let Some(d) = current_default {
-        if !out.iter().any(|m| m == d) {
-            out.push(d.to_string());
-        }
+        push_if_new(d, &mut out);
     }
     out
 }
 
 /// The pre-selected default model: the current default if it survived into
-/// `selected`, else the first selected (None only when `selected` is empty). Pure.
-fn initial_default_model(selected: &[String], current_default: Option<&str>) -> Option<String> {
+/// `selected` (canonical match, review L1), else the first selected (None only when
+/// `selected` is empty). Returns the matching `selected` entry. Pure.
+fn initial_default_model(
+    id: ProviderId,
+    selected: &[String],
+    current_default: Option<&str>,
+) -> Option<String> {
     if let Some(d) = current_default {
-        if selected.iter().any(|m| m == d) {
-            return Some(d.to_string());
+        let c = canonicalize_model(id, d);
+        if let Some(hit) = selected.iter().find(|m| canonicalize_model(id, m) == c) {
+            return Some(hit.clone());
         }
     }
     selected.first().cloned()
+}
+
+/// The wizard's Ollama endpoint default, mirroring runtime precedence
+/// (`GCM_OLLAMA_BASE_URL` > `OLLAMA_HOST` > saved config > default): a non-default
+/// `effective` means an env override is present and wins over the saved config;
+/// otherwise the saved config, else the default. Pure (review M2).
+fn ollama_wizard_default_endpoint(effective: &str, config_endpoint: Option<&str>) -> String {
+    if effective != DEFAULT_OLLAMA_ENDPOINT {
+        effective.to_string()
+    } else {
+        config_endpoint
+            .map(str::to_string)
+            .unwrap_or_else(|| effective.to_string())
+    }
+}
+
+/// Assemble the wizard's `ProviderConfig` (pure), enforcing the AC-4 invariants so
+/// they are unit-testable rather than only guaranteed by the cliclack flow: at
+/// least one enabled model, and the default among them.
+fn build_provider_config(
+    id: ProviderId,
+    key: Option<String>,
+    endpoint: Option<String>,
+    default_model: String,
+    models: Vec<String>,
+) -> Result<ProviderConfig, String> {
+    if models.is_empty() {
+        return Err("at least one model must be enabled".to_string());
+    }
+    if !models.iter().any(|m| m == &default_model) {
+        return Err(format!(
+            "default model '{default_model}' is not among the enabled models"
+        ));
+    }
+    Ok(ProviderConfig {
+        id,
+        key,
+        endpoint,
+        model: Some(default_model),
+        models,
+    })
 }
 
 /// Decide `(fetch_key, persist_key)` from a freshly-typed key: a blank entry is
@@ -1922,33 +1982,110 @@ mod tests {
 
     #[test]
     fn wizard_model_list_unions_fetched_enabled_and_default() {
+        let id = ProviderId::Openai;
         let fetched = vec!["a".to_string(), "b".to_string()];
         let enabled = vec!["b".to_string(), "c".to_string()]; // c not in fetched
                                                               // d is the current default, present in neither -> appended last
-        let list = wizard_model_list(&fetched, &enabled, Some("d"));
+        let list = wizard_model_list(id, &fetched, &enabled, Some("d"));
         assert_eq!(
             list,
             vec!["a", "b", "c", "d"],
             "fetched first, then missing enabled, then default"
         );
         // no duplicates when the default is already present
-        assert_eq!(wizard_model_list(&fetched, &[], Some("a")), vec!["a", "b"]);
+        assert_eq!(
+            wizard_model_list(id, &fetched, &[], Some("a")),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn wizard_model_list_dedupes_by_canonical_form() {
+        // Ollama: a migrated tagless `llama3` must not duplicate a fetched
+        // `llama3:latest` (review L1).
+        let fetched = vec!["llama3:latest".to_string()];
+        let enabled = vec!["llama3".to_string()];
+        let list = wizard_model_list(ProviderId::Ollama, &fetched, &enabled, Some("llama3"));
+        assert_eq!(
+            list,
+            vec!["llama3:latest"],
+            "canonical dedupe keeps the fetched form"
+        );
     }
 
     #[test]
     fn initial_default_model_prefers_current_then_first() {
+        let id = ProviderId::Openai;
         let selected = vec!["x".to_string(), "y".to_string()];
         assert_eq!(
-            initial_default_model(&selected, Some("y")).as_deref(),
+            initial_default_model(id, &selected, Some("y")).as_deref(),
             Some("y")
         );
         // current default no longer selected -> fall back to the first selected
         assert_eq!(
-            initial_default_model(&selected, Some("z")).as_deref(),
+            initial_default_model(id, &selected, Some("z")).as_deref(),
             Some("x")
         );
-        assert_eq!(initial_default_model(&selected, None).as_deref(), Some("x"));
-        assert_eq!(initial_default_model(&[], Some("z")), None);
+        assert_eq!(
+            initial_default_model(id, &selected, None).as_deref(),
+            Some("x")
+        );
+        assert_eq!(initial_default_model(id, &[], Some("z")), None);
+        // canonical match: a tagless current default selects the `:latest` entry
+        let sel = vec!["llama3:latest".to_string()];
+        assert_eq!(
+            initial_default_model(ProviderId::Ollama, &sel, Some("llama3")).as_deref(),
+            Some("llama3:latest")
+        );
+    }
+
+    #[test]
+    fn ollama_wizard_default_endpoint_env_beats_config() {
+        // env override present (effective != default) -> wins over saved config
+        assert_eq!(
+            ollama_wizard_default_endpoint("http://env:1", Some("http://cfg:2")),
+            "http://env:1"
+        );
+        // no env override -> saved config, else the default
+        assert_eq!(
+            ollama_wizard_default_endpoint(DEFAULT_OLLAMA_ENDPOINT, Some("http://cfg:2")),
+            "http://cfg:2"
+        );
+        assert_eq!(
+            ollama_wizard_default_endpoint(DEFAULT_OLLAMA_ENDPOINT, None),
+            DEFAULT_OLLAMA_ENDPOINT
+        );
+    }
+
+    #[test]
+    fn build_provider_config_enforces_ac4_invariants() {
+        // default must be among the enabled models, and >=1 enabled
+        assert!(build_provider_config(
+            ProviderId::Openai,
+            Some("k".into()),
+            None,
+            "gpt-x".into(),
+            vec![]
+        )
+        .is_err());
+        assert!(build_provider_config(
+            ProviderId::Openai,
+            None,
+            None,
+            "gpt-x".into(),
+            vec!["gpt-y".into()]
+        )
+        .is_err());
+        let ok = build_provider_config(
+            ProviderId::Openai,
+            None,
+            None,
+            "gpt-x".into(),
+            vec!["gpt-x".into(), "gpt-y".into()],
+        )
+        .unwrap();
+        assert_eq!(ok.model.as_deref(), Some("gpt-x"));
+        assert_eq!(ok.models, vec!["gpt-x", "gpt-y"]);
     }
 
     #[test]
