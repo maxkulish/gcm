@@ -18,7 +18,7 @@ classification:
   rationale: "Clear ticket but the how hides real architecture decisions (config migration, fetch_supported_models trait shape/async, wizard module placement, runtime-validation UX) across 9+ files - design-doc-worthy"
 
 workflow:
-  current_phase: plan
+  current_phase: implement
   status: in_progress
 
 phases:
@@ -70,7 +70,10 @@ phases:
       - "pt14 module visibility - lift shared provider label/order/token helpers to provider/mod.rs at impl (no duplication)"
     flagged_suggestions:
       - "Pt5 lock-to-zero: a hand-edited models=[] cannot lock a provider to 0 usable models (reverts to unrestricted). Intentional back-compat trade-off, not changed."
-  plan: { status: pending }
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-516-interactive-provider-wizard.md
+    approved: true
   implement: { status: pending }
   pr: { status: pending }
   complete: { status: pending }
@@ -119,4 +122,12 @@ history:
   - timestamp: 2026-06-28T07:20:39Z
     action: design_finalized
     phase: design
-    details: "Owner approved after 2 review rounds. Design doc status -> Finalized (docs/designs/clo-516-interactive-provider-wizard.md). Transitioning to plan phase. Open questions Q1-Q3 are intentional deferrals to address during implementation."
+    details: "Owner approved after 2 review rounds. Design doc status -> Finalized (docs/designs/clo-516-interactive-provider-wizard.md). Transitioning to plan phase. Open questions Q1-Q3 are intentional deferrals to address during implementation. Committed 5871bf1; Linear comment posted."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: plan_created
+    phase: plan
+    details: "Implementation plan at docs/plans/clo-516-interactive-provider-wizard.md. 26 top-level tasks across 6 phases (config schema+enforcement -> fetch+hygiene -> CLI+wizard -> integration tests/docs -> validation -> PR). Decomposes D1-D8 + ACs + deferred items with file-path subtasks. Awaiting plan checkpoint approval."
+  - timestamp: 2026-06-28T07:20:39Z
+    action: plan_approved
+    phase: plan
+    details: "Owner approved the plan. Transitioning to implement phase (Phase 1: config schema + enforcement first, strict build order)."
