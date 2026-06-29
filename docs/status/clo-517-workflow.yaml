@@ -56,7 +56,13 @@ phases:
     codex_report: docs/reviews/clo-517-codex-validation.md
     gemini_validation_verdict: PASS
     gemini_validation_report: docs/reviews/clo-517-gemini-validation.md
-  pr: { status: pending, ci_passed: false }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/24
+    pr_number: 24
+    ci_passed: true
+    mergeable: MERGEABLE
+    approved: false
   complete: { status: pending }
 
 history:
@@ -100,3 +106,15 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Codex(gpt-5.4) PASS_WITH_NOTES (1 rec: DFS-path test, applied), Gemini(3.1-pro) PASS. Added DFS test, commit 2ad2eff."
+  - timestamp: 2026-06-29T06:02:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt + clippy(all-targets) + test (286 unit + 25 integration) all green"
+  - timestamp: 2026-06-29T06:02:00Z
+    action: pr_created
+    phase: pr
+    details: "PR #24 created; Linear -> In Review, PR comment posted"
+  - timestamp: 2026-06-29T06:02:00Z
+    action: ci_passed
+    phase: pr
+    details: "GitHub Actions CI success (1m18s); PR MERGEABLE/CLEAN"
