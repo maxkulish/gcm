@@ -810,6 +810,18 @@ mod tests {
     }
 
     #[test]
+    fn parse_defensive_deeply_nested_commits_via_dfs() {
+        // Codex validation: a `commits` array under UNKNOWN intermediate keys
+        // (not in WRAPPER_KEYS) must still recover via find_key_dfs, pinning the
+        // groups-before-commits precedence at the DFS level too.
+        let s = r#"{"output":{"inner":{"commits":[{"message":"feat: a","files":["a"]}]}}}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 1);
+        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
+    }
+
+    #[test]
     fn parse_error_display() {
         assert_eq!(
             PlanError::Parse("boom".to_string()).to_string(),
