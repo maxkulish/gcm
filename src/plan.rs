@@ -84,6 +84,7 @@ pub fn parse_defensive(content: &str) -> Result<Plan, PlanError> {
         }
         if let Ok(value) = serde_json::from_str::<Value>(&cand) {
             if let Some(groups) = recover_groups(&value) {
+                let groups = normalize_recovered_groups(groups);
                 if let Ok(plan) = serde_json::from_value::<Plan>(json!({ "groups": groups })) {
                     return Ok(plan);
                 }
@@ -183,9 +184,15 @@ fn balanced_end(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-/// Recover the `groups` array from a parsed value, in precedence order: top-level
-/// `groups` -> a `groups` array under a known wrapper key (in order) -> a
-/// depth-first search for the first `groups` array anywhere.
+/// Known wrapper keys whose value may carry the plan array one level down
+/// (e.g. `{"result": {"groups": [..]}}`).
+const WRAPPER_KEYS: [&str; 5] = ["commit_plan", "plan", "result", "data", "response"];
+
+/// Recover the plan array from a parsed value. The strict `groups` key is resolved
+/// everywhere first (top-level -> known wrapper -> depth-first search), and only if
+/// that finds nothing do we fall back to the `commits` alias resolved the same way
+/// (CLO-517: cloud models that ignore `format` guess a `commits` wrapper). So a
+/// real `groups` anywhere always wins over a stray `commits`.
 fn recover_groups(v: &Value) -> Option<Value> {
     // A bare top-level array is treated as the groups array itself (a model that
     // dropped the {"groups": ..} wrapper). The re-wrap + Plan deserialize still
@@ -193,33 +200,107 @@ fn recover_groups(v: &Value) -> Option<Value> {
     if v.is_array() {
         return Some(v.clone());
     }
-    if let Some(arr) = v.get("groups").filter(|g| g.is_array()) {
+    recover_under_key(v, "groups").or_else(|| recover_under_key(v, "commits"))
+}
+
+/// Find an array held under `key`, in precedence order: top-level -> under a known
+/// wrapper key (in order) -> a depth-first search for the first such array anywhere.
+fn recover_under_key(v: &Value, key: &str) -> Option<Value> {
+    if let Some(arr) = v.get(key).filter(|g| g.is_array()) {
         return Some(arr.clone());
     }
-    for key in ["commit_plan", "plan", "result", "data", "response"] {
+    for wrapper in WRAPPER_KEYS {
         if let Some(arr) = v
-            .get(key)
-            .and_then(|inner| inner.get("groups"))
+            .get(wrapper)
+            .and_then(|inner| inner.get(key))
             .filter(|g| g.is_array())
         {
             return Some(arr.clone());
         }
     }
-    find_groups_dfs(v)
+    find_key_dfs(v, key)
 }
 
-/// Depth-first search for the first object key `groups` holding an array.
-fn find_groups_dfs(v: &Value) -> Option<Value> {
+/// Depth-first search for the first object `key` holding an array.
+fn find_key_dfs(v: &Value, key: &str) -> Option<Value> {
     match v {
         Value::Object(map) => {
-            if let Some(arr) = map.get("groups").filter(|g| g.is_array()) {
+            if let Some(arr) = map.get(key).filter(|g| g.is_array()) {
                 return Some(arr.clone());
             }
-            map.values().find_map(find_groups_dfs)
+            map.values().find_map(|child| find_key_dfs(child, key))
         }
-        Value::Array(items) => items.iter().find_map(find_groups_dfs),
+        Value::Array(items) => items.iter().find_map(|child| find_key_dfs(child, key)),
         _ => None,
     }
+}
+
+/// Normalize a recovered `groups` array in place so a near-miss group shape still
+/// deserializes into [`Group`] (CLO-517). Per group object, when - and only when -
+/// the canonical key is absent:
+/// - `commit_message` is filled from a `message` alias, but **only for the first
+///   group** (`groups[0]`). Per ADR-001 Decision 6 only `groups[0]` carries a
+///   message; later groups stay null and are regenerated from their own diff at
+///   commit time (`main.rs`), and `cache::advance` promotes a later group to
+///   `groups[0]` on a subsequent run. Mapping the alias onto later groups would
+///   leak the weak-schema initial-plan message into the cache and commit it
+///   verbatim later instead of regenerating it.
+/// - `summary` is filled from a `description`/`title` alias, else synthesized from
+///   the first non-empty line of the group's message, else a deterministic
+///   fallback. `summary` is display-only (`main.rs`), never committed nor validated.
+///
+/// `files` is never synthesized - it is the partition key, so an absent/empty
+/// `files` still fails downstream, as it must.
+fn normalize_recovered_groups(groups: Value) -> Value {
+    let Value::Array(items) = groups else {
+        return groups;
+    };
+    Value::Array(
+        items
+            .into_iter()
+            .enumerate()
+            .map(|(i, g)| normalize_group(g, i == 0))
+            .collect(),
+    )
+}
+
+/// Apply the [`normalize_recovered_groups`] per-group rules to one value (a
+/// non-object is returned untouched so it fails the [`Group`] deserialize as
+/// before). `is_first` gates the `message` -> `commit_message` alias to `groups[0]`.
+fn normalize_group(group: Value, is_first: bool) -> Value {
+    let Value::Object(mut map) = group else {
+        return group;
+    };
+    // Take the `message` alias out unconditionally so it never deserializes onto a
+    // later group; it is re-attached as `commit_message` only for the first group.
+    let message_alias = map.remove("message");
+    if is_first && !map.contains_key("commit_message") {
+        if let Some(msg) = message_alias.clone() {
+            crate::debug_log!("plan: recovered near-miss group key message -> commit_message");
+            map.insert("commit_message".to_string(), msg);
+        }
+    }
+    if !map.contains_key("summary") {
+        let alias = ["description", "title"]
+            .into_iter()
+            .find_map(|k| map.remove(k));
+        let summary = alias
+            .as_ref()
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| first_nonempty_line(map.get("commit_message").and_then(Value::as_str)))
+            .or_else(|| first_nonempty_line(message_alias.as_ref().and_then(Value::as_str)))
+            .unwrap_or_else(|| "recovered commit group".to_string());
+        crate::debug_log!("plan: recovered near-miss group missing summary -> synthesized");
+        map.insert("summary".to_string(), Value::String(summary));
+    }
+    Value::Object(map)
+}
+
+/// First non-empty, trimmed line of `text`, for a best-effort display summary.
+fn first_nonempty_line(text: Option<&str>) -> Option<String> {
+    text.and_then(|t| t.lines().map(str::trim).find(|l| !l.is_empty()))
+        .map(str::to_string)
 }
 
 /// The inner JSON Schema object sent with `response_format` (ADR-001 Decision 5,
@@ -669,6 +750,110 @@ mod tests {
             Err(PlanError::Parse(_)) => {}
             other => panic!("expected Parse error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_defensive_commits_alias_exact_bug_payload() {
+        // CLO-517: the EXACT shape an Ollama cloud model guessed when `format` was a
+        // no-op - `commits` wrapper, `message` key, and NO `summary` at all. Must
+        // recover: commits -> groups, message -> commit_message, summary synthesized.
+        let s = r#"{"commits":[{"message":"feat: a","files":["a"]}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 1);
+        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
+        assert!(
+            !p.groups[0].summary.trim().is_empty(),
+            "summary must be synthesized, not empty"
+        );
+    }
+
+    #[test]
+    fn parse_defensive_commits_alias_later_group_null_message() {
+        // A second group with `message: null` must yield commit_message == None.
+        let s =
+            r#"{"commits":[{"message":"feat: a","files":["a"]},{"message":null,"files":["b"]}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 2);
+        assert_eq!(p.groups[1].commit_message, None);
+    }
+
+    #[test]
+    fn parse_defensive_commits_alias_later_group_message_not_retained() {
+        // Cross-run safety (PR #24 review): a weak-schema response may carry a
+        // `message` on EVERY commit. Only groups[0] may keep it; later groups MUST
+        // stay null so the per-group regeneration (ADR-001 #6) fires after
+        // cache::advance promotes a later group to groups[0]. Otherwise the stale
+        // initial-plan message would be committed verbatim on a later run.
+        let s = r#"{"commits":[{"message":"feat: a","files":["a"]},{"message":"feat: b","files":["b"]}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 2);
+        assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
+        assert_eq!(
+            p.groups[1].commit_message, None,
+            "later-group message must not be retained as commit_message"
+        );
+        // The dropped message may still seed the display-only summary.
+        assert!(!p.groups[1].summary.trim().is_empty());
+    }
+
+    #[test]
+    fn parse_defensive_groups_wins_over_commits() {
+        // Both keys present: the strict `groups` shape must win (direct Plan parse
+        // ignores the unknown `commits` field), never the alias.
+        let s = r#"{"groups":[{"files":["a"],"summary":"real","commit_message":"feat: a"}],"commits":[{"files":["b"],"message":"feat: b"}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 1);
+        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].summary, "real");
+    }
+
+    #[test]
+    fn parse_defensive_commits_missing_files_still_fails() {
+        // `files` is the partition key and is NEVER synthesized: a commits group
+        // without files must still fail to parse (no Plan recovered).
+        let s = r#"{"commits":[{"message":"feat: a","summary":"s"}]}"#;
+        match parse_defensive(s) {
+            Err(PlanError::Parse(_)) => {}
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_defensive_commits_real_summary_preserved() {
+        // A real `summary` on a commits group must be preserved, not overwritten.
+        let s = r#"{"commits":[{"message":"feat: a","files":["a"],"summary":"keep me"}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups[0].summary, "keep me");
+    }
+
+    #[test]
+    fn parse_defensive_commits_description_alias_for_summary() {
+        // `description` is accepted as a `summary` alias before synthesis.
+        let s = r#"{"commits":[{"message":"feat: a","files":["a"],"description":"from desc"}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups[0].summary, "from desc");
+    }
+
+    #[test]
+    fn parse_defensive_nested_commits_via_wrapper() {
+        // A `commits` array nested under a known wrapper key recovers.
+        let s = r#"{"result":{"commits":[{"message":"feat: a","files":["a"]}]}}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 1);
+        assert_eq!(p.groups[0].files, vec!["a"]);
+    }
+
+    #[test]
+    fn parse_defensive_deeply_nested_commits_via_dfs() {
+        // Codex validation: a `commits` array under UNKNOWN intermediate keys
+        // (not in WRAPPER_KEYS) must still recover via find_key_dfs, pinning the
+        // groups-before-commits precedence at the DFS level too.
+        let s = r#"{"output":{"inner":{"commits":[{"message":"feat: a","files":["a"]}]}}}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 1);
+        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
     }
 
     #[test]

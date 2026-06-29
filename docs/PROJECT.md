@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-06-28 (CLO-516 interactive `gcm provider` picker (cliclack, Goose-style) merged PR #23, **Done** — v2 enabled-model whitelist + config v1→v2 migration + runtime enforcement. CLO-515 `gcm status` command merged PR #21, Done — first v2 slice: read-only config/provider introspection with source attribution. CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-06-29 (CLO-517 started — fix Ollama cloud model commit-plan parse failure, spec workflow. CLO-516 interactive `gcm provider` picker (cliclack, Goose-style) merged PR #23, **Done** — v2 enabled-model whitelist + config v1→v2 migration + runtime enforcement. CLO-515 `gcm status` command merged PR #21, Done — first v2 slice: read-only config/provider introspection with source attribution. CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; the bash→Rust migration is complete. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 provider trait merged PR #10; CLO-492 PR #9; CLO-491 merged on main)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -65,7 +65,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-517](https://linear.app/cloud-ai/issue/CLO-517) | Fix Ollama cloud model commit-plan parse failure | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
