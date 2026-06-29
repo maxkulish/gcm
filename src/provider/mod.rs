@@ -336,10 +336,26 @@ Keep the first line under 72 characters.
 Add a blank line and bullet points for details if there are multiple significant changes.
 Do NOT include any explanation - output ONLY the commit message.";
 
-/// Grouping-plan system prompt (shared by every provider; the structured-output
-/// schema enforces the shape, so the prompt carries only the grouping rules).
+/// Grouping-plan system prompt (shared by every provider). The structured-output
+/// schema (`format`/`response_format`) is sent alongside this prompt, but some
+/// providers do not enforce it - notably Ollama cloud (`:cloud`/`-cloud`)
+/// passthrough models, where `format` is a no-op (CLO-517). So the prompt itself
+/// restates the exact JSON shape and gives an example; the schema and this prompt
+/// must be kept in sync (see `plan::schema`).
 pub(super) const GROUPING_SYSTEM_PROMPT: &str = "\
 Analyze these git changes. Group related files into logical commits by semantic relevance.
+
+Output ONLY a single JSON object, no prose or markdown fences. The shape is EXACTLY:
+{
+  \"groups\": [
+    { \"files\": [\"path/one.rs\", \"path/two.rs\"], \"summary\": \"one-line description\", \"commit_message\": \"feat(scope): full conventional commit\" },
+    { \"files\": [\"path/three.rs\"], \"summary\": \"one-line description\", \"commit_message\": null }
+  ]
+}
+
+The top-level key MUST be \"groups\" (an array). Do NOT use \"commits\". Each group object MUST
+have exactly these keys: \"files\" (array of exact path strings), \"summary\" (string), and
+\"commit_message\" (string for groups[0], null for every other group).
 
 Rules:
 - Every file from the file list must appear in exactly one group.

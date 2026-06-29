@@ -5,6 +5,11 @@
 //! no `Authorization` header (the privacy anchor - zero-egress with a local
 //! model). Endpoint defaults to `http://localhost:11434`, overridable via
 //! `GCM_OLLAMA_BASE_URL` (full URL) or the Ollama-native `OLLAMA_HOST`.
+//!
+//! Note: Ollama enforces the `format` JSON schema via grammar-constrained decoding
+//! only for local GGUF models. For cloud passthrough models (the `:cloud`/`-cloud`
+//! tag) `format` is a no-op, so structured output relies on the prompt-level schema
+//! restated in `GROUPING_SYSTEM_PROMPT` plus the defensive parser (CLO-517).
 
 use serde::Deserialize;
 use serde_json::{json, Value};

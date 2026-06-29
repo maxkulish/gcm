@@ -23,7 +23,9 @@ const CACHE_FORMAT_VERSION: u32 = 1;
 /// or when the fingerprint composition changes, so a cached plan from an older
 /// contract re-analyzes. Bumped to 2 in CLO-489 (the provider is now folded in
 /// via the provider-qualified model id instead of a hardcoded `groq` token).
-const FINGERPRINT_VERSION: u32 = 2;
+/// Bumped to 3 in CLO-517 (the grouping prompt now restates the JSON shape +
+/// example for providers that don't enforce `format`).
+const FINGERPRINT_VERSION: u32 = 3;
 
 /// The JSON wrapper persisted to disk: a fingerprint envelope around the typed
 /// plan. (FR-30 bash-cache compat was dropped by ADR-001 #12, so the format is
@@ -363,6 +365,26 @@ mod tests {
         assert_eq!(
             digest_fingerprint("groq:m", &e),
             digest_fingerprint("groq:m", &e)
+        );
+    }
+
+    #[test]
+    fn fingerprint_version_is_folded_in() {
+        // Golden digest pins FINGERPRINT_VERSION (and the whole fingerprint
+        // composition) for a fixed input. Bumping the version (CLO-517: 2 -> 3,
+        // for the grouping-prompt change) MUST change this value, so a stale plan
+        // built under the old prompt contract re-analyzes. Update the constant
+        // below only alongside an intentional version/composition bump.
+        const FINGERPRINT_VERSION_GOLDEN: u32 = 3;
+        assert_eq!(
+            FINGERPRINT_VERSION, FINGERPRINT_VERSION_GOLDEN,
+            "bump the golden value only with an intentional fingerprint change"
+        );
+        let e = entries(&[("a.rs", "h1")]);
+        assert_eq!(
+            digest_fingerprint("groq:m", &e),
+            "0c6be376157d7f1df27d87fd7a0744d965b9f97651136392facc983c78856011",
+            "fingerprint composition changed unexpectedly"
         );
     }
 
