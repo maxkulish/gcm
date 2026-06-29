@@ -63,6 +63,8 @@ phases:
     ci_passed: true
     mergeable: MERGEABLE
     approved: false
+    reviews_addressed:
+      - "P2 (PR #24): commits-alias message leaked to later groups, bypassing per-group regeneration (ADR-001 #6) after cache::advance. Fixed: alias scoped to groups[0]; later groups stay null. Regression test added. Commit a4bf08f."
   complete: { status: pending }
 
 history:
@@ -118,3 +120,7 @@ history:
     action: ci_passed
     phase: pr
     details: "GitHub Actions CI success (1m18s); PR MERGEABLE/CLEAN"
+  - timestamp: 2026-06-29T06:30:00Z
+    action: review_addressed
+    phase: pr
+    details: "PR #24 P2: validated vs code (confirmed real ADR-001 #6 violation via cache::advance), scoped message alias to groups[0], added regression test. 287 unit tests pass. Commit a4bf08f, pushed."
