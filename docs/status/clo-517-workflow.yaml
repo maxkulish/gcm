@@ -1,0 +1,78 @@
+task: CLO-517
+title: "Fix Ollama cloud model commit-plan parse failure (nemotron-3-nano falls back to single-commit)"
+linear_url: https://linear.app/cloud-ai/issue/CLO-517/fix-ollama-cloud-model-commit-plan-parse-failure-nemotron-3-nano-falls
+git_branch: fix/clo-517-ollama-cloud-plan-parse
+task_type: specification
+
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:         { lean: spec, note: "src/provider/mod.rs prompt + optional src/plan.rs parser/test, 2-3 files" }
+    architecture_novelty: { lean: spec, note: "prompt text + parser tolerance; no new model/dependency/interface" }
+    prior_art:            { lean: spec, note: "recover_groups/parse_defensive already exist as templates" }
+    requirement_clarity:  { lean: spec, note: "root cause verified in hotfix doc, acceptance criteria derivable now" }
+    scope_signal:         { lean: spec, note: "S - verified fix already documented" }
+  rationale: "Fully diagnosed, verified single-module bug fix with explicit file:line targets and acceptance criteria - lean spec cycle fits."
+
+workflow:
+  current_phase: implement
+  status: in_progress
+
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: specs/2026-06-29-clo-517-ollama-cloud-plan-parse.md
+    approved: true
+    review_completed: true
+    review_gemini: docs/reviews/clo-517-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-517-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-517-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_applied: true
+    applied_suggestions:
+      - "HIGH: bump FINGERPRINT_VERSION 2->3 in src/cache.rs (verified vs cache.rs:22-24 convention)"
+      - "Promote GROUPING_SYSTEM_PROMPT doc-comment update to explicit AC"
+      - "AC+test: groups+commits both present -> groups wins"
+      - "Pin impl: normalize_recovered_groups helper; message->commit_message only when absent"
+      - "Test: normalized commits missing files/summary still fails"
+      - "Recognize commits alias under known wrapper keys"
+      - "tracing::debug! on alias recovery; cloud-format note location pinned to ollama module doc"
+    flagged_suggestions: []
+  implement: { status: in_progress, commits: [] }
+  pr: { status: pending }
+  complete: { status: pending }
+
+history:
+  - timestamp: 2026-06-29T05:21:30Z
+    action: workflow_started
+    phase: init
+    details: "New specification workflow created for CLO-517"
+  - timestamp: 2026-06-29T05:21:30Z
+    action: task_classified
+    phase: init
+    details: "recommended=specification, chosen=specification, confidence=high, method=probe"
+  - timestamp: 2026-06-29T05:21:30Z
+    action: project_sync_start
+    phase: init
+    details: "Added to PROJECT.md Active Work (WIP 1/3); not blocked, not in ROADMAP phases"
+  - timestamp: 2026-06-29T05:21:30Z
+    action: spec_review_complete
+    phase: spec
+    details: "Gemini+Ollama via lok: both APPROVE_WITH_SUGGESTIONS; synthesis verdict APPROVE_WITH_SUGGESTIONS"
+  - timestamp: 2026-06-29T05:21:30Z
+    action: spec_review_applied
+    phase: spec
+    details: "Applied 7 suggestions incl. HIGH FINGERPRINT_VERSION bump (verified vs cache.rs); no ADR conflicts"
+  - timestamp: 2026-06-29T05:21:30Z
+    action: spec_review_applied
+    phase: spec
+    details: "Owner spec-checkpoint review round 1: validated 4 blind spots vs code. CRITICAL - exact bug payload has no summary key; Group.summary is required (no serde default) so recovery must synthesize summary (display-only, safe). Also: extend find_groups_dfs to commits; uniform message->commit_message confirmed harmless; description/title->summary alias. Spec ACs/tests/edge-cases revised."
+  - timestamp: 2026-06-29T05:21:30Z
+    action: spec_approved
+    phase: spec
+    details: "Spec approved by owner; CONFIRMED review-validation section added. Skipping plan phase (decomposition is the plan), entering implement."
