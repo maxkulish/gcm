@@ -238,9 +238,15 @@ fn find_key_dfs(v: &Value, key: &str) -> Option<Value> {
 /// Normalize a recovered `groups` array in place so a near-miss group shape still
 /// deserializes into [`Group`] (CLO-517). Per group object, when - and only when -
 /// the canonical key is absent:
-/// - `commit_message` is filled from a `message` alias;
+/// - `commit_message` is filled from a `message` alias, but **only for the first
+///   group** (`groups[0]`). Per ADR-001 Decision 6 only `groups[0]` carries a
+///   message; later groups stay null and are regenerated from their own diff at
+///   commit time (`main.rs`), and `cache::advance` promotes a later group to
+///   `groups[0]` on a subsequent run. Mapping the alias onto later groups would
+///   leak the weak-schema initial-plan message into the cache and commit it
+///   verbatim later instead of regenerating it.
 /// - `summary` is filled from a `description`/`title` alias, else synthesized from
-///   the first non-empty line of the resolved `commit_message`, else a deterministic
+///   the first non-empty line of the group's message, else a deterministic
 ///   fallback. `summary` is display-only (`main.rs`), never committed nor validated.
 ///
 /// `files` is never synthesized - it is the partition key, so an absent/empty
@@ -249,17 +255,27 @@ fn normalize_recovered_groups(groups: Value) -> Value {
     let Value::Array(items) = groups else {
         return groups;
     };
-    Value::Array(items.into_iter().map(normalize_group).collect())
+    Value::Array(
+        items
+            .into_iter()
+            .enumerate()
+            .map(|(i, g)| normalize_group(g, i == 0))
+            .collect(),
+    )
 }
 
 /// Apply the [`normalize_recovered_groups`] per-group rules to one value (a
-/// non-object is returned untouched so it fails the [`Group`] deserialize as before).
-fn normalize_group(group: Value) -> Value {
+/// non-object is returned untouched so it fails the [`Group`] deserialize as
+/// before). `is_first` gates the `message` -> `commit_message` alias to `groups[0]`.
+fn normalize_group(group: Value, is_first: bool) -> Value {
     let Value::Object(mut map) = group else {
         return group;
     };
-    if !map.contains_key("commit_message") {
-        if let Some(msg) = map.remove("message") {
+    // Take the `message` alias out unconditionally so it never deserializes onto a
+    // later group; it is re-attached as `commit_message` only for the first group.
+    let message_alias = map.remove("message");
+    if is_first && !map.contains_key("commit_message") {
+        if let Some(msg) = message_alias.clone() {
             crate::debug_log!("plan: recovered near-miss group key message -> commit_message");
             map.insert("commit_message".to_string(), msg);
         }
@@ -269,8 +285,11 @@ fn normalize_group(group: Value) -> Value {
             .into_iter()
             .find_map(|k| map.remove(k));
         let summary = alias
-            .and_then(|v| v.as_str().map(str::to_string))
-            .or_else(|| synthesize_summary(&map))
+            .as_ref()
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| first_nonempty_line(map.get("commit_message").and_then(Value::as_str)))
+            .or_else(|| first_nonempty_line(message_alias.as_ref().and_then(Value::as_str)))
             .unwrap_or_else(|| "recovered commit group".to_string());
         crate::debug_log!("plan: recovered near-miss group missing summary -> synthesized");
         map.insert("summary".to_string(), Value::String(summary));
@@ -278,12 +297,9 @@ fn normalize_group(group: Value) -> Value {
     Value::Object(map)
 }
 
-/// Best-effort one-line summary for a group missing one: the first non-empty line
-/// of the (already-normalized) `commit_message`, else `None`.
-fn synthesize_summary(map: &serde_json::Map<String, Value>) -> Option<String> {
-    map.get("commit_message")
-        .and_then(Value::as_str)
-        .and_then(|m| m.lines().map(str::trim).find(|l| !l.is_empty()))
+/// First non-empty, trimmed line of `text`, for a best-effort display summary.
+fn first_nonempty_line(text: Option<&str>) -> Option<String> {
+    text.and_then(|t| t.lines().map(str::trim).find(|l| !l.is_empty()))
         .map(str::to_string)
 }
 
@@ -760,6 +776,25 @@ mod tests {
         let p = parse_defensive(s).unwrap();
         assert_eq!(p.groups.len(), 2);
         assert_eq!(p.groups[1].commit_message, None);
+    }
+
+    #[test]
+    fn parse_defensive_commits_alias_later_group_message_not_retained() {
+        // Cross-run safety (PR #24 review): a weak-schema response may carry a
+        // `message` on EVERY commit. Only groups[0] may keep it; later groups MUST
+        // stay null so the per-group regeneration (ADR-001 #6) fires after
+        // cache::advance promotes a later group to groups[0]. Otherwise the stale
+        // initial-plan message would be committed verbatim on a later run.
+        let s = r#"{"commits":[{"message":"feat: a","files":["a"]},{"message":"feat: b","files":["b"]}]}"#;
+        let p = parse_defensive(s).unwrap();
+        assert_eq!(p.groups.len(), 2);
+        assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
+        assert_eq!(
+            p.groups[1].commit_message, None,
+            "later-group message must not be retained as commit_message"
+        );
+        // The dropped message may still seed the display-only summary.
+        assert!(!p.groups[1].summary.trim().is_empty());
     }
 
     #[test]
