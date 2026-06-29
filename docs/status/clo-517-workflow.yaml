@@ -124,3 +124,7 @@ history:
     action: review_addressed
     phase: pr
     details: "PR #24 P2: validated vs code (confirmed real ADR-001 #6 violation via cache::advance), scoped message alias to groups[0], added regression test. 287 unit tests pass. Commit a4bf08f, pushed."
+  - timestamp: 2026-06-29T07:05:00Z
+    action: ci_passed
+    phase: pr
+    details: "CI re-passed on head 877f95bf (ubuntu + macos success); PR MERGEABLE/CLEAN after the review fix."
