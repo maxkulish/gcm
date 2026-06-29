@@ -18,7 +18,7 @@ classification:
   rationale: "Fully diagnosed, verified single-module bug fix with explicit file:line targets and acceptance criteria - lean spec cycle fits."
 
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
 
 phases:
@@ -43,7 +43,19 @@ phases:
       - "Recognize commits alias under known wrapper keys"
       - "tracing::debug! on alias recovery; cloud-format note location pinned to ollama module doc"
     flagged_suggestions: []
-  implement: { status: in_progress, commits: [] }
+  implement:
+    status: complete
+    last_phase_completed: "all sub-tasks (prompt+fingerprint / parser / tests+docs) + validation"
+    commits:
+      - a9602ba  # fix(plan): recover Ollama cloud commit-plan near-miss shape
+      - ebae20c  # docs(CLO-517): spec, dual-model review, and workflow state
+      - 2ad2eff  # test(plan): pin DFS-path commits recovery + validation reports
+    tests: "311 pass (286 unit + 6 onboarding + 5 provider + 14 status); fmt + clippy clean"
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-517-codex-validation.md
+    gemini_validation_verdict: PASS
+    gemini_validation_report: docs/reviews/clo-517-gemini-validation.md
   pr: { status: pending }
   complete: { status: pending }
 
@@ -76,3 +88,15 @@ history:
     action: spec_approved
     phase: spec
     details: "Spec approved by owner; CONFIRMED review-validation section added. Skipping plan phase (decomposition is the plan), entering implement."
+  - timestamp: 2026-06-29T05:21:30Z
+    action: implementation_complete
+    phase: implement
+    details: "All 3 sub-tasks done on fix/clo-517-ollama-cloud-plan-parse. 310 tests pass, fmt+clippy clean. Commits a9602ba, ebae20c."
+  - timestamp: 2026-06-29T05:21:30Z
+    action: pushed_to_remote
+    phase: implement
+    details: "Pushed fix/clo-517-ollama-cloud-plan-parse to origin"
+  - timestamp: 2026-06-29T05:21:30Z
+    action: codex_validation_complete
+    phase: implement
+    details: "Codex(gpt-5.4) PASS_WITH_NOTES (1 rec: DFS-path test, applied), Gemini(3.1-pro) PASS. Added DFS test, commit 2ad2eff."
