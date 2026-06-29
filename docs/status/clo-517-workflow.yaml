@@ -56,7 +56,7 @@ phases:
     codex_report: docs/reviews/clo-517-codex-validation.md
     gemini_validation_verdict: PASS
     gemini_validation_report: docs/reviews/clo-517-gemini-validation.md
-  pr: { status: pending }
+  pr: { status: pending, ci_passed: false }
   complete: { status: pending }
 
 history:
