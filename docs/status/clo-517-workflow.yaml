@@ -18,8 +18,8 @@ classification:
   rationale: "Fully diagnosed, verified single-module bug fix with explicit file:line targets and acceptance criteria - lean spec cycle fits."
 
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
 
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
@@ -57,15 +57,20 @@ phases:
     gemini_validation_verdict: PASS
     gemini_validation_report: docs/reviews/clo-517-gemini-validation.md
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/24
     pr_number: 24
     ci_passed: true
     mergeable: MERGEABLE
-    approved: false
+    approved: true
+    merged_at: 2026-06-29T07:06:38Z
+    merge_commit: ca440e6
     reviews_addressed:
       - "P2 (PR #24): commits-alias message leaked to later groups, bypassing per-group regeneration (ADR-001 #6) after cache::advance. Fixed: alias scoped to groups[0]; later groups stay null. Regression test added. Commit a4bf08f."
-  complete: { status: pending }
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: 2026-06-29T07:06:38Z
 
 history:
   - timestamp: 2026-06-29T05:21:30Z
@@ -128,3 +133,15 @@ history:
     action: ci_passed
     phase: pr
     details: "CI re-passed on head 877f95bf (ubuntu + macos success); PR MERGEABLE/CLEAN after the review fix."
+  - timestamp: 2026-06-29T07:07:00Z
+    action: pr_merged
+    phase: pr
+    details: "PR #24 merged to main (merge commit ca440e6) at 2026-06-29T07:06:38Z"
+  - timestamp: 2026-06-29T07:07:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT.md: CLO-517 moved to Recently Completed; Active Work back to 0/3. Not in ROADMAP/DEPENDENCIES (hotfix bug, blocked nothing)."
+  - timestamp: 2026-06-29T07:07:00Z
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-517 fully completed."
