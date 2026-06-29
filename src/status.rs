@@ -91,7 +91,8 @@ pub struct ProviderStatus {
     pub model: String,
     /// Model source: `default` / `env var <NAME>` / `flag`.
     pub model_source: String,
-    /// For Ollama only: false when the model routes off-machine (a `:cloud` model).
+    /// For Ollama only: false when the model routes off-machine (a cloud-tagged
+    /// `:cloud` / `-cloud` model); see [`ollama::is_cloud_model`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zero_egress: Option<bool>,
 }
@@ -159,7 +160,7 @@ fn build_report(
 
             let (key_source, endpoint, endpoint_source, zero_egress) = if id == ProviderId::Ollama {
                 let (ep, src) = ollama_endpoint(config, &env_lookup);
-                let zero = Some(!model.ends_with(":cloud"));
+                let zero = Some(!ollama::is_cloud_model(&model));
                 (None, Some(ep), Some(src), zero)
             } else {
                 (Some(key_source(id, config, &env_lookup)), None, None, None)
@@ -360,7 +361,10 @@ fn env_value(env_lookup: &impl Fn(&str) -> Option<String>, name: &str) -> Option
         .filter(|v| !v.is_empty())
 }
 
-/// Render the default human view to stdout (Version / Paths / Providers).
+/// Render the default human view to stdout: Version / Paths / a `Selected`
+/// headline (what the next run will use) / providers grouped into Activated and
+/// Not activated. Pure formatting over the already-resolved [`StatusReport`];
+/// the `--json` payload is rendered separately and is unaffected.
 fn print_human(report: &StatusReport) {
     println!("gcm {}", report.version);
 
@@ -388,35 +392,97 @@ fn print_human(report: &StatusReport) {
         None => println!("  config file:       (no OS config dir available)"),
     }
 
+    // The one fact `status` exists to answer: what will the next `gcm` run use?
+    println!("\nSelected (gcm will use this):");
+    if report.provider_error.is_some() {
+        // An invalid GCM_PROVIDER is fatal at runtime: the next run errors out
+        // before any provider is chosen. The provider flagged `selected` below is
+        // only a display fallback for the listing - see the Warning.
+        println!("  (none - GCM_PROVIDER is invalid; the next run would fail - see Warning below)");
+    } else if let Some(p) = report.providers.iter().find(|p| p.selected) {
+        let tag = locality_tag(p)
+            .map(|t| format!(" [{t}]"))
+            .unwrap_or_default();
+        // Truthful runtime caveat. Only a cloud provider missing its key
+        // necessarily errors; Ollama is key-free and falls back to the local
+        // daemon, so an unconfigured Ollama selection can still run.
+        let note = match (p.activated, p.endpoint.as_deref()) {
+            (true, _) => String::new(),
+            (false, Some(ep)) => {
+                format!(" (not configured - will try the local Ollama daemon at {ep})")
+            }
+            (false, None) => {
+                " (NOT activated - no API key; gcm would error on a real run)".to_string()
+            }
+        };
+        println!(
+            "  {} -> {} ({}){tag}{note}",
+            p.name.as_str(),
+            p.model,
+            p.model_source
+        );
+    } else {
+        println!("  (none)");
+    }
+
+    // GCM_PROVIDER parse failures stay between the headline and the sections.
     if let Some(err) = &report.provider_error {
         println!("\nWarning: {err}");
     }
 
-    println!("\nProviders:");
-    for p in &report.providers {
-        let mut tags = Vec::new();
-        if p.selected {
-            tags.push("selected");
-        }
-        tags.push(if p.activated {
-            "activated"
-        } else {
-            "not activated"
-        });
-        println!("  {} [{}]", p.name.as_str(), tags.join(", "));
+    print_provider_section(report, "Activated:", true);
+    print_provider_section(report, "Not activated:", false);
+}
 
-        if let Some(ks) = &p.key_source {
-            println!("    key:   {ks}");
-        }
-        if let Some(ep) = &p.endpoint {
-            let src = p.endpoint_source.as_deref().unwrap_or("unknown");
-            print!("    endpoint: {ep} ({src})");
-            match p.zero_egress {
-                Some(false) => println!("  [NOT zero-egress: :cloud model]"),
-                _ => println!(),
-            }
-        }
-        println!("    model: {} ({})", p.model, p.model_source);
+/// The neutral `cloud` / `local` descriptor for an Ollama model, or `None` for a
+/// cloud provider (the distinction is only meaningful for Ollama). Driven by the
+/// already-computed `zero_egress` field; never recomputed here.
+fn locality_tag(p: &ProviderStatus) -> Option<&'static str> {
+    match p.zero_egress {
+        Some(true) => Some("local"),
+        Some(false) => Some("cloud"),
+        None => None,
+    }
+}
+
+/// Print one provider section. Members are those matching `activated`; the
+/// selected provider leads (marked `>`), the rest keep canonical order - a stable
+/// sort on `!selected` floats the selection without disturbing the others. An
+/// empty section prints `(none)`.
+fn print_provider_section(report: &StatusReport, heading: &str, activated: bool) {
+    println!("\n{heading}");
+    let mut members: Vec<&ProviderStatus> = report
+        .providers
+        .iter()
+        .filter(|p| p.activated == activated)
+        .collect();
+    members.sort_by_key(|p| !p.selected);
+    if members.is_empty() {
+        println!("  (none)");
+        return;
+    }
+    for p in members {
+        print_provider_block(p);
+    }
+}
+
+/// Print a single de-noised provider block: the name line (marked `>` when
+/// selected, two spaces otherwise) and the same indented detail lines as before.
+/// Ollama appends a `[cloud]` / `[local]` tag to its model line.
+fn print_provider_block(p: &ProviderStatus) {
+    let marker = if p.selected { ">" } else { " " };
+    println!("{marker} {}", p.name.as_str());
+    if let Some(ks) = &p.key_source {
+        println!("    key:   {ks}");
+    }
+    if let Some(ep) = &p.endpoint {
+        let src = p.endpoint_source.as_deref().unwrap_or("unknown");
+        println!("    endpoint: {ep} ({src})");
+    }
+    match locality_tag(p) {
+        // `model:` padded to align its value under the Ollama `endpoint:` line.
+        Some(tag) => println!("    model:    {} ({}) [{tag}]", p.model, p.model_source),
+        None => println!("    model: {} ({})", p.model, p.model_source),
     }
 }
 
@@ -745,6 +811,19 @@ mod tests {
             None,
             None,
             env(&[("GCM_OLLAMA_MODEL", "deepseek-v4-flash:cloud")]),
+        );
+        let ollama = report
+            .providers
+            .iter()
+            .find(|p| p.name == ProviderId::Ollama)
+            .unwrap();
+        assert_eq!(ollama.zero_egress, Some(false));
+        // -cloud model (Ollama Cloud naming) -> also off-machine, zero_egress false
+        let report = build_report(
+            None,
+            None,
+            None,
+            env(&[("GCM_OLLAMA_MODEL", "nemotron-3-nano:30b-cloud")]),
         );
         let ollama = report
             .providers

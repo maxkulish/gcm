@@ -237,9 +237,9 @@ pub fn select(
         ProviderId::Openai => Box::new(openai::OpenAi::new(model)),
         ProviderId::Anthropic => Box::new(anthropic::Anthropic::new(model)),
         ProviderId::Ollama => {
-            // Privacy defense-in-depth (FR-56/FR-48): a `*:cloud` model is proxied
+            // Privacy defense-in-depth (FR-56/FR-48): a cloud-tagged model is proxied
             // off-machine by the local daemon, so warn that it is NOT zero-egress.
-            if model.ends_with(":cloud") {
+            if ollama::is_cloud_model(&model) {
                 eprintln!(
                     "note: Ollama model '{model}' routes through Ollama Cloud; the diff is NOT zero-egress."
                 );

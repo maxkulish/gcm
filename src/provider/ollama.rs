@@ -181,6 +181,17 @@ pub(crate) fn normalize_host(host: &str) -> String {
     }
 }
 
+/// Whether an Ollama model routes off-machine through Ollama Cloud rather than
+/// running locally. Cloud passthrough models carry a `:cloud` or `-cloud` tag
+/// suffix (e.g. `deepseek-v4-flash:cloud`, `nemotron-3-nano:30b-cloud`); the local
+/// daemon proxies those requests to a remote backend, so they are NOT zero-egress.
+/// Single source of truth for the runtime egress note and the `gcm status`
+/// cloud/local tag, so the two never disagree.
+pub(crate) fn is_cloud_model(model: &str) -> bool {
+    let m = model.trim();
+    m.ends_with(":cloud") || m.ends_with("-cloud")
+}
+
 /// Whether a scheme-less host string carries an explicit numeric port in its
 /// last `:`-segment (`host` -> false, `host:11434` -> true).
 fn has_port(h: &str) -> bool {
@@ -369,6 +380,19 @@ mod tests {
     fn cache_model_id_is_provider_qualified() {
         let o = Ollama::new("gemma4:e4b-mlx".to_string());
         assert_eq!(o.cache_model_id(), "ollama:gemma4:e4b-mlx");
+    }
+
+    #[test]
+    fn is_cloud_model_detects_both_suffixes() {
+        // both the `:cloud` and `-cloud` tag forms route off-machine
+        assert!(is_cloud_model("deepseek-v4-flash:cloud"));
+        assert!(is_cloud_model("nemotron-3-nano:30b-cloud"));
+        assert!(is_cloud_model("  gpt-oss:120b-cloud  ")); // trimmed
+                                                           // local GGUF models are not cloud
+        assert!(!is_cloud_model("gemma4:e4b-mlx"));
+        assert!(!is_cloud_model("llama3:8b"));
+        // "cloud" elsewhere than the tag suffix does not count
+        assert!(!is_cloud_model("cloudburst:7b"));
     }
 
     #[test]

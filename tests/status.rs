@@ -196,10 +196,94 @@ fn status_model_flag_scoped_to_selected_provider() {
     );
     assert!(out.status.success());
     let stdout = stdout_of(&out);
-    assert!(stdout.contains("openai [selected"), "{stdout}");
+    // headline names the selected provider; its block carries the `>` marker
+    assert!(stdout.contains("Selected (gcm will use this):"), "{stdout}");
+    assert!(stdout.contains("> openai"), "{stdout}");
     assert!(stdout.contains("model: custom-model (flag)"), "{stdout}");
+    // de-noised: the old bracket tags are gone
+    assert!(!stdout.contains("[selected"), "{stdout}");
+    assert!(!stdout.contains("[activated]"), "{stdout}");
     // other providers keep their defaults
     assert!(stdout.contains("claude-haiku-4-5 (default)"), "{stdout}");
+}
+
+#[test]
+fn status_human_layout_groups_and_cloud_tag() {
+    let cfg = tempfile::tempdir().unwrap();
+    // ollama is config.default (selected) with a -cloud model; groq is activated via key.
+    write_config(
+        cfg.path(),
+        "version = 1\n\
+         default = \"ollama\"\n\
+         \n\
+         [[providers]]\n\
+         id = \"ollama\"\n\
+         model = \"nemotron-3-nano:30b-cloud\"\n",
+    );
+    let out = run_status(cfg.path(), &["status"], &[("GROQ_API_KEY", "sk-x")]);
+    assert!(out.status.success());
+    let stdout = stdout_of(&out);
+    // headline: selected provider + model + neutral cloud tag (no warning framing)
+    assert!(
+        stdout.contains("ollama -> nemotron-3-nano:30b-cloud (config file) [cloud]"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("not zero-egress"), "{stdout}");
+    // both grouped sections present; selected ollama leads Activated, marked
+    assert!(stdout.contains("Activated:"), "{stdout}");
+    assert!(stdout.contains("Not activated:"), "{stdout}");
+    assert!(stdout.contains("> ollama"), "{stdout}");
+    // anthropic has no key -> Not activated section
+    assert!(stdout.contains("anthropic"), "{stdout}");
+}
+
+#[test]
+fn status_invalid_gcm_provider_headline_does_not_claim_use() {
+    // GCM_PROVIDER=bogus is fatal at runtime; groq is only a display fallback.
+    // Even with GROQ_API_KEY set, the headline must NOT assert groq will be used.
+    let cfg = tempfile::tempdir().unwrap();
+    let out = run_status(
+        cfg.path(),
+        &["status"],
+        &[("GCM_PROVIDER", "bogus"), ("GROQ_API_KEY", "sk-x")],
+    );
+    assert!(
+        out.status.success(),
+        "invalid provider is not fatal for status"
+    );
+    let stdout = stdout_of(&out);
+    assert!(stdout.contains("Selected (gcm will use this):"), "{stdout}");
+    // headline reports no usable selection and points to the warning...
+    assert!(stdout.contains("(none -"), "{stdout}");
+    assert!(stdout.contains("the next run would fail"), "{stdout}");
+    // ...and never claims the groq fallback as what the next run uses
+    // (the `->` arrow appears only in the headline, never in the section blocks).
+    assert!(!stdout.contains("groq ->"), "{stdout}");
+    // the explanatory warning still prints
+    assert!(
+        stdout.contains("Warning:") && stdout.contains("bogus"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn status_ollama_selected_unconfigured_does_not_claim_error() {
+    // --provider ollama on a clean machine: not "activated" (no config entry, no
+    // endpoint env), but Ollama is key-free and defaults to the local daemon, so a
+    // real run can succeed. The headline must NOT claim it would error.
+    let cfg = tempfile::tempdir().unwrap();
+    let out = run_status(cfg.path(), &["--provider", "ollama", "status"], &[]);
+    assert!(out.status.success());
+    let stdout = stdout_of(&out);
+    assert!(stdout.contains("Selected (gcm will use this):"), "{stdout}");
+    // ollama is named as the selection...
+    assert!(stdout.contains("ollama ->"), "{stdout}");
+    // ...with the truthful local-daemon note, not an error claim
+    assert!(
+        stdout.contains("will try the local Ollama daemon"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("would error on a real run"), "{stdout}");
 }
 
 #[test]
