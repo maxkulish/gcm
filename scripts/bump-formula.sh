@@ -104,11 +104,12 @@ done
 
 # ── 4. render the full formula ─────────────────────────────────────────────────
 render_formula() {
+  # No `version` stanza: Homebrew scans it from the release URL (/v$VERSION/),
+  # and `brew audit` flags an explicit one as redundant.
   cat <<EOF
 class $CLASS < Formula
   desc "$DESC"
   homepage "$HOMEPAGE"
-  version "$VERSION"
   license "$LICENSE"
 
 EOF
