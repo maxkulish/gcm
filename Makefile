@@ -17,7 +17,7 @@ TARGETS := \
 .PHONY: help build release run install uninstall test test-verbose \
         lint fmt fmt-check check cover cover-open clean version \
         dist dist-all _package \
-        release-patch release-minor release-major _bump-and-tag brew-bump pi-init
+        release-patch release-minor release-major _bump-and-tag brew-bump brew-upgrade pi-init
 
 # Default target
 help:
@@ -34,14 +34,15 @@ help:
 	@echo "  make dist          - Package the host release build ($(HOST)) into $(DISTDIR)/"
 	@echo "  make dist-all      - Cross-build + package all release targets (needs cargo-zigbuild)"
 	@echo ""
-	@echo "Release (bump + commit + tag + install -> push -> CI build -> Homebrew tap):"
-	@echo "  make release-patch - $(VERSION) -> next patch: bump, tag, push, publish to tap"
-	@echo "  make release-minor - $(VERSION) -> next minor: bump, tag, push, publish to tap"
-	@echo "  make release-major - $(VERSION) -> next major: bump, tag, push, publish to tap"
-	@echo "                       (SKIP_PUBLISH=1 stops after the local tag + install)"
+	@echo "Release (bump + tag -> push -> CI build -> Homebrew tap -> local brew upgrade):"
+	@echo "  make release-patch - $(VERSION) -> next patch: bump, tag, push, publish, upgrade"
+	@echo "  make release-minor - $(VERSION) -> next minor: bump, tag, push, publish, upgrade"
+	@echo "  make release-major - $(VERSION) -> next major: bump, tag, push, publish, upgrade"
+	@echo "                       (SKIP_PUBLISH=1 stops after the local tag)"
 	@echo ""
-	@echo "Publish (sub-step of release-*, or standalone to recover a failed formula push):"
+	@echo "Publish (sub-steps of release-*, or standalone to recover a failed step):"
 	@echo "  make brew-bump     - Wait for the GitHub Release, then push Formula/gcm.rb to the tap"
+	@echo "  make brew-upgrade  - Refresh the tap + 'brew upgrade gcm' (Homebrew is the local install)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test          - Run all tests"
@@ -170,17 +171,18 @@ dist-all:
 
 # ── release (version bump + tag + push + GitHub Release + Homebrew) ─────────────
 
-# Full one-shot release:
+# Full one-shot release (Homebrew is the canonical local install):
 #   1. bump Cargo.toml, sync Cargo.lock, commit, annotated `vX.Y.Z` tag
-#   2. install the host binary to $(PREFIX)/bin (new version on your PATH now)
-#   3. push the commit + tag -> .github/workflows/release.yml builds the four
+#   2. push the commit + tag -> .github/workflows/release.yml builds the four
 #      cross-platform tarballs (asserts the tag matches Cargo.toml) and publishes
 #      the GitHub Release
-#   4. brew-bump waits for that release, reads the per-target .sha256 assets, and
+#   3. brew-bump waits for that release, reads the per-target .sha256 assets, and
 #      pushes Formula/gcm.rb to maxkulish/homebrew-tap
-# SKIP_PUBLISH=1 stops after step 2 (bump + tag + install only) - for a dry run
-# or when you want to push by hand. brew-bump is also runnable standalone to
-# recover if only the formula push failed.
+#   4. brew-upgrade refreshes the tap and upgrades your local gcm, so `gcm` on
+#      your PATH becomes the just-released build
+# SKIP_PUBLISH=1 stops after the tag (bump + commit + tag only) - for a dry run
+# or when you want to push by hand. brew-bump / brew-upgrade are runnable
+# standalone to recover if only the publish/upgrade step failed.
 release-patch:
 	@$(MAKE) --no-print-directory _bump-and-tag BUMP=patch
 
@@ -208,24 +210,35 @@ _bump-and-tag:
 	git tag -a "v$$NEW" -m "v$$NEW"; \
 	echo ""; \
 	echo "Created commit + annotated tag v$$NEW."
-	@$(MAKE) --no-print-directory install
 	@VER=$$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/'); \
 	if [ "$${SKIP_PUBLISH:-0}" = "1" ]; then \
 		echo ""; \
-		echo "SKIP_PUBLISH=1: stopped after local tag + install. Finish later with:"; \
-		echo "    git push origin HEAD && git push origin v$$VER && make brew-bump"; \
+		echo "SKIP_PUBLISH=1: stopped after the local tag. Finish later with:"; \
+		echo "    git push origin HEAD && git push origin v$$VER && make brew-bump && make brew-upgrade"; \
 	else \
 		echo ""; \
 		echo "Pushing release commit + tag v$$VER (triggers .github/workflows/release.yml) ..."; \
 		git push origin HEAD && \
 		git push origin "v$$VER" && \
-		$(MAKE) --no-print-directory brew-bump; \
+		$(MAKE) --no-print-directory brew-bump && \
+		$(MAKE) --no-print-directory brew-upgrade; \
 	fi
 
 # Wait for the GitHub Release build, then publish/update Formula/gcm.rb on the
 # Homebrew tap. Idempotent and runnable standalone (e.g. after a failed push).
 brew-bump:
 	@./scripts/bump-formula.sh
+
+# Refresh the tap and upgrade the locally-installed gcm to the published version
+# (Homebrew is the canonical local install). Last step of a release; also usable
+# standalone after brew-bump. Falls back to a fresh install if gcm isn't tapped
+# yet, and no-ops cleanly on a machine without Homebrew.
+brew-upgrade:
+	@command -v brew >/dev/null 2>&1 || { echo "brew not found; skipping local gcm upgrade."; exit 0; }
+	@echo "Refreshing tap + upgrading local gcm via Homebrew ..."
+	@brew update --quiet >/dev/null 2>&1 || true
+	@brew upgrade gcm >/dev/null 2>&1 || brew install maxkulish/homebrew-tap/gcm
+	@gcm --version
 
 # ── pi ─────────────────────────────────────────────────────────────────────────
 
