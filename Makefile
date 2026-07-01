@@ -17,7 +17,7 @@ TARGETS := \
 .PHONY: help build release run install uninstall test test-verbose \
         lint fmt fmt-check check cover cover-open clean version \
         dist dist-all _package \
-        release-patch release-minor release-major _bump-and-tag pi-init
+        release-patch release-minor release-major _bump-and-tag brew-bump pi-init
 
 # Default target
 help:
@@ -34,10 +34,14 @@ help:
 	@echo "  make dist          - Package the host release build ($(HOST)) into $(DISTDIR)/"
 	@echo "  make dist-all      - Cross-build + package all release targets (needs cargo-zigbuild)"
 	@echo ""
-	@echo "Release (bump Cargo.toml + commit + tag, build & install to $(PREFIX)/bin; push for CI):"
-	@echo "  make release-patch - $(VERSION) -> next patch, commit, tag vX.Y.(Z+1), install $(BIN)"
-	@echo "  make release-minor - $(VERSION) -> next minor, commit, tag vX.(Y+1).0, install $(BIN)"
-	@echo "  make release-major - $(VERSION) -> next major, commit, tag v(X+1).0.0, install $(BIN)"
+	@echo "Release (bump + commit + tag + install -> push -> CI build -> Homebrew tap):"
+	@echo "  make release-patch - $(VERSION) -> next patch: bump, tag, push, publish to tap"
+	@echo "  make release-minor - $(VERSION) -> next minor: bump, tag, push, publish to tap"
+	@echo "  make release-major - $(VERSION) -> next major: bump, tag, push, publish to tap"
+	@echo "                       (SKIP_PUBLISH=1 stops after the local tag + install)"
+	@echo ""
+	@echo "Publish (sub-step of release-*, or standalone to recover a failed formula push):"
+	@echo "  make brew-bump     - Wait for the GitHub Release, then push Formula/gcm.rb to the tap"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test          - Run all tests"
@@ -164,14 +168,19 @@ dist-all:
 	done
 	@echo "All artifacts in $(DISTDIR)/"
 
-# ── release (version bump + tag + local install) ───────────────────────────────
+# ── release (version bump + tag + push + GitHub Release + Homebrew) ─────────────
 
-# Bump Cargo.toml, sync Cargo.lock, commit, create an annotated `vX.Y.Z` tag,
-# then build the host release binary and install it to $(PREFIX)/bin so
-# the new version is immediately on your PATH. Building the *cross-platform*
-# artifacts is still CI's job: pushing the tag triggers
-# .github/workflows/release.yml (which asserts the tag matches Cargo.toml), and
-# this target stops before the push so that remains your explicit, reviewable step.
+# Full one-shot release:
+#   1. bump Cargo.toml, sync Cargo.lock, commit, annotated `vX.Y.Z` tag
+#   2. install the host binary to $(PREFIX)/bin (new version on your PATH now)
+#   3. push the commit + tag -> .github/workflows/release.yml builds the four
+#      cross-platform tarballs (asserts the tag matches Cargo.toml) and publishes
+#      the GitHub Release
+#   4. brew-bump waits for that release, reads the per-target .sha256 assets, and
+#      pushes Formula/gcm.rb to maxkulish/homebrew-tap
+# SKIP_PUBLISH=1 stops after step 2 (bump + tag + install only) - for a dry run
+# or when you want to push by hand. brew-bump is also runnable standalone to
+# recover if only the formula push failed.
 release-patch:
 	@$(MAKE) --no-print-directory _bump-and-tag BUMP=patch
 
@@ -200,9 +209,23 @@ _bump-and-tag:
 	echo ""; \
 	echo "Created commit + annotated tag v$$NEW."
 	@$(MAKE) --no-print-directory install
-	@echo ""
-	@echo "Push to trigger the cross-platform release build (.github/workflows/release.yml):"
-	@echo "    git push --follow-tags"
+	@VER=$$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/'); \
+	if [ "$${SKIP_PUBLISH:-0}" = "1" ]; then \
+		echo ""; \
+		echo "SKIP_PUBLISH=1: stopped after local tag + install. Finish later with:"; \
+		echo "    git push origin HEAD && git push origin v$$VER && make brew-bump"; \
+	else \
+		echo ""; \
+		echo "Pushing release commit + tag v$$VER (triggers .github/workflows/release.yml) ..."; \
+		git push origin HEAD && \
+		git push origin "v$$VER" && \
+		$(MAKE) --no-print-directory brew-bump; \
+	fi
+
+# Wait for the GitHub Release build, then publish/update Formula/gcm.rb on the
+# Homebrew tap. Idempotent and runnable standalone (e.g. after a failed push).
+brew-bump:
+	@./scripts/bump-formula.sh
 
 # ── pi ─────────────────────────────────────────────────────────────────────────
 
