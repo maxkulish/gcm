@@ -10,6 +10,7 @@ mod paths;
 mod plan;
 mod privacy;
 mod provider;
+mod resolve;
 mod status;
 mod ui;
 

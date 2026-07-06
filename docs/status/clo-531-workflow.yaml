@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T14:48:22.167Z'
+  updated_at: '2026-07-06T14:52:41.799Z'
 phases:
   discovery:
     status: complete
@@ -121,6 +121,10 @@ phases:
     approved: true
   implement:
     status: pending
+    commits:
+      - dd97fa8
+    subtasks_completed:
+      - ST1
   pr:
     status: pending
   complete:
@@ -206,5 +210,13 @@ history:
     action: phase_transition
     phase: plan
     details: Transitioned from plan to implement
+  - timestamp: '2026-07-06T14:52:41.799Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST1 landed: extend git plumbing for conflict resolution. Commit dd97fa8. Added Repo::unmerged_files,
+      checkout_conflict_zdiff3, read_file, write_file, binary_unmerged_files,
+      is_rebasing/is_cherry_picking/has_conflict_state; added GcmError NoConflictInProgress, NoConflicts,
+      ResolutionEscalated.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
