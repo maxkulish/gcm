@@ -11,6 +11,55 @@ pub enum Decision {
     Abort,
 }
 
+/// Result of the per-file confirmation step for `gcm resolve`.
+pub enum FileDecision {
+    /// Write the resolved file to the working tree.
+    Accept,
+    /// Leave the file conflicted and continue to the next file.
+    Skip,
+    /// Open the resolved content in $EDITOR, then write the edited version.
+    Edit,
+}
+
+/// Render the resolved file and ask whether to keep it. With `auto_yes` the
+/// prompt is skipped and the file is accepted. With `quiet` no preview is
+/// printed to stdout (used in `--json` mode).
+pub fn confirm_file(path: &str, resolved_text: &str, quiet: bool) -> Result<FileDecision, GcmError> {
+    if !quiet {
+        print_file_preview(path, resolved_text);
+    }
+
+    eprint!("Keep resolution for {path}? [Y/n/e(dit)] ");
+    std::io::stderr().flush().ok();
+
+    let mut response = String::new();
+    if std::io::stdin().read_line(&mut response).is_err() {
+        return Err(GcmError::NonInteractive);
+    }
+
+    match response.trim() {
+        "n" | "N" => Ok(FileDecision::Skip),
+        "e" | "E" => Ok(FileDecision::Edit),
+        _ => Ok(FileDecision::Accept),
+    }
+}
+
+fn print_file_preview(path: &str, resolved_text: &str) {
+    println!();
+    println!("Resolved {path} (preview):");
+    println!("-----------------------------");
+    let lines: Vec<&str> = resolved_text.lines().collect();
+    let max_preview = 40;
+    for line in lines.iter().take(max_preview) {
+        println!("{line}");
+    }
+    if lines.len() > max_preview {
+        println!("... {} more lines", lines.len() - max_preview);
+    }
+    println!("-----------------------------");
+    println!();
+}
+
 /// Render the message and ask the user to confirm (FR-5). With `auto_yes` the
 /// prompt is skipped and the message is accepted as-is. With `quiet` the
 /// message preview is not printed to stdout (used in `--json` mode where stdout
@@ -60,7 +109,7 @@ fn print_message(message: &str) {
 /// Open `$EDITOR` (default `vim`) on the message via a temp file, inheriting the
 /// terminal so the editor is usable; read the edited text back. The temp file is
 /// removed on every exit path (tempfile crate / Drop, AC-7).
-fn edit_in_editor(message: &str) -> Result<String, GcmError> {
+pub(crate) fn edit_in_editor(message: &str) -> Result<String, GcmError> {
     let editor = std::env::var("EDITOR")
         .ok()
         .filter(|e| !e.trim().is_empty())

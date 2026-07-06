@@ -38,7 +38,7 @@ fn to_provider_hunk(hunk: &Hunk) -> ConflictHunk {
 
 /// Extract a short style context: non-conflict lines plus a note on dominant
 /// indentation so the provider preserves formatting.
-fn extract_style_context(file: &ConflictFile) -> String {
+pub(crate) fn extract_style_context(file: &ConflictFile) -> String {
     let mut ctx = String::new();
     if !file.context_lines.is_empty() {
         let joined = file.context_lines.join("\n");

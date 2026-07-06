@@ -62,6 +62,11 @@ impl Privacy {
         self.filter.filter_changed(changed)
     }
 
+    /// The active secret-scan mode (CLO-531).
+    pub fn secret_scan_mode(&self) -> SecretScanMode {
+        self.secret_scan
+    }
+
     pub fn prepare_grouping(&self, ctx: GroupingContext) -> Result<GroupingContext, GcmError> {
         Ok(GroupingContext {
             file_list: self.scan_text(ctx.file_list)?,
@@ -78,7 +83,9 @@ impl Privacy {
         })
     }
 
-    fn scan_text(&self, text: String) -> Result<String, GcmError> {
+    /// Scan arbitrary text with the configured secret-scan mode. Public so the
+    /// `gcm resolve` path can check hunk text before provider egress (CLO-531).
+    pub fn scan_text(&self, text: String) -> Result<String, GcmError> {
         match self.secret_scan {
             SecretScanMode::Off => Ok(text),
             SecretScanMode::Abort => {
