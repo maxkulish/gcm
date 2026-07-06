@@ -1,5 +1,6 @@
 use clap::Parser;
 
+use crate::config::AutoPolicy;
 use crate::privacy::SecretScanMode;
 use crate::provider::ProviderId;
 
@@ -53,7 +54,7 @@ pub struct Cli {
 
     /// Preview the grouping plan (or the single-commit message with --all) and
     /// exit without staging or committing.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub dry_run: bool,
 
     /// Emit a stable JSON envelope on stdout instead of human-oriented prose.
@@ -77,17 +78,17 @@ pub struct Cli {
     pub reset: bool,
 
     /// Auto-confirm the commit without prompting (for non-interactive / agent / CI use).
-    #[arg(long, visible_alias = "no-input")]
+    #[arg(long, global = true, visible_alias = "no-input")]
     pub yes: bool,
 
     ///LLM provider: groq (default), google (Gemini), openai, anthropic, or ollama (local,
     /// no key, zero-egress). Overrides GCM_PROVIDER (precedence: flag > env > default).
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, global = true)]
     pub provider: Option<ProviderId>,
 
     /// Model id for the selected provider (e.g. gpt-5.4-mini).
     /// Overrides the per-provider model env var.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub model: Option<String>,
 
     /// Re-run the interactive provider setup wizard (updating keys/selections),
@@ -97,7 +98,7 @@ pub struct Cli {
 
     /// Optional pre-send secret scan: off (default), redact detected values, or abort
     /// before any provider request. Overrides GCM_SECRET_SCAN.
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, global = true)]
     pub secret_scan: Option<SecretScanMode>,
 }
 
@@ -110,6 +111,28 @@ pub enum Commands {
     Status,
     /// Interactively pick a provider, fetch and enable its models, choose a default.
     Provider,
+    /// Resolve in-progress merge/rebase/cherry-pick conflicts using the LLM provider.
+    Resolve {
+        /// Conflict resolution temperature (overrides [conflict].temperature).
+        #[arg(long)]
+        conflict_temperature: Option<f64>,
+
+        /// Validation command for resolved files (overrides [conflict].validate_cmd).
+        #[arg(long)]
+        conflict_validate_cmd: Option<String>,
+
+        /// Auto-resolution policy (overrides [conflict].auto_policy).
+        #[arg(long)]
+        conflict_auto_policy: Option<AutoPolicy>,
+
+        /// Glob patterns for paths that require manual review.
+        #[arg(long, value_delimiter = ',')]
+        conflict_sensitive_paths: Option<Vec<String>>,
+
+        /// Skip the optional mergiraf pre-resolution stage.
+        #[arg(long)]
+        no_mergiraf: bool,
+    },
 }
 
 #[cfg(test)]
@@ -168,5 +191,28 @@ mod tests {
     fn provider_subcommand_parses() {
         let cli = Cli::try_parse_from(["gcm", "provider"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Provider)));
+    }
+
+    #[test]
+    fn resolve_subcommand_parses_with_flags() {
+        let cli = Cli::try_parse_from([
+            "gcm",
+            "resolve",
+            "--conflict-temperature",
+            "0.2",
+            "--conflict-validate-cmd",
+            "cargo check",
+            "--conflict-auto-policy",
+            "complex",
+            "--conflict-sensitive-paths",
+            "secrets/**,*.env",
+            "--no-mergiraf",
+            "--json",
+            "--dry-run",
+        ])
+        .unwrap();
+        assert!(matches!(cli.command, Some(Commands::Resolve { .. })));
+        assert!(cli.json);
+        assert!(cli.dry_run);
     }
 }

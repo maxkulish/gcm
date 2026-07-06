@@ -7,3 +7,11 @@ pub mod classify;
 pub mod markers;
 pub mod report;
 pub mod validate;
+
+use crate::cli::Cli;
+use crate::error::GcmError;
+
+/// Entry point for `gcm resolve`. Stub for ST5; fully implemented in ST9.
+pub fn run_resolve(_args: &Cli) -> Result<(), GcmError> {
+    Err(GcmError::Config("gcm resolve not yet implemented".to_string()))
+}

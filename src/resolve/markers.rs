@@ -156,7 +156,10 @@ mod tests {
         assert_eq!(h.ours, "ours\n");
         assert_eq!(h.base.as_deref(), Some("base\n"));
         assert_eq!(h.theirs, "theirs\n");
-        assert_eq!(file.context_lines, vec!["line 1".to_string(), "line 2".to_string()]);
+        assert_eq!(
+            file.context_lines,
+            vec!["line 1".to_string(), "line 2".to_string()]
+        );
     }
 
     #[test]

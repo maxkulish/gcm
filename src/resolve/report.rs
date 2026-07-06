@@ -52,9 +52,8 @@ pub enum FileAction {
 pub fn emit(report: &ResolveReport) {
     println!(
         "{}",
-        serde_json::to_string(report).unwrap_or_else(|_| {
-            "{\"v\":1,\"status\":\"error\",\"files\":[]}".to_string()
-        })
+        serde_json::to_string(report)
+            .unwrap_or_else(|_| { "{\"v\":1,\"status\":\"error\",\"files\":[]}".to_string() })
     );
 }
 

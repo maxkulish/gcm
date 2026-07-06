@@ -56,6 +56,11 @@ fn run(args: &Cli) -> i32 {
         return run_provider_subcommand();
     }
 
+    // The `resolve` subcommand is an LLM-assisted conflict resolver (CLO-531).
+    if matches!(args.command, Some(Commands::Resolve { .. })) {
+        return run_resolve_subcommand(args);
+    }
+
     let env = execute(args);
     let is_error = env.status == output::STATUS_ERROR;
 
@@ -66,6 +71,21 @@ fn run(args: &Cli) -> i32 {
     }
 
     if is_error {
+        1
+    } else {
+        0
+    }
+}
+
+/// Run the `gcm resolve` subcommand (CLO-531). Delegates to the resolve module
+/// and prints the outcome envelope.
+fn run_resolve_subcommand(args: &Cli) -> i32 {
+    let env = match resolve::run_resolve(args) {
+        Ok(()) => output::noop(None, None, output::MODE_DRY_RUN),
+        Err(e) => output::error(None, None, Some(output::MODE_DRY_RUN), &e),
+    };
+    output::emit(&env);
+    if env.status == output::STATUS_ERROR {
         1
     } else {
         0

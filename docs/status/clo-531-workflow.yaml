@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T14:57:33.169Z'
+  updated_at: '2026-07-06T14:58:21.596Z'
 phases:
   discovery:
     status: complete
@@ -125,10 +125,12 @@ phases:
       - dd97fa8
       - b4e48eb
       - 7f1d4d9
+      - '1967145'
     subtasks_completed:
       - ST1
       - ST2
       - ST3
+      - ST4
   pr:
     status: pending
   complete:
@@ -235,5 +237,11 @@ history:
       ST3 landed: implement hunk classifier and validation gate. Commit 7f1d4d9. Added src/resolve/classify.rs
       (HunkResolution, AutoReason, classify) and src/resolve/validate.rs (validate, ValidationError, temp-file
       validate_cmd).
+  - timestamp: '2026-07-06T14:58:21.596Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST4 landed: implement resolution report envelope. Commit 1967145. Added src/resolve/report.rs (ResolveReport,
+      ResolveStatus, FileReport, FileAction, emit).
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local

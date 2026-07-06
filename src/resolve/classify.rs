@@ -81,28 +81,52 @@ mod tests {
     #[test]
     fn identical_sides() {
         let r = classify(&h(Some("base\n"), "same\n", "same\n"));
-        assert!(matches!(r, HunkResolution::Auto { reason: AutoReason::IdenticalSides, .. }));
+        assert!(matches!(
+            r,
+            HunkResolution::Auto {
+                reason: AutoReason::IdenticalSides,
+                ..
+            }
+        ));
         assert_eq!(r.auto_text(), "same\n");
     }
 
     #[test]
     fn ours_unchanged() {
         let r = classify(&h(Some("base\n"), "base\n", "theirs\n"));
-        assert!(matches!(r, HunkResolution::Auto { reason: AutoReason::OursUnchanged, .. }));
+        assert!(matches!(
+            r,
+            HunkResolution::Auto {
+                reason: AutoReason::OursUnchanged,
+                ..
+            }
+        ));
         assert_eq!(r.auto_text(), "theirs\n");
     }
 
     #[test]
     fn theirs_unchanged() {
         let r = classify(&h(Some("base\n"), "ours\n", "base\n"));
-        assert!(matches!(r, HunkResolution::Auto { reason: AutoReason::TheirsUnchanged, .. }));
+        assert!(matches!(
+            r,
+            HunkResolution::Auto {
+                reason: AutoReason::TheirsUnchanged,
+                ..
+            }
+        ));
         assert_eq!(r.auto_text(), "ours\n");
     }
 
     #[test]
     fn one_side_empty() {
         let r = classify(&h(Some("base\n"), "", "theirs\n"));
-        assert!(matches!(r, HunkResolution::Auto { reason: AutoReason::OneSideEmpty, .. }));
+        assert!(matches!(
+            r,
+            HunkResolution::Auto {
+                reason: AutoReason::OneSideEmpty,
+                ..
+            }
+        ));
         assert_eq!(r.auto_text(), "theirs\n");
     }
 
@@ -116,7 +140,13 @@ mod tests {
     fn both_empty_with_base_is_identical() {
         // If both sides deleted the same content, resolving to empty is correct.
         let r = classify(&h(Some("base\n"), "", ""));
-        assert!(matches!(r, HunkResolution::Auto { reason: AutoReason::IdenticalSides, .. }));
+        assert!(matches!(
+            r,
+            HunkResolution::Auto {
+                reason: AutoReason::IdenticalSides,
+                ..
+            }
+        ));
         assert_eq!(r.auto_text(), "");
     }
 

@@ -749,7 +749,10 @@ mod tests {
             "conflict surfaces as an unmerged entry"
         );
         assert!(repo.is_merging(), "MERGE_HEAD present during the conflict");
-        assert!(repo.has_conflict_state(), "has_conflict_state true during merge");
+        assert!(
+            repo.has_conflict_state(),
+            "has_conflict_state true during merge"
+        );
 
         // ST1: unmerged_files enumerates the conflicted path.
         let unmerged = repo.unmerged_files().unwrap();
@@ -762,7 +765,10 @@ mod tests {
         // ST1: checkout_conflict_zdiff3 rewrites the file with markers without
         // clearing MERGE_HEAD.
         repo.checkout_conflict_zdiff3(&["f.txt"]).unwrap();
-        assert!(repo.is_merging(), "merge state preserved after zdiff3 re-checkout");
+        assert!(
+            repo.is_merging(),
+            "merge state preserved after zdiff3 re-checkout"
+        );
         let content = repo.read_file("f.txt").unwrap();
         assert!(content.contains("<<<<<<<"), "zdiff3 markers present");
         assert!(content.contains("|||||||"), "zdiff3 base block present");
@@ -800,7 +806,10 @@ mod tests {
         let root = dir.path();
         std::fs::write(root.join("f.txt"), "a").unwrap();
         repo.write_file("f.txt", "resolved content").unwrap();
-        assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), "resolved content");
+        assert_eq!(
+            std::fs::read_to_string(root.join("f.txt")).unwrap(),
+            "resolved content"
+        );
     }
 
     #[test]
@@ -819,7 +828,11 @@ mod tests {
         let root = dir.path();
         // Mark *.bin as binary so git's diff --numstat shows `-\t-`.
         std::fs::write(root.join(".gitattributes"), "*.bin binary\n").unwrap();
-        std::fs::write(root.join("img.bin"), b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00").unwrap();
+        std::fs::write(
+            root.join("img.bin"),
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00",
+        )
+        .unwrap();
         std::fs::write(root.join("f.txt"), "base\n").unwrap();
         run_git(root, &["add", "-A"]);
         run_git(root, &["commit", "-q", "-m", "base"]);
@@ -839,8 +852,14 @@ mod tests {
         let _ = run_git(root, &["merge", "feature"]);
 
         let binary = repo.binary_unmerged_files().unwrap();
-        assert!(binary.contains(&"img.bin".to_string()), "PNG conflict detected as binary");
-        assert!(!binary.contains(&"f.txt".to_string()), "text conflict is not binary");
+        assert!(
+            binary.contains(&"img.bin".to_string()),
+            "PNG conflict detected as binary"
+        );
+        assert!(
+            !binary.contains(&"f.txt".to_string()),
+            "text conflict is not binary"
+        );
         // .gitattributes itself is also conflicted (modified on both sides); it is text.
         assert!(!binary.contains(&".gitattributes".to_string()));
     }

@@ -40,7 +40,10 @@ pub enum GcmError {
     /// `gcm resolve` was called but no unmerged files were found.
     NoConflicts,
     /// A conflict resolution failed validation and was left conflicted for human review.
-    ResolutionEscalated { path: String, reason: String },
+    ResolutionEscalated {
+        path: String,
+        reason: String,
+    },
 }
 
 impl GcmError {
@@ -128,7 +131,11 @@ mod tests {
         assert!(!GcmError::SecretDetected { count: 1 }.leaves_staged());
         assert!(!GcmError::NoConflictInProgress.leaves_staged());
         assert!(!GcmError::NoConflicts.leaves_staged());
-        assert!(!GcmError::ResolutionEscalated { path: "x".to_string(), reason: "r".to_string() }.leaves_staged());
+        assert!(!GcmError::ResolutionEscalated {
+            path: "x".to_string(),
+            reason: "r".to_string()
+        }
+        .leaves_staged());
     }
 
     #[test]
@@ -156,7 +163,11 @@ mod tests {
         assert!(msg.contains("rebase"));
         let msg = GcmError::NoConflicts.to_string();
         assert!(msg.contains("no unmerged files"));
-        let msg = GcmError::ResolutionEscalated { path: "src/lib.rs".to_string(), reason: "validation failed".to_string() }.to_string();
+        let msg = GcmError::ResolutionEscalated {
+            path: "src/lib.rs".to_string(),
+            reason: "validation failed".to_string(),
+        }
+        .to_string();
         assert!(msg.contains("src/lib.rs"));
         assert!(msg.contains("validation failed"));
     }
