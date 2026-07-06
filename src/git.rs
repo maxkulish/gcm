@@ -39,6 +39,11 @@ impl Repo {
         &self.root
     }
 
+    /// Construct a `Repo` at an explicit path (used by tests outside this module).
+    pub(crate) fn at_root(root: PathBuf) -> Repo {
+        Repo { root }
+    }
+
     /// A `git` Command rooted at the repo with quotePath disabled.
     fn git(&self, args: &[&str]) -> Command {
         let mut c = Command::new("git");

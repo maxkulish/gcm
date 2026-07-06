@@ -3,4 +3,6 @@
 //! Public entry point is [`run_resolve`] (called from `main.rs` for the
 //! `resolve` subcommand). All sub-modules are implementation details.
 
+pub mod classify;
 pub mod markers;
+pub mod validate;

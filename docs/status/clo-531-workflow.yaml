@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T14:52:41.799Z'
+  updated_at: '2026-07-06T14:54:21.626Z'
 phases:
   discovery:
     status: complete
@@ -123,8 +123,10 @@ phases:
     status: pending
     commits:
       - dd97fa8
+      - b4e48eb
     subtasks_completed:
       - ST1
+      - ST2
   pr:
     status: pending
   complete:
@@ -218,5 +220,11 @@ history:
       checkout_conflict_zdiff3, read_file, write_file, binary_unmerged_files,
       is_rebasing/is_cherry_picking/has_conflict_state; added GcmError NoConflictInProgress, NoConflicts,
       ResolutionEscalated.
+  - timestamp: '2026-07-06T14:54:21.626Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST2 landed: implement zdiff3 marker parser. Commit b4e48eb. Added src/resolve/markers.rs with Hunk, ConflictFile,
+      parse(), has_conflict_markers(); registered resolve module in main.rs.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
