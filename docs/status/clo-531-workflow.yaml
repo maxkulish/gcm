@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T14:58:21.596Z'
+  updated_at: '2026-07-06T15:05:58.889Z'
 phases:
   discovery:
     status: complete
@@ -126,11 +126,13 @@ phases:
       - b4e48eb
       - 7f1d4d9
       - '1967145'
+      - edc8f85
     subtasks_completed:
       - ST1
       - ST2
       - ST3
       - ST4
+      - ST5
   pr:
     status: pending
   complete:
@@ -243,5 +245,12 @@ history:
     details: >-
       ST4 landed: implement resolution report envelope. Commit 1967145. Added src/resolve/report.rs (ResolveReport,
       ResolveStatus, FileReport, FileAction, emit).
+  - timestamp: '2026-07-06T15:05:58.889Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST5 landed: add [conflict] config block and CLI subcommand. Commit edc8f85. Added ConflictConfig, AutoPolicy to
+      config.rs; added Commands::Resolve with conflict flags to cli.rs (marked dry_run/yes/provider/model/secret_scan
+      global); added resolve dispatch stub in main.rs.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local

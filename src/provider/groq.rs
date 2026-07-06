@@ -98,6 +98,14 @@ impl Provider for Groq {
         Ok(message)
     }
 
+    fn resolve_hunks(&self, ctx: &super::ResolveContext) -> Result<Vec<super::Resolution>, ProviderError> {
+        let key = self.api_key()?;
+        let payload = build_resolve_payload(ctx, &self.model);
+        let raw = http::post_json(&self.request(&key, &payload))?;
+        let json = super::extract_openai_content(NAME, &raw)?;
+        super::parse_resolutions(NAME, &json, ctx.hunks.len())
+    }
+
     fn cache_model_id(&self) -> String {
         format!("groq:{}", self.model)
     }
@@ -105,6 +113,28 @@ impl Provider for Groq {
     fn diff_budget(&self) -> DiffBudget {
         DiffBudget::standard()
     }
+}
+
+fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
+    let strict = model.contains("gpt-oss");
+    let mut payload = json!({
+        "model": model,
+        "temperature": ctx.temperature,
+        "messages": [
+            { "role": "system", "content": super::RESOLVE_SYSTEM_PROMPT },
+            { "role": "user", "content": super::resolve_user_content(ctx) },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "conflict_resolutions",
+                "strict": strict,
+                "schema": super::resolve_schema(),
+            }
+        }
+    });
+    apply_reasoning_suppression(&mut payload, model);
+    payload
 }
 
 /// Build the structured-output plan request payload (ADR-001 Decisions 1 & 5).

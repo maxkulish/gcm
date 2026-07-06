@@ -92,6 +92,14 @@ impl Provider for OpenAi {
         Ok(message)
     }
 
+    fn resolve_hunks(&self, ctx: &super::ResolveContext) -> Result<Vec<super::Resolution>, ProviderError> {
+        let key = self.api_key()?;
+        let payload = build_resolve_payload(ctx, &self.model);
+        let raw = http::post_json(&self.request(&key, &payload))?;
+        let json = super::extract_openai_content(NAME, &raw)?;
+        super::parse_resolutions(NAME, &json, ctx.hunks.len())
+    }
+
     fn cache_model_id(&self) -> String {
         format!("openai:{}", self.model)
     }
@@ -128,6 +136,26 @@ fn apply_model_params(payload: &mut Value, model: &str) {
     } else {
         obj.insert("temperature".into(), json!(0.2));
     }
+}
+
+fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
+    let mut payload = json!({
+        "model": model,
+        "messages": [
+            { "role": system_role(model), "content": super::RESOLVE_SYSTEM_PROMPT },
+            { "role": "user", "content": super::resolve_user_content(ctx) },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "conflict_resolutions",
+                "strict": true,
+                "schema": super::resolve_schema(),
+            }
+        }
+    });
+    apply_model_params(&mut payload, model);
+    payload
 }
 
 fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {

@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
 use crate::plan::Plan;
@@ -43,6 +44,10 @@ pub trait Provider {
     fn cache_model_id(&self) -> String;
     /// Per-provider diff budget (FR-13a), env-overridable.
     fn diff_budget(&self) -> DiffBudget;
+    /// Resolve conflict hunks that could not be resolved deterministically.
+    /// Sends base/ours/theirs at function granularity with a 3-way prompt.
+    /// Returns the resolved replacement for each hunk, in input order.
+    fn resolve_hunks(&self, ctx: &ResolveContext) -> Result<Vec<Resolution>, ProviderError>;
 }
 
 /// Typed, provider-agnostic failure taxonomy (FR-21). Carries the active provider
@@ -142,6 +147,150 @@ pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
 /// Read a non-empty, parseable `u64` env var, else `None` (shared by submodules).
 fn env_u64(name: &str) -> Option<u64> {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
+}
+
+/// A conflict hunk as seen by providers (CLO-531). Kept provider-local to
+/// avoid a module-cycle with the higher-level `resolve::markers::Hunk`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictHunk {
+    /// The common ancestor text (`|||||||` block). `None` for plain diff3.
+    pub base: Option<String>,
+    /// The "ours" / current branch text (`<<<<<<<` block).
+    pub ours: String,
+    /// The "theirs" / incoming branch text (`>>>>>>>` block).
+    pub theirs: String,
+}
+
+/// Context for conflict resolution (CLO-531).
+#[derive(Debug, Clone)]
+pub struct ResolveContext {
+    pub path: String,
+    pub hunks: Vec<ConflictHunk>,
+    /// A short style excerpt from the file (context lines around the conflict).
+    pub style_context: String,
+    /// LLM temperature for resolution (default 0.1).
+    pub temperature: f64,
+}
+
+/// One provider-resolved hunk replacement (CLO-531).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolution {
+    pub hunk_index: usize,
+    pub replacement: String,
+}
+
+impl Default for ResolveContext {
+    fn default() -> Self {
+        ResolveContext {
+            path: String::new(),
+            hunks: Vec::new(),
+            style_context: String::new(),
+            temperature: 0.1,
+        }
+    }
+}
+
+/// 3-way conflict resolution system prompt (CLO-531). Restates the exact JSON
+/// shape so providers without strict schema enforcement (Ollama cloud) still
+/// produce parseable output.
+pub(super) const RESOLVE_SYSTEM_PROMPT: &str = "\
+You are a careful code merge assistant. Resolve the given git conflict hunks.
+
+For each hunk you receive:
+- BASE: the common ancestor text
+- OURS: the current branch text
+- THEIRS: the incoming branch text
+- STYLE_CONTEXT: nearby lines showing indentation and naming conventions
+
+Rules:
+1. Preserve the file's existing style (indentation, quotes, naming).
+2. Combine BOTH branches' intent. Do not drop one side's changes unless they are purely duplicate.
+3. Use ONLY symbols/imports already present in BASE, OURS, or THEIRS.
+4. Do NOT invent new modules, dependencies, or functions.
+5. Do NOT include conflict markers (<<<<<<<, =======, >>>>>>>, |||||||) in the output.
+6. Return the minimal correct replacement text for each hunk.
+
+Output ONLY a single JSON object with no markdown fences. The exact shape is:
+{\n  \"resolutions\": [\n    { \"hunk_index\": 0, \"replacement\": \"resolved text here\" },\n    { \"hunk_index\": 1, \"replacement\": \"resolved text here\" }\n  ]\n}\n\nThe top-level key MUST be \"resolutions\" (an array). Every entry MUST have exactly \"hunk_index\" (integer) and \"replacement\" (string).";
+
+/// The resolution response JSON schema, used by providers that support strict
+/// structured output.
+pub(super) fn resolve_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "resolutions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "hunk_index": { "type": "integer" },
+                        "replacement": { "type": "string" }
+                    },
+                    "required": ["hunk_index", "replacement"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["resolutions"],
+        "additionalProperties": false
+    })
+}
+
+/// Build the user content for a resolve call (CLO-531).
+pub(super) fn resolve_user_content(ctx: &ResolveContext) -> String {
+    let mut s = format!("File: {}\nStyle context:\n{}\n\nResolve these hunks:\n", ctx.path, ctx.style_context);
+    for (i, h) in ctx.hunks.iter().enumerate() {
+        s.push_str(&format!("\nHunk {}:\n", i));
+        if let Some(base) = &h.base {
+            s.push_str(&format!("BASE:\n{}\n", base));
+        }
+        s.push_str(&format!("OURS:\n{}\n", h.ours));
+        s.push_str(&format!("THEIRS:\n{}\n", h.theirs));
+    }
+    s
+}
+
+/// Defensively parse a provider's resolution JSON. Returns resolutions in the
+/// order requested; missing indices are omitted, and out-of-range indices are
+/// dropped. The provider name is used for error attribution only.
+pub(super) fn parse_resolutions(
+    provider: &'static str,
+    raw: &str,
+    expected_count: usize,
+) -> Result<Vec<Resolution>, ProviderError> {
+    let text = strip_think(raw).trim().to_string();
+    if text.is_empty() {
+        return Err(ProviderError {
+            provider,
+            kind: ErrorKind::EmptyResponse,
+        });
+    }
+    #[derive(Deserialize)]
+    struct ResolveBody {
+        resolutions: Vec<ResolutionEntry>,
+    }
+    #[derive(Deserialize)]
+    struct ResolutionEntry {
+        hunk_index: usize,
+        replacement: String,
+    }
+    let body: ResolveBody = serde_json::from_str(&text).map_err(|e| ProviderError {
+        provider,
+        kind: ErrorKind::Deserialize(format!("resolution parse error: {e}")),
+    })?;
+    let mut out: Vec<Resolution> = body
+        .resolutions
+        .into_iter()
+        .filter(|r| r.hunk_index < expected_count)
+        .map(|r| Resolution {
+            hunk_index: r.hunk_index,
+            replacement: r.replacement,
+        })
+        .collect();
+    // Sort by index so callers can zip with input hunks.
+    out.sort_by_key(|r| r.hunk_index);
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -686,5 +835,50 @@ mod tests {
         // no choices -> empty string (caller maps to EmptyResponse)
         let empty = r#"{"choices":[]}"#;
         assert_eq!(extract_openai_content("Groq", empty).unwrap(), "");
+    }
+
+    #[test]
+    fn resolve_schema_is_object_with_required_resolutions() {
+        let schema = resolve_schema();
+        assert_eq!(schema["type"], json!("object"));
+        assert!(schema["properties"]["resolutions"].is_object());
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("resolutions")));
+    }
+
+    #[test]
+    fn parse_resolutions_sorts_and_filters() {
+        let raw = r#"{"resolutions":[{"hunk_index":1,"replacement":"b"},{"hunk_index":0,"replacement":"a"},{"hunk_index":5,"replacement":"out"}]}"#;
+        let res = parse_resolutions("Test", raw, 3).unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].hunk_index, 0);
+        assert_eq!(res[0].replacement, "a");
+        assert_eq!(res[1].hunk_index, 1);
+    }
+
+    #[test]
+    fn parse_resolutions_errors_on_invalid_json() {
+        assert!(parse_resolutions("Test", "not json", 1).is_err());
+    }
+
+    #[test]
+    fn resolve_user_content_includes_all_sides() {
+        let ctx = ResolveContext {
+            path: "src/lib.rs".to_string(),
+            hunks: vec![ConflictHunk {
+                base: Some("base\n".to_string()),
+                ours: "ours\n".to_string(),
+                theirs: "theirs\n".to_string(),
+            }],
+            style_context: "ctx".to_string(),
+            temperature: 0.1,
+        };
+        let text = resolve_user_content(&ctx);
+        assert!(text.contains("BASE:"));
+        assert!(text.contains("OURS:"));
+        assert!(text.contains("THEIRS:"));
+        assert!(text.contains("src/lib.rs"));
     }
 }
