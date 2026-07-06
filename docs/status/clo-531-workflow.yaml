@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T15:05:58.889Z'
+  updated_at: '2026-07-06T15:11:04.049Z'
 phases:
   discovery:
     status: complete
@@ -127,12 +127,14 @@ phases:
       - 7f1d4d9
       - '1967145'
       - edc8f85
+      - 20e4ecb
     subtasks_completed:
       - ST1
       - ST2
       - ST3
       - ST4
       - ST5
+      - ST6
   pr:
     status: pending
   complete:
@@ -252,5 +254,13 @@ history:
       ST5 landed: add [conflict] config block and CLI subcommand. Commit edc8f85. Added ConflictConfig, AutoPolicy to
       config.rs; added Commands::Resolve with conflict flags to cli.rs (marked dry_run/yes/provider/model/secret_scan
       global); added resolve dispatch stub in main.rs.
+  - timestamp: '2026-07-06T15:11:04.049Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST6 landed: extend Provider trait with resolve_hunks across all backends. Commit 20e4ecb. Added ResolveContext,
+      ConflictHunk, Resolution, RESOLVE_SYSTEM_PROMPT, resolve_schema, parse_resolutions in provider/mod.rs. Implemented
+      resolve_hunks for Groq, OpenAI, Gemini, Anthropic, Ollama. Added resolution schema/parser unit tests. Fixed
+      pre-existing anthropic env-var test race.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
