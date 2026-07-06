@@ -6,6 +6,7 @@
 pub mod classify;
 pub mod markers;
 pub mod mergiraf;
+pub mod prompt;
 pub mod report;
 pub mod validate;
 

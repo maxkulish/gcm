@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T15:11:04.049Z'
+  updated_at: '2026-07-06T15:12:23.607Z'
 phases:
   discovery:
     status: complete
@@ -128,6 +128,7 @@ phases:
       - '1967145'
       - edc8f85
       - 20e4ecb
+      - 4bb1a57
     subtasks_completed:
       - ST1
       - ST2
@@ -135,6 +136,7 @@ phases:
       - ST4
       - ST5
       - ST6
+      - ST7
   pr:
     status: pending
   complete:
@@ -262,5 +264,11 @@ history:
       ConflictHunk, Resolution, RESOLVE_SYSTEM_PROMPT, resolve_schema, parse_resolutions in provider/mod.rs. Implemented
       resolve_hunks for Groq, OpenAI, Gemini, Anthropic, Ollama. Added resolution schema/parser unit tests. Fixed
       pre-existing anthropic env-var test race.
+  - timestamp: '2026-07-06T15:12:23.607Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST7 landed: implement optional mergiraf pre-resolution stage. Commit 4bb1a57. Added src/resolve/mergiraf.rs with
+      is_available() (PATH lookup, no new deps) and try_resolve(repo, path). Gracefully degrades when mergiraf absent.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
