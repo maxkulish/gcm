@@ -5,4 +5,5 @@
 
 pub mod classify;
 pub mod markers;
+pub mod report;
 pub mod validate;
