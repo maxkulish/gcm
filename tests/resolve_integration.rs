@@ -151,10 +151,7 @@ fn create_conflict(repo: &Path) {
 }
 
 fn git(repo: &Path, args: &[&str]) {
-    assert!(
-        run_git(repo, args).status.success(),
-        "git {args:?} failed"
-    );
+    assert!(run_git(repo, args).status.success(), "git {args:?} failed");
 }
 
 fn git_str(repo: &Path, args: &[&str]) -> String {
@@ -272,7 +269,11 @@ id = "ollama"
         &["resolve", "--dry-run", "--yes", "--provider", "ollama"],
     );
     server.join().unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // File should still have conflict markers (dry run doesn't resolve).
     let after = fs::read_to_string(repo.join("f.txt")).unwrap();
     assert!(
@@ -315,7 +316,11 @@ id = "ollama"
         ],
     );
     server.join().unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Single JSON object on stdout.
     assert!(
@@ -351,7 +356,11 @@ id = "ollama"
         &["resolve", "--yes", "--provider", "ollama"],
     );
     server.join().unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let content = fs::read_to_string(repo.join("f.txt")).unwrap();
     assert_eq!(content, "resolved\n");
 }
@@ -362,7 +371,11 @@ fn resolve_binary_file_skipped() {
     let repo = dir.path();
     git_init(repo);
     fs::write(repo.join(".gitattributes"), "*.bin binary\n").unwrap();
-    fs::write(repo.join("img.bin"), b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00").unwrap();
+    fs::write(
+        repo.join("img.bin"),
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00",
+    )
+    .unwrap();
     fs::write(repo.join("f.txt"), "base\n").unwrap();
     git(repo, &["add", "-A"]);
     git(repo, &["commit", "-q", "-m", "base"]);
@@ -403,8 +416,15 @@ id = "ollama"
     server.join().unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    eprintln!("exit: {}, stderr: {stderr}", out.status.code().unwrap_or(-1));
-    assert!(out.status.success(), "exit: {}, stderr: {stderr}, stdout: {stdout}", out.status.code().unwrap_or(-1));
+    eprintln!(
+        "exit: {}, stderr: {stderr}",
+        out.status.code().unwrap_or(-1)
+    );
+    assert!(
+        out.status.success(),
+        "exit: {}, stderr: {stderr}, stdout: {stdout}",
+        out.status.code().unwrap_or(-1)
+    );
     // The binary file should be escalated; the text file should be accepted.
     assert!(stdout.contains("escalated"), "stdout: {stdout}");
     assert!(stdout.contains("accepted"), "stdout: {stdout}");
@@ -455,7 +475,11 @@ id = "ollama"
         &["resolve", "--yes", "--provider", "ollama"],
     );
     server.join().unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     // secret.txt should still be conflicted because it was excluded by .gcmignore.
     let secret = fs::read_to_string(repo.join("secret.txt")).unwrap();
     assert!(

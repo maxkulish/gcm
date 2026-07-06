@@ -40,6 +40,7 @@ impl Repo {
     }
 
     /// Construct a `Repo` at an explicit path (used by tests outside this module).
+    #[cfg(test)]
     pub(crate) fn at_root(root: PathBuf) -> Repo {
         Repo { root }
     }

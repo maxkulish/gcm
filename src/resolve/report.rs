@@ -24,6 +24,7 @@ pub enum ResolveStatus {
     /// No conflicts found or all files already resolved.
     Noop,
     /// A fatal error aborted the run.
+    #[allow(dead_code)]
     Error,
 }
 

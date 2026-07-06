@@ -31,12 +31,7 @@ pub fn try_resolve(repo: &Repo, path: &str) -> Result<bool, GcmError> {
     }
     let status = std::process::Command::new("mergiraf")
         .current_dir(repo.root())
-        .args([
-            "solve",
-            "--keep-backup=false",
-            "--",
-            path,
-        ])
+        .args(["solve", "--keep-backup=false", "--", path])
         .status()
         .map_err(|e| GcmError::Git(format!("failed to run mergiraf: {e}")))?;
     if !status.success() {

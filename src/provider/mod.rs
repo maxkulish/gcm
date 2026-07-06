@@ -239,7 +239,10 @@ pub(super) fn resolve_schema() -> serde_json::Value {
 
 /// Build the user content for a resolve call (CLO-531).
 pub(super) fn resolve_user_content(ctx: &ResolveContext) -> String {
-    let mut s = format!("File: {}\nStyle context:\n{}\n\nResolve these hunks:\n", ctx.path, ctx.style_context);
+    let mut s = format!(
+        "File: {}\nStyle context:\n{}\n\nResolve these hunks:\n",
+        ctx.path, ctx.style_context
+    );
     for (i, h) in ctx.hunks.iter().enumerate() {
         s.push_str(&format!("\nHunk {}:\n", i));
         if let Some(base) = &h.base {

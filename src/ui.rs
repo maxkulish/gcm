@@ -24,7 +24,11 @@ pub enum FileDecision {
 /// Render the resolved file and ask whether to keep it. With `auto_yes` the
 /// prompt is skipped and the file is accepted. With `quiet` no preview is
 /// printed to stdout (used in `--json` mode).
-pub fn confirm_file(path: &str, resolved_text: &str, quiet: bool) -> Result<FileDecision, GcmError> {
+pub fn confirm_file(
+    path: &str,
+    resolved_text: &str,
+    quiet: bool,
+) -> Result<FileDecision, GcmError> {
     if !quiet {
         print_file_preview(path, resolved_text);
     }

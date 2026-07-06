@@ -7,7 +7,6 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::error::GcmError;
 use crate::git::Repo;
 
 use super::markers::has_conflict_markers;
@@ -31,7 +30,11 @@ pub fn validate(
 #[derive(Debug)]
 pub enum ValidationError {
     ConflictMarkers,
-    ValidateCmdFailed { stdout: String, stderr: String },
+    #[allow(dead_code)]
+    ValidateCmdFailed {
+        stdout: String,
+        stderr: String,
+    },
 }
 
 fn run_validate_cmd(

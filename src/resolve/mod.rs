@@ -18,7 +18,7 @@ use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
 use crate::output;
 use crate::privacy::{Privacy, SecretScanMode};
-use crate::provider::{ConflictHunk, Provider, ResolveContext, Resolution};
+use crate::provider::{ConflictHunk, Provider, Resolution, ResolveContext};
 
 use classify::{classify, HunkResolution};
 use markers::{has_conflict_markers, parse, ConflictFile};
@@ -185,7 +185,11 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
                 if c.validate_cmd.is_none() {
                     cfg.validate_cmd = loaded.conflict.validate_cmd.clone();
                 }
-                if c.sensitive_paths.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+                if c.sensitive_paths
+                    .as_ref()
+                    .map(|v| v.is_empty())
+                    .unwrap_or(true)
+                {
                     cfg.sensitive_paths = loaded.conflict.sensitive_paths.clone();
                 }
                 if c.auto_policy.is_none() {
@@ -314,12 +318,7 @@ fn resolve_file(
         if privacy.secret_scan_mode() == SecretScanMode::Abort {
             for i in &llm_indices {
                 let h = &file.hunks[*i];
-                let combined = format!(
-                    "{}{}{}",
-                    h.base.as_deref().unwrap_or(""),
-                    h.ours,
-                    h.theirs
-                );
+                let combined = format!("{}{}{}", h.base.as_deref().unwrap_or(""), h.ours, h.theirs);
                 privacy.scan_text(combined)?;
             }
         }
@@ -369,36 +368,36 @@ fn resolve_file(
     let resolved_text = reconstruct(&file, &resolutions, &content);
 
     // Validation gate.
-    let validated_text = match validate(
-        &resolved_text,
-        conflict.validate_cmd.as_deref(),
-        repo,
-        path,
-    ) {
-        Ok(()) => resolved_text,
-        Err(ValidationError::ConflictMarkers) => {
-            // One bounded retry: ask the provider to fix its own output.
-            attempt_validation_retry(provider, &file, &resolutions, conflict.temperature, repo, path)?
-        }
-        Err(ValidationError::ValidateCmdFailed { .. }) => {
-            escalated_count += llm_count;
-            llm_count = 0;
-            return Ok(FileResolution {
-                path: path.to_string(),
-                hunks_total: total,
-                hunks_auto: auto_count,
-                hunks_llm: 0,
-                hunks_escalated: escalated_count,
-                action: FileAction::Escalated,
-            });
-        }
-    };
+    let validated_text =
+        match validate(&resolved_text, conflict.validate_cmd.as_deref(), repo, path) {
+            Ok(()) => resolved_text,
+            Err(ValidationError::ConflictMarkers) => {
+                // One bounded retry: ask the provider to fix its own output.
+                attempt_validation_retry(
+                    provider,
+                    &file,
+                    &resolutions,
+                    conflict.temperature,
+                    repo,
+                    path,
+                )?
+            }
+            Err(ValidationError::ValidateCmdFailed { .. }) => {
+                escalated_count += llm_count;
+                return Ok(FileResolution {
+                    path: path.to_string(),
+                    hunks_total: total,
+                    hunks_auto: auto_count,
+                    hunks_llm: 0,
+                    hunks_escalated: escalated_count,
+                    action: FileAction::Escalated,
+                });
+            }
+        };
 
     if args.dry_run {
         if !args.json {
-            eprintln!(
-                "gcm resolve: {path} would be resolved ({auto_count} auto, {llm_count} LLM)"
-            );
+            eprintln!("gcm resolve: {path} would be resolved ({auto_count} auto, {llm_count} LLM)");
         }
         return Ok(FileResolution {
             path: path.to_string(),
@@ -427,15 +426,11 @@ fn resolve_file(
             crate::ui::FileDecision::Skip => FileAction::Skipped,
             crate::ui::FileDecision::Edit => {
                 let edited = crate::ui::edit_in_editor(&validated_text)?;
-                validate(
-                    &edited,
-                    conflict.validate_cmd.as_deref(),
-                    repo,
-                    path,
-                )
-                .map_err(|e| GcmError::ResolutionEscalated {
-                    path: path.to_string(),
-                    reason: format!("edited content failed validation: {e:?}"),
+                validate(&edited, conflict.validate_cmd.as_deref(), repo, path).map_err(|e| {
+                    GcmError::ResolutionEscalated {
+                        path: path.to_string(),
+                        reason: format!("edited content failed validation: {e:?}"),
+                    }
                 })?;
                 repo.write_file(path, &edited)?;
                 FileAction::Edited
@@ -635,7 +630,10 @@ mod tests {
 
     #[test]
     fn is_sensitive_path_matches() {
-        assert!(is_sensitive_path("secrets/key.pem", &["secrets/*".to_string()]));
+        assert!(is_sensitive_path(
+            "secrets/key.pem",
+            &["secrets/*".to_string()]
+        ));
         assert!(!is_sensitive_path("src/lib.rs", &["secrets/*".to_string()]));
     }
 

@@ -10,6 +10,7 @@ use super::markers::{ConflictFile, Hunk};
 
 /// Build a `ResolveContext` for a single conflicted file. Sends only the hard
 /// hunks to the provider (trivial hunks are resolved deterministically upstream).
+#[allow(dead_code)]
 pub fn build_resolve_context(
     path: String,
     file: &ConflictFile,
@@ -28,6 +29,7 @@ pub fn build_resolve_context(
     }
 }
 
+#[allow(dead_code)]
 fn to_provider_hunk(hunk: &Hunk) -> ConflictHunk {
     ConflictHunk {
         base: hunk.base.clone(),
@@ -46,8 +48,17 @@ pub(crate) fn extract_style_context(file: &ConflictFile) -> String {
         ctx.push_str(&joined);
         ctx.push('\n');
     }
-    if let Some(indent) = dominant_indent(&file.hunks.iter().map(|h| h.ours.clone()).collect::<Vec<_>>()) {
-        ctx.push_str(&format!("\nDominant indentation: {} spaces per level\n", indent));
+    if let Some(indent) = dominant_indent(
+        &file
+            .hunks
+            .iter()
+            .map(|h| h.ours.clone())
+            .collect::<Vec<_>>(),
+    ) {
+        ctx.push_str(&format!(
+            "\nDominant indentation: {} spaces per level\n",
+            indent
+        ));
     }
     ctx
 }
@@ -62,7 +73,10 @@ fn dominant_indent(texts: &[String]) -> Option<usize> {
             }
         }
     }
-    counts.into_iter().max_by_key(|(_, count)| *count).map(|(indent, _)| indent)
+    counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(indent, _)| indent)
 }
 
 #[cfg(test)]

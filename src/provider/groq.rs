@@ -98,7 +98,10 @@ impl Provider for Groq {
         Ok(message)
     }
 
-    fn resolve_hunks(&self, ctx: &super::ResolveContext) -> Result<Vec<super::Resolution>, ProviderError> {
+    fn resolve_hunks(
+        &self,
+        ctx: &super::ResolveContext,
+    ) -> Result<Vec<super::Resolution>, ProviderError> {
         let key = self.api_key()?;
         let payload = build_resolve_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;

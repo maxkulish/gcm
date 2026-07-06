@@ -33,6 +33,7 @@ pub struct Hunk {
 /// A conflicted file parsed into its hunks.
 #[derive(Debug, Clone)]
 pub struct ConflictFile {
+    #[allow(dead_code)]
     pub path: String,
     pub hunks: Vec<Hunk>,
     /// Lines outside any conflict hunk (context, carried verbatim).
