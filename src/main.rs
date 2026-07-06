@@ -80,15 +80,21 @@ fn run(args: &Cli) -> i32 {
 /// Run the `gcm resolve` subcommand (CLO-531). Delegates to the resolve module
 /// and prints the outcome envelope.
 fn run_resolve_subcommand(args: &Cli) -> i32 {
-    let env = match resolve::run_resolve(args) {
-        Ok(()) => output::noop(None, None, output::MODE_DRY_RUN),
-        Err(e) => output::error(None, None, Some(output::MODE_DRY_RUN), &e),
-    };
-    output::emit(&env);
-    if env.status == output::STATUS_ERROR {
-        1
-    } else {
-        0
+    match resolve::run_resolve(args) {
+        Ok(()) => {
+            if args.json {
+                // run_resolve already emitted the JSON envelope.
+            }
+            0
+        }
+        Err(e) => {
+            if args.json {
+                output::emit(&output::error(None, None, Some(output::MODE_DRY_RUN), &e));
+            } else {
+                eprintln!("gcm: {e}");
+            }
+            1
+        }
     }
 }
 

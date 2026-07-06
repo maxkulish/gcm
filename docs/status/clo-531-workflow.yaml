@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T15:13:24.414Z'
+  updated_at: '2026-07-06T15:19:48.900Z'
 phases:
   discovery:
     status: complete
@@ -130,6 +130,7 @@ phases:
       - 20e4ecb
       - 4bb1a57
       - c8f9acd
+      - f22a058
     subtasks_completed:
       - ST1
       - ST2
@@ -139,6 +140,7 @@ phases:
       - ST6
       - ST7
       - ST8
+      - ST9
   pr:
     status: pending
   complete:
@@ -279,5 +281,14 @@ history:
       ST8 landed: implement 3-way resolution prompt builder. Commit c8f9acd. Added src/resolve/prompt.rs with
       build_resolve_context, style context extraction, dominant indentation detection, and hunk mapping to provider
       ConflictHunk.
+  - timestamp: '2026-07-06T15:19:48.900Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST9 landed: implement resolve orchestrator and per-file preview loop. Commit f22a058. Added full run_resolve
+      pipeline in src/resolve/mod.rs: conflict detection, zdiff3 re-checkout, binary/sensitive-path skip, mergiraf,
+      classification, privacy filter, provider batching, validation gate (with retry), per-file [Y/n/e] preview loop,
+      JSON/human reporting. Added confirm_file + FileDecision + pub(crate) edit_in_editor to ui.rs; added
+      Privacy::secret_scan_mode getter.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
