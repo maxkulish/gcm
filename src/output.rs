@@ -195,6 +195,9 @@ fn gcm_error_code(err: &GcmError) -> String {
         GcmError::OnboardingRequired => "OnboardingRequired".to_string(),
         GcmError::Config(_) => "Config".to_string(),
         GcmError::SecretDetected { .. } => "SecretDetected".to_string(),
+        GcmError::NoConflictInProgress => "NoConflictInProgress".to_string(),
+        GcmError::NoConflicts => "NoConflicts".to_string(),
+        GcmError::ResolutionEscalated { .. } => "ResolutionEscalated".to_string(),
     }
 }
 

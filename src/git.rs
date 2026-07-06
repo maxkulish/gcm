@@ -235,10 +235,124 @@ impl Repo {
     /// [`ChangedFile::is_unmerged`] this distinguishes a clean merge (commit it)
     /// from a conflicted one (abort) - CLO-487 review-2 #2.
     pub fn is_merging(&self) -> bool {
-        self.git(&["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])
+        self.has_head_ref("MERGE_HEAD")
+    }
+
+    /// True if a rebase is in progress (`.git/REBASE_HEAD` exists).
+    pub fn is_rebasing(&self) -> bool {
+        self.has_head_ref("REBASE_HEAD")
+    }
+
+    /// True if a cherry-pick is in progress (`.git/CHERRY_PICK_HEAD` exists).
+    pub fn is_cherry_picking(&self) -> bool {
+        self.has_head_ref("CHERRY_PICK_HEAD")
+    }
+
+    /// True if any conflict-style operation is in progress (merge, rebase, or
+    /// cherry-pick).
+    pub fn has_conflict_state(&self) -> bool {
+        self.is_merging() || self.is_rebasing() || self.is_cherry_picking()
+    }
+
+    fn has_head_ref(&self, name: &str) -> bool {
+        self.git(&["rev-parse", "--verify", "--quiet", name])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
+    }
+
+    /// Enumerate unmerged (conflicted) file paths via `git diff --name-only --diff-filter=U -z`.
+    /// NUL-delimited so unicode/space/newline paths survive.
+    pub fn unmerged_files(&self) -> Result<Vec<String>, GcmError> {
+        let out = self
+            .git(&["diff", "--name-only", "--diff-filter=U", "-z"])
+            .output()
+            .map_err(|e| GcmError::Git(format!("failed to run git diff: {e}")))?;
+        if !out.status.success() {
+            return Err(GcmError::Git(format!(
+                "git diff --name-only --diff-filter=U failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(out
+            .stdout
+            .split(|&b| b == 0)
+            .filter(|s| !s.is_empty())
+            .map(|s| String::from_utf8_lossy(s).into_owned())
+            .collect())
+    }
+
+    /// Re-checkout the given paths with zdiff3 conflict markers. Requires the
+    /// caller to already be in a conflict state. Preserves the merge state; only
+    /// the working-tree content is rewritten.
+    pub fn checkout_conflict_zdiff3(&self, paths: &[&str]) -> Result<(), GcmError> {
+        let mut cmd = self.git(&["checkout", "--conflict=zdiff3"]);
+        cmd.env("GIT_LITERAL_PATHSPECS", "1");
+        cmd.arg("--");
+        cmd.args(paths);
+        let out = cmd.output().map_err(|e| {
+            GcmError::Git(format!("failed to run git checkout --conflict=zdiff3: {e}"))
+        })?;
+        if !out.status.success() {
+            return Err(GcmError::Git(format!(
+                "git checkout --conflict=zdiff3 failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Read a file's content from the working tree as a UTF-8 string.
+    pub fn read_file(&self, path: &str) -> Result<String, GcmError> {
+        let full = self.root.join(path);
+        std::fs::read_to_string(&full)
+            .map_err(|e| GcmError::Git(format!("could not read {}: {e}", full.display())))
+    }
+
+    /// Write content to a file in the working tree.
+    pub fn write_file(&self, path: &str, content: &str) -> Result<(), GcmError> {
+        let full = self.root.join(path);
+        std::fs::write(&full, content)
+            .map_err(|e| GcmError::Git(format!("could not write {}: {e}", full.display())))
+    }
+
+    /// Detect binary conflicted files from the combined unmerged diff. Binary
+    /// files appear as `Binary files differ` under their `diff --cc <path>`
+    /// header; text conflicts show hunk content instead. Returns the set of
+    /// unmerged paths that are binary.
+    pub fn binary_unmerged_files(&self) -> Result<Vec<String>, GcmError> {
+        let out = self
+            .git(&["diff", "--diff-filter=U"])
+            .output()
+            .map_err(|e| GcmError::Git(format!("failed to run git diff: {e}")))?;
+        if !out.status.success() {
+            return Err(GcmError::Git(format!(
+                "git diff --diff-filter=U failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut binary = Vec::new();
+        let mut current_path: Option<String> = None;
+        let mut saw_binary = false;
+        for line in text.lines() {
+            if let Some(path) = line.strip_prefix("diff --cc ") {
+                if let Some(p) = current_path.take().filter(|_| saw_binary) {
+                    binary.push(p);
+                }
+                current_path = Some(path.to_string());
+                saw_binary = false;
+            } else if line == "Binary files differ" {
+                saw_binary = true;
+            } else if line.starts_with("@@@") || line.starts_with("++<<<<<<<") {
+                // Hunk content for a text conflict: this file is not binary.
+                saw_binary = false;
+            }
+        }
+        if let Some(p) = current_path.take().filter(|_| saw_binary) {
+            binary.push(p);
+        }
+        Ok(binary)
     }
 
     /// Reset the index to the committed state so a subsequent path-scoped
@@ -630,5 +744,99 @@ mod tests {
             "conflict surfaces as an unmerged entry"
         );
         assert!(repo.is_merging(), "MERGE_HEAD present during the conflict");
+        assert!(repo.has_conflict_state(), "has_conflict_state true during merge");
+
+        // ST1: unmerged_files enumerates the conflicted path.
+        let unmerged = repo.unmerged_files().unwrap();
+        assert_eq!(unmerged, vec!["f.txt"]);
+
+        // ST1: binary_unmerged_files returns empty for a text conflict.
+        let binary = repo.binary_unmerged_files().unwrap();
+        assert!(binary.is_empty(), "text conflict is not binary");
+
+        // ST1: checkout_conflict_zdiff3 rewrites the file with markers without
+        // clearing MERGE_HEAD.
+        repo.checkout_conflict_zdiff3(&["f.txt"]).unwrap();
+        assert!(repo.is_merging(), "merge state preserved after zdiff3 re-checkout");
+        let content = repo.read_file("f.txt").unwrap();
+        assert!(content.contains("<<<<<<<"), "zdiff3 markers present");
+        assert!(content.contains("|||||||"), "zdiff3 base block present");
+        assert!(content.contains("======="), "zdiff3 separator present");
+        assert!(content.contains(">>>>>>>"), "zdiff3 end marker present");
+    }
+
+    #[test]
+    fn unmerged_files_nul_delimited() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("base.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        let base = String::from_utf8_lossy(&run_git(root, &["branch", "--show-current"]).stdout)
+            .trim()
+            .to_string();
+        run_git(root, &["switch", "-q", "-c", "feature"]);
+        std::fs::write(root.join("file with spaces.txt"), "feature\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-qam", "feature"]);
+        run_git(root, &["switch", "-q", &base]);
+        std::fs::write(root.join("file with spaces.txt"), "mainline\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-qam", "mainline"]);
+        let _ = run_git(root, &["merge", "feature"]);
+
+        let unmerged = repo.unmerged_files().unwrap();
+        assert_eq!(unmerged, vec!["file with spaces.txt"]);
+    }
+
+    #[test]
+    fn write_file_persists_resolution() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "a").unwrap();
+        repo.write_file("f.txt", "resolved content").unwrap();
+        assert_eq!(std::fs::read_to_string(root.join("f.txt")).unwrap(), "resolved content");
+    }
+
+    #[test]
+    fn no_conflict_state_without_merge() {
+        let (_dir, repo) = temp_repo();
+        assert!(!repo.is_merging());
+        assert!(!repo.is_rebasing());
+        assert!(!repo.is_cherry_picking());
+        assert!(!repo.has_conflict_state());
+        assert!(repo.unmerged_files().unwrap().is_empty());
+    }
+
+    #[test]
+    fn binary_unmerged_file_detected() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        // Mark *.bin as binary so git's diff --numstat shows `-\t-`.
+        std::fs::write(root.join(".gitattributes"), "*.bin binary\n").unwrap();
+        std::fs::write(root.join("img.bin"), b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00").unwrap();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        let base = String::from_utf8_lossy(&run_git(root, &["branch", "--show-current"]).stdout)
+            .trim()
+            .to_string();
+        run_git(root, &["switch", "-q", "-c", "feature"]);
+        std::fs::write(root.join("f.txt"), "feature\n").unwrap();
+        std::fs::write(root.join("img.bin"), b"\x89PNG\r\n\x1a\nCHANGED").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-qam", "feature"]);
+        run_git(root, &["switch", "-q", &base]);
+        std::fs::write(root.join("f.txt"), "mainline\n").unwrap();
+        std::fs::write(root.join("img.bin"), b"\x89PNG\r\n\x1a\nMAINLINE").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-qam", "mainline"]);
+        let _ = run_git(root, &["merge", "feature"]);
+
+        let binary = repo.binary_unmerged_files().unwrap();
+        assert!(binary.contains(&"img.bin".to_string()), "PNG conflict detected as binary");
+        assert!(!binary.contains(&"f.txt".to_string()), "text conflict is not binary");
+        // .gitattributes itself is also conflicted (modified on both sides); it is text.
+        assert!(!binary.contains(&".gitattributes".to_string()));
     }
 }

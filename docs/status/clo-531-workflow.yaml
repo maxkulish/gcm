@@ -1,0 +1,210 @@
+task_id: clo-531
+task_type: development
+classification_reason: >-
+  Title starts with 'Add' and acceptance criteria describe a mechanical subcommand implementation; no
+  specification/operational signals present
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-531-add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1
+  priority: Medium
+  branch_actual: feat/clo-531-resolve
+workflow:
+  current_phase: implement
+  status: active
+  created_at: '2026-07-06T13:48:03.082Z'
+  updated_at: '2026-07-06T14:48:22.167Z'
+phases:
+  discovery:
+    status: complete
+    approach_chosen: Layered local pipeline (git zdiff3 + optional mergiraf + Provider 3-way resolution + validation + preview)
+    approaches_identified: 3
+    approved: true
+    baseline_score: 8
+    discovery_debt:
+      - Validate exact mergiraf CLI invocation and unresolved-marker detection (design phase)
+      - Decide whether to add a new Provider trait method or wrap generate_message (design phase)
+      - Confirm per-provider JSON schema emission for the resolution response shape (design phase)
+    discovery_report: docs/discovery/clo-531.md
+    prd_created: true
+    prd_exists: true
+    prd_file: docs/prds/clo-531-gcm-resolve.md
+    problem_framed: true
+  design:
+    status: complete
+    design_doc: docs/designs/clo-531-gcm-resolve.md
+    discovery_context_used: true
+    draft_ready: true
+    draft_source: manual
+    assumptions:
+      - confidence: high
+        text: >-
+          git checkout --conflict=zdiff3 re-materializes conflict markers for all unmerged paths without losing the
+          merge state.
+        verification: Integration test in a real temp repo with a conflicted merge.
+      - confidence: high
+        text: mergiraf is an optional external tool; its absence degrades gracefully to the pure-LLM path.
+        verification: Acceptance test with mergiraf absent (uninstalled).
+      - confidence: medium
+        text: >-
+          mergiraf exits 0 when it fully resolves a file and non-zero when hunks remain; residual markers are detected
+          by re-parsing.
+        verification: 'Design-phase debt: verify exact mergiraf CLI semantics; documented in discovery debt.'
+      - confidence: high
+        text: The existing Provider trait can accommodate a new resolve_hunks method without breaking existing backends.
+        verification: Each backend adds its own structured-output shape; existing methods unchanged.
+      - confidence: high
+        text: zdiff3 markers always include a ||||||| base block (unlike plain diff3 which omits it).
+        verification: Verified against git docs and the existing is_merging() integration test.
+      - confidence: high
+        text: >-
+          The --json stdout discipline (stderr for human prose, stdout for JSON only) applies to gcm resolve the same as
+          the commit flow.
+        verification: Lesson clo-493 §L1; enforced by acceptance test.
+      - confidence: high
+        text: >-
+          --secret-scan and .gcmignore filtering apply to hunk text sent to the provider the same way they apply to diff
+          text.
+        verification: Lesson clo-514 §L1/L2; reuse existing Privacy API.
+      - confidence: high
+        text: Provider HTTP timeouts for the resolve path should not preempt the outer resolve-command timeout.
+        verification: Lesson timeout-layering §L1; reuse existing http::post_json retry/backoff.
+      - confidence: medium
+        text: >-
+          The default syntax-safe validation (no conflict markers in output) is sufficient to catch most LLM
+          hallucinations.
+        verification: Acceptance test with deliberately malformed LLM output.
+      - confidence: medium
+        text: >-
+          A temperature of 0.1 is low enough for reproducible conflict resolution and high enough to avoid degenerate
+          outputs.
+        verification: Manual testing across providers during implementation.
+    assumptions_surfaced: true
+    applied_suggestions:
+      - 'S1: Context window management - batching strategy for large files'
+      - 'S2: Binary file detection - skip and escalate binary conflicted files'
+      - 'S3: validate_cmd execution mechanics - temp file + sh -c + repo root cwd'
+      - 'S4: Editor integration flow - temp file + $EDITOR + validation gate on edited content'
+    flagged_suggestions: []
+    review_completed: true
+    review_gemini: docs/reviews/clo-531-design-gemini.md
+    review_synthesis: docs/reviews/clo-531-design-synthesis.md
+    review_verdict: approve_with_changes
+    token_usage:
+      - recorded_at: '2026-07-06T14:09:23.958Z'
+        provider: gemini
+        model: gemini-2.5-pro
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: design-review-gemini
+      - recorded_at: '2026-07-06T14:09:23.958Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: design-review-synthesis
+    human_review_completed: true
+    finalized: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-531-gcm-resolve.md
+    approved: true
+  implement:
+    status: pending
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-06T13:48:03.082Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-531 as development
+  - timestamp: '2026-07-06T13:50:10.511Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: title starts with 'Add' and acceptance criteria are mechanical (new subcommand
+      implementation)
+  - timestamp: '2026-07-06T13:50:51.444Z'
+    action: project_sync_start
+    phase: init
+    details: PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-531 --start
+  - timestamp: '2026-07-06T13:50:57.483Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-07-06T13:51:53.231Z'
+    action: branch_recorded
+    phase: discovery
+    details: Branch feat/clo-531-resolve already exists; recorded as branch_actual
+  - timestamp: '2026-07-06T13:53:14.115Z'
+    action: discovery_approved
+    phase: discovery
+    details: 'Approach: Layered local pipeline. Baseline 8/10. 3 approaches considered.'
+  - timestamp: '2026-07-06T13:53:16.026Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-07-06T14:07:03.504Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft generated manually (lok timed out on model inference) at docs/designs/clo-531-gcm-resolve.md. 576 lines, 8
+      sections, 10 assumptions, 14 unit tests, 14 integration tests, 5 manual tests. All 5 open questions resolved.
+  - timestamp: '2026-07-06T14:07:12.188Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: '10 assumptions surfaced (high: 7, medium: 3). See design doc § Assumptions.'
+  - timestamp: '2026-07-06T14:09:23.958Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: approve_with_changes. 4 applied, 0 flagged. Gemini review via opencode (gemini-2.5-pro fallback).
+      Applied: context window management (S1), binary file detection (S2), validate_cmd execution mechanics (S3), editor
+      integration flow (S4).
+  - timestamp: '2026-07-06T14:10:17.078Z'
+    action: design_human_review_complete
+    phase: design
+    details: >-
+      Plannotator annotate session closed with no annotations. Design doc reviewed in browser UI, no inline feedback
+      left.
+  - timestamp: '2026-07-06T14:10:54.205Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Design ready for plan phase. 8 sections complete, 10 assumptions, 5 open questions resolved, 4 review suggestions
+      applied. API signatures verified, test plan concrete (16 unit + 15 integration + 5 manual tests).
+  - timestamp: '2026-07-06T14:10:56.738Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-07-06T14:48:12.630Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      Plan with 11 sub-tasks at docs/plans/clo-531-gcm-resolve.md. Ordered: git plumbing → marker parser →
+      classifier/validation → report envelope → config/CLI → Provider trait → mergiraf → prompt → orchestrator →
+      integration tests → pre-merge gate.
+  - timestamp: '2026-07-06T14:48:20.175Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Plan approved. 11 sub-tasks queued, each with concrete acceptance command. Pre-merge gate: cargo fmt --check &&
+      cargo clippy --all-targets -- -D warnings && cargo test.
+  - timestamp: '2026-07-06T14:48:22.167Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
+task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
