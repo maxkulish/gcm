@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-07 (CLO-535 completed)
+**Last Updated**: 2026-07-07 (synced from Linear: added `gcm resolve` feature area CLO-531/533/534, bugfix CLO-517; CLO-533 Phase 2 is the one open task)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -35,9 +35,13 @@
 | [CLO-514](https://linear.app/cloud-ai/issue/CLO-514) | S13 | Replace best-effort secret scanner with rule-pack + entropy engine | AFK | Medium | Done | CLO-490 (related) | 60; hardens 50 |
 | [CLO-515](https://linear.app/cloud-ai/issue/CLO-515) | v2 | Add `gcm status` command (active providers, models, paths, config sources) | AFK | Medium | Done | CLO-493, CLO-485, CLO-496 (related) | read-only introspection / source attribution |
 | [CLO-516](https://linear.app/cloud-ai/issue/CLO-516) | v2 | Add interactive `gcm provider` setting with cliclack (Goose-style provider/model picker) | AFK | Medium | Done | — | interactive provider/model config; runtime model fetch + enabled-models whitelist |
-| [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | — | — |
+| [CLO-517](https://linear.app/cloud-ai/issue/CLO-517) | Bugfix | Fix Ollama cloud model commit-plan parse failure (nemotron-3-nano falls back to single-commit) | Bug | Medium | Done | — | hardens FR-56 |
+| [CLO-531](https://linear.app/cloud-ai/issue/CLO-531) | R1 | `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers) | HITL/Feature | Medium | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) | new: conflict-resolver core |
+| [CLO-534](https://linear.app/cloud-ai/issue/CLO-534) | Bugfix | Fix `gcm resolve` HTTP 400 on Gemini: resolve schema emits unsupported `additionalProperties` | Bug | High | Done | CLO-531 | resolve was non-functional on Gemini/Google default |
+| [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | CLO-531 (related) | — |
+| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | **Backlog** | CLO-531 (Done → ready) | thin fetch→core wrapper over the Phase-1 engine; only open task |
 
-FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514.
+FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes.
 
 ## Dependency tree
 
@@ -53,14 +57,25 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 │  ├─ CLO-489  S6  provider trait+Gemini+OpenAI  (+CLO-485)
 │  │  ├─ CLO-494  S7  Anthropic             (+CLO-485 auth)
 │  │  ├─ CLO-495  S8  Ollama (local)
+│  │  │  └─ CLO-517  bug  Ollama cloud plan-parse fix
 │  │  └─ CLO-496  S11 onboarding (HITL)     (+CLO-485 config/default)
 │  └─ CLO-490  S10 secret scan (optional)
 │      └─ CLO-514  S13 rule-pack + entropy (hardens FR-50)
+│
+├─ CLO-515  v2  gcm status                    (rel CLO-493/485/496)
+├─ CLO-516  v2  gcm provider picker (cliclack)
+│
+└─ CLO-531  R1  gcm resolve — conflict engine (Phase 1)   ← builds on 489/487, 496·516, 490·514
+   ├─ CLO-534  bug  resolve HTTP 400 on Gemini
+   ├─ CLO-535  bug  resolve trailing-newline splice
+   └─ CLO-533  R2  resolve remote MR/PR orchestration (Phase 2)   ← OPEN / Backlog, ready
 ```
 
-**Critical path:** CLO-485 → CLO-486 → CLO-487 → CLO-491/CLO-492 → … → CLO-497.
+**Critical path (v1):** CLO-485 → CLO-486 → CLO-487 → CLO-491/CLO-492 → … → CLO-497 (complete).
 
 **Two parallel fronts after the tracer (CLO-486):** the workflow chain (CLO-487 → CLO-491 → CLO-492) and the provider chain (CLO-489 → CLO-494/CLO-495).
+
+**Live frontier:** the `gcm resolve` chain. Phase 1 (CLO-531) shipped (PR #25) with two bug fixes (CLO-534/535); **Phase 2 (CLO-533)** — remote MR/PR orchestration — is the sole remaining task, unblocked and ready.
 
 ## Active Work (WIP Limit: 3)
 
@@ -72,8 +87,10 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| — | — | None — all v1 slices (CLO-485…CLO-497) + CLO-514 Done | — | — |
+| Low | [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | CLO-531 (Done) | thin fetch→core wrapper; `gh`/`glab` on PATH, resolution branch, opt-in push |
 
+> **CLO-533** is the only open task. Phase-1 core (CLO-531) merged (PR #25), so it is unblocked and ready. Low priority, HITL (design-time flag/isolation decisions). Everything else — all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1 (CLO-531 + fixes CLO-534/535) — is Done.
+>
 > **CLO-497** (cross-platform releases + alias cutover) merged PR #20 (squash) 2026-06-24 → Done. It was the last open v1 slice: **the bash→Rust migration is complete**. The release pipeline (`.github/workflows/release.yml`) ships static-musl Linux + native macOS binaries on `v*` tags; cutover documented in `docs/guides/cutover-from-bash.md`. **CLO-514** (secret-scanner rule-pack + entropy engine) merged PR #18 2026-06-23 — new FR-60, hardens FR-50. All feature work Done: **CLO-514** secret-scanner rule-pack (PR #18), **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
 
 ## Blocked
@@ -86,6 +103,9 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | 2026-07-07 | Bug (Low). When `gcm resolve` wrote a resolved hunk back and the provider's resolution text lacked a trailing newline, the first line after the conflict block was joined onto the last resolved line (cosmetic mis-format, e.g. a closing brace pulled up). Guarded the splice against a missing trailing newline. PR #29 merged. |
+| CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini | 2026-07-07 | Bug (High). `gcm resolve` was completely non-functional on the Gemini/Google provider (a common default) — the resolve schema emitted `additionalProperties`, which the Gemini API rejects with HTTP 400 before any resolution. Stripped the unsupported keyword from the resolve schema path. PR merged (same day as CLO-531). |
+| CLO-531 | `gcm resolve` LLM-assisted merge conflict resolver (Phase 1) | 2026-07-07 | New feature (HITL). `gcm resolve` subcommand resolves in-progress merge/rebase/cherry-pick conflicts via the existing `Provider` layer. Layered pipeline (LLM is last resort): `git checkout --conflict=zdiff3` → optional `mergiraf` structural pre-stage (on PATH) → provider resolves remaining hunks at function granularity with anti-hallucination prompt → syntax-safe validation gate (optional `conflict.validate_cmd`, one bounded retry, else escalate) → per-file preview + `[Y/n/e]`, never auto `git add`/`--continue`. New `[conflict]` config block; honors `--dry-run`/`--json`/`--yes`/`.gcmignore`/`--secret-scan`. Reuses provider trait (CLO-489), structured output (CLO-487), config (CLO-496/516), secret-scan (CLO-490/514). PR #25 merged. Unblocks CLO-533 (Phase 2). |
 | CLO-517 | Fix Ollama cloud model commit-plan parse failure | 2026-06-29 | Bug fix. Multi-commit grouping silently fell back to single-commit for Ollama **cloud passthrough** models (`:cloud`/`-cloud`): Ollama enforces the `format` schema only for local GGUF models, so cloud models never saw it and guessed a `{commits:[{message}]}` wrapper that `recover_groups` rejected (`PlanError::Parse` → fallback). Fixed on two layers: (1) `GROUPING_SYSTEM_PROMPT` now restates the exact `groups` JSON shape + a literal example, so output is specified even when `format` is a no-op (belt-and-suspenders, helps any weak-schema provider; `format` field + `schema()` unchanged → local behavior intact); (2) `recover_groups` resolves strict `groups` everywhere (top-level → wrapper → DFS) **before** a `commits` alias resolved the same way, so `groups` always wins. New `normalize_recovered_groups`: per-group `message`→`commit_message` **scoped to groups[0] only** (PR-review fix — later groups must stay null or `cache::advance` would promote a stale initial-plan message to groups[0] and commit it verbatim, bypassing per-group regeneration, ADR-001 #6); `summary` from `description`/`title` alias else synthesized from the message first line (display-only); `files` never synthesized. `FINGERPRINT_VERSION` bumped 2→3 (prompt changed → stale cached plans re-analyze) + golden-digest test. Note in `ollama` module doc that cloud models don't enforce `format`. 287 unit + 25 integration tests (10 new parser/cache); fmt+clippy clean. Spec task (`/task:orchestrate`): dual-model spec review (Gemini+Ollama APPROVE_WITH_SUGGESTIONS; HIGH FINGERPRINT bump caught) + owner spec-checkpoint review (caught the critical missing-`summary` blind spot — exact bug payload has no `summary`, `Group.summary` is required, so recovery must synthesize it) + Codex(PASS_WITH_NOTES)/Gemini(PASS) validation gate + owner PR review (P2 cache-leak caught & fixed). PR #24 merged. |
 | CLO-516 | Add interactive `gcm provider` setting (cliclack picker) | 2026-06-28 | v2 slice. Interactive `gcm provider` cliclack wizard: pick provider → live model fetch (per-provider endpoint + static fallback) → filterable multiselect of enabled models → choose one default. New per-provider `ProviderConfig.models` enabled-set **whitelist** with config `version` 1→2 migration (`parse_config` accepts v1 + stamps v2; `render_config` forces v2 — closes the version-write trap) and **runtime enforcement** in `main.rs::ensure_configured` (after `apply_to_env`, before the no-changes check; empty set = unrestricted, back-compat; match after per-provider canonicalization — Gemini `models/`, Ollama `:latest`). Two data-loss paths closed: `merge_provider_config` preserves other providers; `run_wizard` preserves an existing whitelist on `gcm config`/`--reconfigure`. New `src/provider/models.rs` (sync `fetch_supported_models` → `ModelFetchOutcome`; per-provider live endpoint+parse — OpenAI/Groq/Anthropic `data[].id`, Gemini `models[].name` filtered to `generateContent` + de-prefixed, Ollama `/api/tags`; chat-only filter for OpenAI/Groq; no-key short-circuit; baseline merge incl. `default_model`; honors `GCM_*_BASE_URL` incl. Google alias). `http::get_json` (5s timeout, 1 retry). Wizard in `config.rs` (credential resolution before fetch — env > config > masked prompt, never echoed; cancel-safe, no partial write; `.max_rows`). Deps `cliclack`/`console` (Goose-style `default-features=false`). 302 tests (277 unit + 6 onboarding + 5 `tests/provider.rs` + 14 status); fmt+clippy clean. Dev task (`/task:orchestrate`): 2 owner design-review rounds (6+17 pts, 2 data-loss bugs caught) + Codex/Gemini validation gate (Codex FAIL → 2 endpoint-precedence bugs fixed; Gemini PASS_WITH_NOTES). PR #23 merged. |
 | CLO-515 | Add `gcm status` command | 2026-06-26 | First v2 slice. Read-only `gcm status` subcommand: version, paths, per-provider activation/model/key with **source attribution** (inline config vs env var vs default), no network/diff/LLM call. New `src/status.rs` (pure, unit-tested attribution + `StatusReport`); dispatched at top of `run()` before onboarding/`apply_to_env`/`Repo`. Precedence mirrors runtime without `apply_to_env`: key = env > inline-config; model = flag > env > default (flag scoped to selected provider); selection = `--provider` > `GCM_PROVIDER` > `config.default` > Groq. Secrets never reach stdout/JSON (no value, no masked suffix). Never fatal: unknown `GCM_PROVIDER`, malformed/unusable config, no-config-dir reported as fields (exit 0). `--json` emits versioned `StatusReport` (`v:1`, distinct from commit `Envelope`); `--json` now global. `zero_egress` flag for Ollama `:cloud`. Provider introspection exposed: `ModelSource`/`resolve_model_with_source`, `pub(crate)` `pick_provider_id`/`default_model`/`model_env_vars`/`as_str`/`ollama::normalize_host`. 257 tests (237 unit + 6 onboarding + 14 status); fmt+clippy clean. Spec task (`/task:orchestrate`): dual-model spec review (Gemini+Ollama APPROVE_WITH_SUGGESTIONS) + owner implementation review (4 blind spots validated); validation gate Gemini PASS + Codex FAIL→fixed→PASS_WITH_NOTES. PR #21 (squash) merged. |

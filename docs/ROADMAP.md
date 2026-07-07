@@ -1,13 +1,16 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-07 (CLO-535 completed)
+**Last Updated**: 2026-07-07 (synced from Linear: added v2 + `gcm resolve` phases and bug-fix track)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
 | Phase 1: Foundations | 13 | 13 | Complete |
-| Phase 2: Hardening | 2 | 2 | Complete |
+| Phase 2: Hardening | 1 | 1 | Complete |
+| Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
+| Phase 4: `gcm resolve` (conflict resolution) | 2 | 1 | In Progress |
+| Bug fixes (cross-cutting) | 3 | 3 | Complete |
 
 ## Phase 1: Foundations
 
@@ -36,4 +39,29 @@ Source: [PRD: gcm](prds/prd-gcm.md) FR-60 (added 2026-06-23, `e89ee14`). Replace
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | CLO-514 | Replace best-effort secret scanner with rule-pack + entropy engine | Done | CLO-490 (related) |
-| CLO-535 | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Done | CLO-531 (related) |
+
+## Phase 3: v2 Introspection & Config
+
+Post-migration usability slices: read-only introspection and interactive provider/model configuration.
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-515 | `gcm status` (active providers, models, paths, config sources) | Done | CLO-493, CLO-485, CLO-496 (related) |
+| CLO-516 | Interactive `gcm provider` picker (cliclack, Goose-style) | Done | none |
+
+## Phase 4: `gcm resolve` (conflict resolution)
+
+New feature area: LLM-assisted git merge/rebase/cherry-pick conflict resolution, built on the existing `Provider` layer. Discovery: layered pipeline (`zdiff3` → optional `mergiraf` → provider → validation gate → preview), LLM as last resort.
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-531 | `gcm resolve` LLM-assisted resolver (Phase 1: local markers) | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) |
+| CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | **Backlog** | CLO-531 (Done → ready) |
+
+## Bug fixes (cross-cutting)
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-517 | Fix Ollama cloud model commit-plan parse failure (single-commit fallback) | Done | CLO-495 (related) |
+| CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini (unsupported `additionalProperties`) | Done | CLO-531 |
+| CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
