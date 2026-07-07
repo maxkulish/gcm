@@ -136,7 +136,7 @@ fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
         "generationConfig": {
             "temperature": ctx.temperature,
             "responseMimeType": "application/json",
-            "responseSchema": super::resolve_schema(),
+            "responseSchema": super::gemini_resolve_schema(),
             "thinkingConfig": { "thinkingLevel": "MINIMAL" }
         }
     })
@@ -357,5 +357,45 @@ mod tests {
     fn cache_model_id_is_provider_qualified() {
         let g = Gemini::new("gemini-3.1-flash-lite".to_string());
         assert_eq!(g.cache_model_id(), "google:gemini-3.1-flash-lite");
+    }
+
+    #[test]
+    fn resolve_payload_uses_gemini_openapi_schema() {
+        let ctx = super::super::ResolveContext {
+            path: "src/lib.rs".to_string(),
+            hunks: vec![super::super::ConflictHunk {
+                base: Some("base\n".to_string()),
+                ours: "ours\n".to_string(),
+                theirs: "theirs\n".to_string(),
+            }],
+            style_context: "ctx".to_string(),
+            temperature: 0.1,
+        };
+        let p = build_resolve_payload(&ctx);
+        let gc = &p["generationConfig"];
+        assert_eq!(gc["responseMimeType"], json!("application/json"));
+        assert_eq!(gc["temperature"], json!(0.1));
+        assert_eq!(gc["thinkingConfig"]["thinkingLevel"], json!("MINIMAL"));
+
+        let schema = &gc["responseSchema"];
+        // OpenAPI-3.0 subset: upper-case types, no additionalProperties.
+        assert_eq!(schema["type"], json!("OBJECT"));
+        assert!(schema.get("additionalProperties").is_none());
+        let resolutions = &schema["properties"]["resolutions"];
+        assert_eq!(resolutions["type"], json!("ARRAY"));
+        let item = &resolutions["items"];
+        assert_eq!(item["type"], json!("OBJECT"));
+        assert!(item.get("additionalProperties").is_none());
+        assert_eq!(item["required"], json!(["hunk_index", "replacement"]));
+        assert_eq!(
+            item["propertyOrdering"],
+            json!(["hunk_index", "replacement"])
+        );
+        assert_eq!(item["properties"]["hunk_index"]["type"], json!("INTEGER"));
+        assert_eq!(item["properties"]["replacement"]["type"], json!("STRING"));
+        assert_eq!(
+            p["systemInstruction"]["parts"][0]["text"],
+            json!(super::super::RESOLVE_SYSTEM_PROMPT)
+        );
     }
 }

@@ -237,6 +237,30 @@ pub(super) fn resolve_schema() -> serde_json::Value {
     })
 }
 
+/// The Gemini `generationConfig.responseSchema` variant (CLO-534): OpenAPI-3.0
+/// subset with uppercase types, no `additionalProperties`, and field ordering
+/// hints. Mirrors [`crate::plan::gemini_schema`].
+pub(super) fn gemini_resolve_schema() -> serde_json::Value {
+    json!({
+        "type": "OBJECT",
+        "properties": {
+            "resolutions": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "hunk_index": { "type": "INTEGER" },
+                        "replacement": { "type": "STRING" }
+                    },
+                    "required": ["hunk_index", "replacement"],
+                    "propertyOrdering": ["hunk_index", "replacement"]
+                }
+            }
+        },
+        "required": ["resolutions"]
+    })
+}
+
 /// Build the user content for a resolve call (CLO-531).
 pub(super) fn resolve_user_content(ctx: &ResolveContext) -> String {
     let mut s = format!(
@@ -849,6 +873,23 @@ mod tests {
             .as_array()
             .unwrap()
             .contains(&json!("resolutions")));
+        assert_eq!(schema["additionalProperties"], json!(false));
+        let item = &schema["properties"]["resolutions"]["items"];
+        assert_eq!(item["additionalProperties"], json!(false));
+    }
+
+    #[test]
+    fn gemini_resolve_schema_is_openapi_subset() {
+        let s = gemini_resolve_schema();
+        assert_eq!(s["type"], json!("OBJECT"));
+        assert!(s.get("additionalProperties").is_none());
+        assert_eq!(s["required"], json!(["resolutions"]));
+        let item = &s["properties"]["resolutions"]["items"];
+        assert_eq!(item["type"], json!("OBJECT"));
+        assert!(item.get("additionalProperties").is_none());
+        assert_eq!(item["properties"]["hunk_index"]["type"], json!("INTEGER"));
+        assert_eq!(item["properties"]["replacement"]["type"], json!("STRING"));
+        assert_eq!(item["required"], json!(["hunk_index", "replacement"]));
     }
 
     #[test]

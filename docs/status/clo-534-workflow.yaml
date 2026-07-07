@@ -1,0 +1,52 @@
+task_id: clo-534
+task_type: development
+classification_reason: ''
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+workflow:
+  current_phase: init
+  status: active
+  created_at: '2026-07-07T11:05:42.606Z'
+  updated_at: '2026-07-07T11:06:50.698Z'
+phases:
+  discovery:
+    status: pending
+  design:
+    status: pending
+  plan:
+    status: pending
+    description: Fix gcm resolve HTTP 400 on Gemini by adding OpenAPI-3.0 subset resolve schema.
+  implement:
+    status: pending
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-07T11:05:42.606Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-534 as development
+  - timestamp: '2026-07-07T11:05:51.718Z'
+    action: issue_read
+    phase: plan
+    details: >-
+      Read CLO-534 details; root cause is resolve_schema() reuses OpenAI-style schema on Gemini path, emitting
+      additionalProperties which Gemini rejects.
+  - timestamp: '2026-07-07T11:06:50.698Z'
+    action: code_edited
+    phase: implement
+    details: >-
+      Added gemini_resolve_schema() in provider/mod.rs, switched gemini build_resolve_payload to use it, and added unit
+      tests in both modules.
