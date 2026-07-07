@@ -160,6 +160,10 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
         conflict_auto_policy,
         conflict_sensitive_paths,
         no_mergiraf,
+        pr: _,
+        mr: _,
+        remote_push: _,
+        remote_comment: _,
     }) = &args.command
     {
         Some(ConflictCli {
