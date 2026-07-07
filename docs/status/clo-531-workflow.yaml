@@ -20,8 +20,8 @@ linear:
   priority: Medium
   branch_actual: feat/clo-531-resolve
 workflow:
-  current_phase: pr
-  status: active
+  current_phase: complete
+  status: complete
   created_at: '2026-07-06T13:48:03.082Z'
   updated_at: '2026-07-07T10:32:04.401Z'
 phases:
@@ -206,7 +206,15 @@ phases:
     pre_merge_refetch_at: '2026-07-07T10:37:00Z'
     pre_merge_refetch_passed: true
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    lessons_learned:
+      - "L1 - Secret scan must apply to all egress paths, not just the pre-flight check"
+      - "L2 - --dry-run must not mutate the working tree, including side-effect git operations"
+      - "L3 - Tests that only need a directory CWD should not shell out to git init"
+      - "L4 - Non-interactive safety: EOF on stdin must not auto-accept"
+      - "L5 - Validation gate retry should cover all validation failure types"
+    lessons_file: .pi/lessons/clo-531-resolve-lessons.md
 history:
   - timestamp: '2026-07-06T13:48:03.082Z'
     action: workflow_started
