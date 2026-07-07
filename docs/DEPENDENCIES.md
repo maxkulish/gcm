@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-07 (CLO-531 completed)
+**Last Updated**: 2026-07-07 (CLO-535 active)
 
 ## Current Blockers
 

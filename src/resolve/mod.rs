@@ -614,6 +614,17 @@ fn reconstruct(file: &ConflictFile, resolutions: &[Option<String>], original: &s
                 } else {
                     out.push_str(text);
                 }
+                // Guard: a resolution without a trailing newline must not fuse with the
+                // following context line. Append exactly one line ending if missing.
+                if !text.is_empty() {
+                    if uses_crlf {
+                        if !out.ends_with("\r\n") {
+                            out.push_str("\r\n");
+                        }
+                    } else if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
             } else {
                 // Escalated: keep the original hunk block verbatim.
                 for l in line_no..=file.hunks[hunk_idx].end_line {
@@ -634,6 +645,10 @@ fn reconstruct(file: &ConflictFile, resolutions: &[Option<String>], original: &s
     // Preserve a trailing newline only if the original had one.
     if !original.ends_with('\n') && !out.is_empty() {
         out.pop();
+        // For CRLF files, the pop above removes only the LF; remove any dangling CR too.
+        if uses_crlf && out.ends_with('\r') {
+            out.pop();
+        }
     }
     out
 }
@@ -712,6 +727,96 @@ mod tests {
             temperature: 0.1,
         };
         assert_eq!(batch_hunks(ctx, 1000).len(), 1);
+    }
+
+    #[test]
+    fn reconstruct_resolution_missing_newline_keeps_following_line() {
+        let content = "line 1\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\nline 2\n";
+        let file = parse("f.txt".to_string(), content);
+        let resolutions: Vec<Option<String>> = vec![Some("resolved".to_string())];
+        let out = reconstruct(&file, &resolutions, content);
+        assert!(!out.contains("<<<<<<<"));
+        assert!(
+            out.contains("resolved\nline 2"),
+            "context line should stay separate: {out:?}"
+        );
+        assert!(
+            !out.contains("resolvedline 2"),
+            "resolution fused with context: {out:?}"
+        );
+    }
+
+    #[test]
+    fn reconstruct_resolution_with_newline_no_double_blank() {
+        let content = "line 1\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\nline 2\n";
+        let file = parse("f.txt".to_string(), content);
+        let resolutions: Vec<Option<String>> = vec![Some("resolved\n".to_string())];
+        let out = reconstruct(&file, &resolutions, content);
+        assert!(
+            !out.contains("resolved\n\nline 2"),
+            "guard added a second newline: {out:?}"
+        );
+    }
+
+    #[test]
+    fn reconstruct_crlf_resolution_missing_newline() {
+        let content =
+            "line 1\r\n<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> feature\r\nline 2\r\n";
+        let file = parse("f.txt".to_string(), content);
+        let resolutions: Vec<Option<String>> = vec![Some("resolved".to_string())];
+        let out = reconstruct(&file, &resolutions, content);
+        assert!(!out.contains("<<<<<<<"));
+        assert!(
+            out.contains("resolved\r\nline 2"),
+            "context line should stay separate: {out:?}"
+        );
+        assert!(
+            !out.contains("resolvedline 2"),
+            "resolution fused with context: {out:?}"
+        );
+    }
+
+    #[test]
+    fn reconstruct_crlf_no_final_newline_preserved() {
+        let content = "<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> feature";
+        let file = parse("f.txt".to_string(), content);
+        let resolutions: Vec<Option<String>> = vec![Some("resolved".to_string())];
+        let out = reconstruct(&file, &resolutions, content);
+        assert!(
+            !out.ends_with("\r\n"),
+            "CRLF file without final newline should stay trim: {out:?}"
+        );
+        assert!(!out.ends_with('\n'), "no dangling LF either: {out:?}");
+        assert!(!out.ends_with('\r'), "no dangling CR either: {out:?}");
+        assert_eq!(out, "resolved");
+    }
+
+    #[test]
+    fn reconstruct_empty_resolution_no_extra_blank() {
+        let content = "line 1\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\nline 2\n";
+        let file = parse("f.txt".to_string(), content);
+        let resolutions: Vec<Option<String>> = vec![Some("".to_string())];
+        let out = reconstruct(&file, &resolutions, content);
+        assert!(
+            !out.contains("\n\n"),
+            "empty resolution should not add a blank line: {out:?}"
+        );
+        assert!(
+            out.contains("line 1\nline 2"),
+            "context lines should abut: {out:?}"
+        );
+    }
+
+    #[test]
+    fn reconstruct_no_final_newline_preserved() {
+        let content = "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature";
+        let file = parse("f.txt".to_string(), content);
+        let resolutions: Vec<Option<String>> = vec![Some("resolved".to_string())];
+        let out = reconstruct(&file, &resolutions, content);
+        assert!(
+            !out.ends_with('\n'),
+            "file without final newline should stay trim: {out:?}"
+        );
     }
 
     #[test]
