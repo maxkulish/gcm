@@ -15,10 +15,10 @@ linear:
   blocks: []
   blocked_by: []
 workflow:
-  current_phase: init
-  status: active
+  current_phase: complete
+  status: complete
   created_at: '2026-07-07T11:05:42.606Z'
-  updated_at: '2026-07-07T11:06:50.698Z'
+  updated_at: '2026-07-07T11:14:59.105Z'
 phases:
   discovery:
     status: pending
@@ -30,9 +30,29 @@ phases:
   implement:
     status: pending
   pr:
-    status: pending
+    status: complete
+    ci_passed: true
+    pr_number: 27
+    pr_url: https://github.com/maxkulish/gcm/pull/27
+    bot_review_wait_completed: true
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-07T11:11:30Z'
+    pre_merge_refetch_passed: true
+    merge_commit: a754135fedab121f28103c67f82d6d6cc53759db
+    merged_at: '2026-07-07T11:13:01Z'
+    bot_review_wait_completed_at: '2026-07-07T11:11:00Z'
   complete:
     status: pending
+    aggregation_files_updated: false
+    lessons_file: .pi/lessons/clo-534-gemini-schema-lessons.md
+    lessons_learned:
+      - >-
+        Every new structured-output path needs a provider-specific schema variant for Gemini (OpenAPI-3.0 subset, no
+        additionalProperties).
+      - >-
+        A single shared schema is a regression risk across providers; flag additionalProperties in schemas destined for
+        Gemini.
+    merged_at: '2026-07-07T11:13:01Z'
 history:
   - timestamp: '2026-07-07T11:05:42.606Z'
     action: workflow_started
@@ -50,3 +70,59 @@ history:
     details: >-
       Added gemini_resolve_schema() in provider/mod.rs, switched gemini build_resolve_payload to use it, and added unit
       tests in both modules.
+  - timestamp: '2026-07-07T11:09:18.069Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to pr
+  - timestamp: '2026-07-07T11:09:21.814Z'
+    action: pr_created
+    phase: pr
+    details: >-
+      Created PR #27 at https://github.com/maxkulish/gcm/pull/27. Preflight checks passed: cargo fmt --check, cargo
+      clippy -- -D warnings, cargo test.
+  - timestamp: '2026-07-07T11:11:29.982Z'
+    action: ci_passed
+    phase: pr
+    details: >-
+      GitHub Actions CI run 28861634040 passed on ubuntu-latest and macos-latest (format, clippy, test, release build).
+      PR #27 is mergeable (CLEAN).
+  - timestamp: '2026-07-07T11:11:44.009Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Confirmed no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs; bots are not
+      installed. Zero bot comments expected.
+  - timestamp: '2026-07-07T11:12:17.253Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'Pre-flight gate passed before PR creation: cargo fmt --check && cargo clippy -- -D warnings && cargo test.'
+  - timestamp: '2026-07-07T11:12:19.261Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      No bot or human review comments to address. 0 threads resolved; /gemini review trailer verification not applicable
+      (no replies).
+  - timestamp: '2026-07-07T11:12:22.163Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: 'Post-CI refetch confirms PR #27 is CLEAN/mergeable and both ubuntu-latest and macos-latest checks are SUCCESS.'
+  - timestamp: '2026-07-07T11:13:40.235Z'
+    action: pr_merged
+    phase: pr
+    details: 'Merged PR #27 via merge commit a754135fedab121f28103c67f82d6d6cc53759db at 2026-07-07T11:13:01Z.'
+  - timestamp: '2026-07-07T11:13:46.957Z'
+    action: workflow_phase_complete
+    phase: pr
+    details: >-
+      PR phase complete: PR #27 created, CI passed, bot review wait completed (no bots installed), pre-merge refetch
+      passed, PR merged.
+  - timestamp: '2026-07-07T11:13:49.881Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-07-07T11:14:59.105Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task complete: PR #27 merged into main (merge commit a754135fedab121f28103c67f82d6d6cc53759db), Linear CLO-534
+      marked Done, workflow state and lessons committed to branch.
