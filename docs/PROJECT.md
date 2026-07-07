@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-06 (CLO-531 started)
+**Last Updated**: 2026-07-07 (CLO-531 completed)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -65,7 +65,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-531](https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local) | Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers) | In Progress | discovery | - |
+| — | None active | — | — | — |
 
 ## Up Next (Ready - no open blockers)
 
