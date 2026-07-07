@@ -6,15 +6,33 @@
 
 use serde::Serialize;
 
+use crate::resolve::remote::host::Host;
+
 /// The `--json` envelope for `gcm resolve`.
 #[derive(Debug, Serialize)]
 pub struct ResolveReport {
     pub v: i32,
     pub status: ResolveStatus,
     pub files: Vec<FileReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote: Option<RemoteReport>,
 }
 
 #[derive(Debug, Serialize)]
+pub struct RemoteReport {
+    pub host: Host,
+    pub number: u64,
+    pub base_branch: String,
+    pub source_branch: String,
+    pub resolution_branch: String,
+    pub pushed: bool,
+    pub commented: bool,
+    /// Path to the scratch repo (preserved on success, per AC7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scratch_path: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResolveStatus {
     /// All non-escalated files were accepted.
@@ -48,6 +66,18 @@ pub enum FileAction {
     DryRun,
 }
 
+impl ResolveReport {
+    /// Human-readable status label for non-JSON output.
+    pub fn status_label(&self) -> &'static str {
+        match self.status {
+            ResolveStatus::Resolved => "resolved",
+            ResolveStatus::Partial => "partial",
+            ResolveStatus::Noop => "noop",
+            ResolveStatus::Error => "error",
+        }
+    }
+}
+
 /// Serialize and emit the report to stdout. This is the only place `gcm resolve`
 /// writes JSON to stdout.
 pub fn emit(report: &ResolveReport) {
@@ -75,6 +105,7 @@ mod tests {
                 hunks_escalated: 1,
                 action: FileAction::Accepted,
             }],
+            remote: None,
         };
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("\"status\":\"partial\""));

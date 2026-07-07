@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-07 (synced from Linear: `gcm resolve` Phase 1 shipped; Phase 2 CLO-533 unblocked & ready)
+**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --start)
 
 ## Current Blockers
 
@@ -12,7 +12,6 @@
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| CLO-533 | CLO-531 (Phase-1 core, Done, PR #25) | 2026-07-07 |
 
 > **CLO-533** (`gcm resolve` remote MR/PR orchestration, Phase 2) is the only open task — Low priority, HITL, unblocked. It is a thin fetch→core wrapper over the CLO-531 engine (`gh`/`glab` on PATH, dedicated resolution branch, opt-in push). All other gcm work (CLO-485…CLO-531 + bug fixes CLO-517/534/535) is Done.
 

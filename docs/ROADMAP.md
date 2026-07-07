@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-07 (synced from Linear: added v2 + `gcm resolve` phases and bug-fix track)
+**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --start)
 
 ## Summary
 
@@ -56,7 +56,7 @@ New feature area: LLM-assisted git merge/rebase/cherry-pick conflict resolution,
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | CLO-531 | `gcm resolve` LLM-assisted resolver (Phase 1: local markers) | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) |
-| CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | **Backlog** | CLO-531 (Done → ready) |
+| CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | In Progress | CLO-531 (Done → ready) |
 
 ## Bug fixes (cross-cutting)
 

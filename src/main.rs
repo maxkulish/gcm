@@ -80,10 +80,111 @@ fn run(args: &Cli) -> i32 {
 /// Run the `gcm resolve` subcommand (CLO-531). Delegates to the resolve module
 /// and prints the outcome envelope.
 fn run_resolve_subcommand(args: &Cli) -> i32 {
+    // Check if this is a remote resolve (--pr or --mr).
+    let is_remote = matches!(
+        args.command,
+        Some(Commands::Resolve { pr: Some(_), .. }) | Some(Commands::Resolve { mr: Some(_), .. })
+    );
+
+    // For remote dry-run with a full URL, we don't need a local repo.
+    if is_remote && args.dry_run {
+        let remote_arg = extract_remote_arg_from_cli(args).unwrap_or_default();
+        if remote_arg.starts_with("http://")
+            || remote_arg.starts_with("https://")
+            || remote_arg.starts_with("git@")
+        {
+            return run_remote_resolve(None, args);
+        }
+    }
+
+    let repo = match Repo::discover() {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            if is_remote {
+                // Remote non-dry-run or bare-id dry-run needs a repo.
+                return run_remote_resolve(None, args);
+            }
+            if args.json {
+                output::emit(&output::error(
+                    None,
+                    None,
+                    Some(output::MODE_DRY_RUN),
+                    &GcmError::NotARepo,
+                ));
+            } else {
+                eprintln!("gcm: {}", GcmError::NotARepo);
+            }
+            return 1;
+        }
+        Err(e) => {
+            if args.json {
+                output::emit(&output::error(None, None, Some(output::MODE_DRY_RUN), &e));
+            } else {
+                eprintln!("gcm: {e}");
+            }
+            return 1;
+        }
+    };
+
+    if is_remote {
+        return run_remote_resolve(Some(&repo), args);
+    }
+
     match resolve::run_resolve(args) {
         Ok(()) => {
             if args.json {
                 // run_resolve already emitted the JSON envelope.
+            }
+            0
+        }
+        Err(e) => {
+            if args.json {
+                output::emit(&output::error(None, None, Some(output::MODE_DRY_RUN), &e));
+            } else {
+                eprintln!("gcm: {e}");
+            }
+            1
+        }
+    }
+}
+
+/// Extract the remote argument string from CLI args.
+fn extract_remote_arg_from_cli(args: &Cli) -> Option<String> {
+    match &args.command {
+        Some(Commands::Resolve { pr: Some(p), .. }) => Some(p.clone()),
+        Some(Commands::Resolve { mr: Some(m), .. }) => Some(m.clone()),
+        _ => None,
+    }
+}
+
+/// Run the remote resolve path and print results.
+fn run_remote_resolve(repo: Option<&Repo>, args: &Cli) -> i32 {
+    match resolve::run_resolve_remote_opt(repo, args) {
+        Ok(report) => {
+            if args.json {
+                resolve::report::emit(&report);
+            } else if let Some(ref remote) = report.remote {
+                // Human-readable summary for remote runs.
+                eprintln!(
+                    "gcm resolve: {} #{} -> branch {}",
+                    remote.host.cli_name(),
+                    remote.number,
+                    remote.resolution_branch
+                );
+                eprintln!(
+                    "  base: {}, source: {}",
+                    remote.base_branch, remote.source_branch
+                );
+                if remote.pushed {
+                    eprintln!("  pushed: yes");
+                }
+                if remote.commented {
+                    eprintln!("  commented: yes");
+                }
+                eprintln!("  status: {}", report.status_label());
+                if let Some(ref path) = remote.scratch_path {
+                    eprintln!("  scratch: {path}");
+                }
             }
             0
         }

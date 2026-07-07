@@ -132,7 +132,47 @@ pub enum Commands {
         /// Skip the optional mergiraf pre-resolution stage.
         #[arg(long)]
         no_mergiraf: bool,
+
+        /// GitHub pull request to resolve, as a full URL or numeric id.
+        #[arg(long, group = "remote")]
+        pr: Option<String>,
+
+        /// GitLab merge request to resolve, as a full URL or numeric id.
+        #[arg(long, group = "remote")]
+        mr: Option<String>,
+
+        /// Push the resolution branch to the remote (requires a remote resolve).
+        #[arg(long, requires = "remote")]
+        remote_push: bool,
+
+        /// Post a summary comment on the PR/MR (requires a remote resolve).
+        #[arg(long, requires = "remote")]
+        remote_comment: bool,
     },
+}
+
+impl Cli {
+    /// True if --remote-push was passed on a remote resolve.
+    pub fn remote_push(&self) -> bool {
+        matches!(
+            &self.command,
+            Some(Commands::Resolve {
+                remote_push: true,
+                ..
+            })
+        )
+    }
+
+    /// True if --remote-comment was passed on a remote resolve.
+    pub fn remote_comment(&self) -> bool {
+        matches!(
+            &self.command,
+            Some(Commands::Resolve {
+                remote_comment: true,
+                ..
+            })
+        )
+    }
 }
 
 #[cfg(test)]
@@ -207,6 +247,10 @@ mod tests {
             "--conflict-sensitive-paths",
             "secrets/**,*.env",
             "--no-mergiraf",
+            "--pr",
+            "42",
+            "--remote-push",
+            "--remote-comment",
             "--json",
             "--dry-run",
         ])
@@ -214,5 +258,14 @@ mod tests {
         assert!(matches!(cli.command, Some(Commands::Resolve { .. })));
         assert!(cli.json);
         assert!(cli.dry_run);
+    }
+
+    #[test]
+    fn resolve_remote_flags_are_mutually_exclusive() {
+        let err = Cli::try_parse_from(["gcm", "resolve", "--pr", "42", "--mr", "7"]).unwrap_err();
+        assert!(
+            err.to_string().contains("remote") || err.to_string().contains("cannot"),
+            "expected mutual exclusivity error, got: {err}"
+        );
     }
 }

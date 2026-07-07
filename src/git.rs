@@ -76,6 +76,39 @@ impl Repo {
             .map(|s| s.trim().to_string())
     }
 
+    /// Return the URL of a remote (e.g. `origin`), if set.
+    pub fn remote_url(&self, name: &str) -> Result<Option<String>, GcmError> {
+        let out = self
+            .git(&["remote", "get-url", name])
+            .output()
+            .map_err(|e| GcmError::Git(format!("failed to run git remote get-url: {e}")))?;
+        if !out.status.success() {
+            return Ok(None);
+        }
+        Ok(Some(
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        ))
+    }
+
+    /// Run a git command in the repo and return Ok if it exits 0. Non-zero
+    /// exit becomes a [`GcmError::Git`] with the captured stderr.
+    pub fn run_git(&self, args: &[&str]) -> Result<(), GcmError> {
+        let out = self
+            .git(args)
+            .output()
+            .map_err(|e| GcmError::Git(format!("failed to run git {}: {e}", args.join(" "))))?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!("gcm: git {}: {}", args.join(" "), stderr);
+            return Err(GcmError::Git(format!(
+                "git {} failed: {}",
+                args.join(" "),
+                stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
     /// Whether HEAD resolves (false on an unborn branch / fresh repo).
     pub fn has_head(&self) -> bool {
         self.git(&["rev-parse", "--verify", "--quiet", "HEAD"])

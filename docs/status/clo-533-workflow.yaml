@@ -1,0 +1,290 @@
+task_id: clo-533
+task_type: specification
+classification_reason: >-
+  Title begins with 'Add' and ACs are mechanical (fetch/merge/core wrapper, explicit opt-in push, dry-run safety).
+  Phase-1 core already shipped; Phase 2 is a thin orchestration wrapper with well-defined acceptance criteria.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-533-add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2
+  priority: Low
+  branch_actual: feat/clo-533-remote-mr
+workflow:
+  current_phase: pr
+  status: active
+  created_at: '2026-07-07T17:52:11.105Z'
+  updated_at: '2026-07-07T20:26:11.605Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: Specification task - using /spec instead of full design doc
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  implement:
+    status: complete
+    commits:
+      - e1a9526
+      - a08a51d
+      - 22600df
+      - 9e77fa2
+      - 2da6dd4
+      - b11b9b4
+      - d52159a
+      - aa241cb
+    assumption_outcomes: []
+    assumptions_revalidated: true
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-533-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-533-gemini-validation.md
+    validation_synthesis_report: docs/reviews/clo-533-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    validation_fix_iteration_count: 1
+    token_usage:
+      - recorded_at: '2026-07-07T20:22:22.652Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex-no-count
+      - recorded_at: '2026-07-07T20:22:22.652Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini-no-count
+      - recorded_at: '2026-07-07T20:22:22.652Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis-no-count
+  pr:
+    status: in_progress
+  complete:
+    status: pending
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-07-clo-533-remote-mrpr-conflict-orchestration.md
+    applied_suggestions:
+      - Refactor run_resolve into run_resolve_in_repo(repo,args) returning ResolveReport
+      - Add clean-merge success path returning resolved/noop instead of NoConflictInProgress
+      - Define RemoteReport struct and ResolveReport.remote field
+      - Add structured GcmError variants RemoteHost{host,reason} and RemoteCliMissing{cli,install_hint}
+      - Add AC13 scratch-cleanup invariant and test
+      - 'Tighten AC8: dry-run creates no temp dir, no gh/glab invocation, ignores --remote-push/--remote-comment'
+      - Decompose ST3 into clone/fetch base/fetch source/create resolution branch/invoke engine sub-tasks
+      - Document credential-helper injection for HTTPS scratch clone
+      - Capture stdout/stderr separately for all shell-outs to preserve JSON stdout
+      - Add branch-collision EC11 (checkout -B deterministic overwrite)
+      - Add clean-merge and partial-resolution evaluation rows
+      - Align integration test file naming with existing tests/resolve_integration.rs convention
+    flagged_suggestions:
+      - >-
+        Custom-host parsing for self-hosted GHE/GitLab beyond domain heuristics may need human decision on supported
+        patterns
+      - Minimum gh/glab CLI version not specified; implement phase should verify --branch flag availability
+      - Remote diff_budget policy left unchanged from local (may revisit if large MRs hit context limits)
+      - SIGINT/SIGTERM cleanup guarantee beyond TempDir Drop not explicitly tested
+    review_applied: true
+    review_completed: true
+    review_gemini: docs/reviews/clo-533-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-533-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-533-spec-review-synthesis.md
+    review_verdict: approve_with_suggestions
+    token_usage:
+      - recorded_at: '2026-07-07T18:01:24.975Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: spec-review-gemini-no-count
+      - recorded_at: '2026-07-07T18:01:24.975Z'
+        provider: ollama
+        model: glm-5:cloud
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: spec-review-ollama-no-count
+    approved: true
+    auto_approval_reason: >-
+      Specification task with mechanical ACs, real file references, and AI review suggestions applied. Clean-merge
+      handling, RemoteReport, structured errors, and core refactor are all specified.
+    auto_approved: true
+history:
+  - timestamp: '2026-07-07T17:52:11.105Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-533 as development
+  - timestamp: '2026-07-07T17:54:32.017Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as specification: title starts with 'Add' and acceptance criteria are mechanical (fetch+merge+invoke
+      core, isolation/branch/push defaults, dry-run purity)
+  - timestamp: '2026-07-07T17:54:34.559Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-533 --start; WIP limit OK, no blockers, Linear
+      status moved Backlog -> Todo
+  - timestamp: '2026-07-07T17:54:36.277Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to spec
+  - timestamp: '2026-07-07T17:55:42.092Z'
+    action: spec_branch_checked_out
+    phase: spec
+    details: Branch feat/clo-533-remote-mr already checked out; recorded as branch_actual
+  - timestamp: '2026-07-07T18:01:24.975Z'
+    action: spec_review_complete
+    phase: spec
+    details: >-
+      Verdict: approve_with_suggestions. Applied: clean-merge handling, RemoteReport struct, structured GcmError
+      variants, scratch-cleanup AC, tightened dry-run AC, decomposed ST3, credential-helper/stderr/timeout notes,
+      branch-collision EC. Flagged: custom-host parsing depth, min CLI versions, diff_budget remote policy, SIGINT
+      cleanup guarantee.
+  - timestamp: '2026-07-07T18:01:28.650Z'
+    action: spec_approved
+    phase: spec
+    details: >-
+      Auto-approved after applying P0/P1 review suggestions. All ACs have explicit verification commands; sub-tasks
+      reference real files/modules; task is mechanically testable.
+  - timestamp: '2026-07-07T18:01:43.814Z'
+    action: phase_transition
+    phase: spec
+    details: Transitioned from spec to implement
+  - timestamp: '2026-07-07T18:05:39.754Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST1 landed: Add --mr/--pr CLI flags with mutual exclusivity and remote_push/remote_comment options. Commit
+      e1a9526.
+  - timestamp: '2026-07-07T18:15:57.742Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST2 landed: host detection, structured GcmError variants, git remote_url helper, core refactor run_resolve_in_repo
+      with allow_no_conflict_state flag. Commit a08a51d.
+  - timestamp: '2026-07-07T18:16:02.010Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST2 landed: host detection, structured GcmError variants, git remote_url helper, core refactor run_resolve_in_repo
+      with allow_no_conflict_state flag. Commit a08a51d.
+  - timestamp: '2026-07-07T18:27:36.605Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST3+ST4+ST5 landed: scratch clone via fetch.rs, optional push/comment via publish.rs, remote wiring in main.rs and
+      resolve/remote/mod.rs, RemoteReport in report.rs, Cli helpers remote_push()/remote_comment(). Commit 22600df.
+  - timestamp: '2026-07-07T18:29:27.628Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST6 landed: integration tests/tests/resolve_remote.rs with fake gh/glab scripts covering URL parsing and dry-run
+      purity. Commit 9e77fa2.
+  - timestamp: '2026-07-07T18:30:07.924Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All sub-tasks landed. fmt+clippy+test green. 4 commits: CLI flags, host detection/core refactor, scratch
+      clone/publish wiring, integration tests.
+  - timestamp: '2026-07-07T18:30:12.889Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      Specification task with no design phase. No design assumptions to revalidate. Phase-1 core assumptions (clean
+      merge, dry-run purity, host CLI on PATH) are covered by the spec and new tests.
+  - timestamp: '2026-07-07T18:58:25.836Z'
+    action: validation_gate_failed
+    phase: implement
+    details: >-
+      lok pre-pr-validation produced synthesis verdict FAIL. Must-fix: remote resolutions never committed (critical),
+      clean merge returns NoConflicts, self-hosted URL bug, default metadata missing, comment failure aborts, missing
+      integration tests. Routing back to implementation rework.
+  - timestamp: '2026-07-07T18:59:39.117Z'
+    action: rework_started
+    phase: implement
+    details: >-
+      Validation gate returned FAIL with 7 must-fix items. Starting rework iteration: (1) commit resolved tree, (2) fix
+      clean merge, (3) fix self-hosted URL, (4) always emit RemoteReport, (5) non-aborting comment, (6) bounded
+      timeouts, (7) integration tests.
+  - timestamp: '2026-07-07T19:33:57.370Z'
+    action: rework_complete
+    phase: implement
+    details: All 7 must-fix items addressed in commit 2da6dd4. fmt+clippy+test green (399 tests). Ready for re-validation.
+  - timestamp: '2026-07-07T19:50:57.791Z'
+    action: rework_complete
+    phase: implement
+    details: >-
+      Rework iteration 2 complete. All 3 must-fix items from PASS_WITH_NOTES gate addressed: (1) checkout error
+      propagation, (2) GitLab subgroup URL parsing, (3) real non-dry-run integration tests. 22 integration tests + 345
+      unit tests all green. Commit b11b9b4.
+  - timestamp: '2026-07-07T19:58:25.826Z'
+    action: rework_started
+    phase: implement
+    details: >-
+      Rework iteration 3: resolve AC7/AC13 contradiction (keep scratch on success, cleanup on error), fix
+      RemoteReport.host mismatch, fix format_origin_url dropping port/scheme.
+  - timestamp: '2026-07-07T20:02:01.062Z'
+    action: rework_complete
+    phase: implement
+    details: >-
+      Rework iteration 3 complete: AC7/AC13 contradiction resolved (scratch preserved on success, path in report),
+      RemoteReport.host uses URL-parsed host, format_origin_url preserves port. 405 tests green. Commit d52159a.
+  - timestamp: '2026-07-07T20:10:35.204Z'
+    action: rework_started
+    phase: implement
+    details: >-
+      Rework iteration 4: fix pipe-drain deadlock in run_timed/run_cmd_timed using wait_with_output in a thread with
+      recv_timeout. Add conflicting-merge test. Clean trailing whitespace.
+  - timestamp: '2026-07-07T20:19:01.800Z'
+    action: rework_progress
+    phase: implement
+    details: >-
+      Rework iteration 4 pre-merge gate passed after initial pipe-drain fix and placeholder conflict test. Tightening
+      conflict test to assert AC5/AC10 with a fake Ollama endpoint and adding core handling so unresolved hunks report
+      escalation instead of erroring during validation.
+  - timestamp: '2026-07-07T20:21:14.848Z'
+    action: pre_merge_gate_passed
+    phase: implement
+    details: >-
+      Validation fix iteration 4 applied. Full pre-merge gate passed: cargo fmt --check, cargo clippy -- -D warnings,
+      cargo test (407 total tests; resolve_remote now 24/24). Must-fix #1 addressed with wait_with_output-based timeout
+      wrappers; must-fix #2 addressed with non-dry-run conflicting merge test using fake Ollama and retained marker
+      assertions.
+  - timestamp: '2026-07-07T20:22:22.652Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: FAIL. Gemini: PASS. Synthesis: PASS_WITH_NOTES. Single synthesis-approved fix iteration applied in commit
+      aa241cb: pipe-drain timeout wrappers fixed, conflicting remote merge path covered end-to-end, unresolved hunks now
+      report escalation with retained markers, AC13 wording/whitespace cleaned. cargo fmt --check && cargo clippy -- -D
+      warnings && cargo test green after fix.
+  - timestamp: '2026-07-07T20:23:12.892Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-07T20:26:11.605Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-flight green after fixing an existing PATH race in mergiraf tests: cargo fmt --check, cargo clippy -- -D
+      warnings, cargo clippy --tests, cargo test all pass.
+task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
+task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2
