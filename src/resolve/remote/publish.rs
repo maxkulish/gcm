@@ -46,9 +46,14 @@ pub fn publish(
     Ok(outcome)
 }
 
-fn post_comment(repo: &Repo, remote_ref: &RemoteRef, report: &ResolveReport) -> Result<(), GcmError> {
+fn post_comment(
+    repo: &Repo,
+    remote_ref: &RemoteRef,
+    report: &ResolveReport,
+) -> Result<(), GcmError> {
     let body = build_summary_body(report);
-    let tmp = tempfile::NamedTempFile::new().map_err(|e| GcmError::Git(format!("temp file: {e}")))?;
+    let tmp =
+        tempfile::NamedTempFile::new().map_err(|e| GcmError::Git(format!("temp file: {e}")))?;
     fs::write(tmp.path(), &body).map_err(|e| GcmError::Git(format!("write temp file: {e}")))?;
 
     match remote_ref.host {

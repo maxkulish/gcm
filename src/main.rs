@@ -108,25 +108,14 @@ fn run_resolve_subcommand(args: &Cli) -> i32 {
     // Remote MR/PR orchestration path (CLO-533).
     let is_remote = matches!(
         args.command,
-        Some(Commands::Resolve {
-            pr: Some(_),
-            ..
-        }) | Some(Commands::Resolve {
-            mr: Some(_),
-            ..
-        })
+        Some(Commands::Resolve { pr: Some(_), .. }) | Some(Commands::Resolve { mr: Some(_), .. })
     );
     if is_remote {
         let report = match resolve::run_resolve_remote(&repo, args) {
             Ok(r) => r,
             Err(e) => {
                 if args.json {
-                    output::emit(&output::error(
-                        None,
-                        None,
-                        Some(output::MODE_DRY_RUN),
-                        &e,
-                    ));
+                    output::emit(&output::error(None, None, Some(output::MODE_DRY_RUN), &e));
                 } else {
                     eprintln!("gcm: {e}");
                 }

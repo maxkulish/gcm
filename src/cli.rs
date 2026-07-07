@@ -156,7 +156,10 @@ impl Cli {
     pub fn remote_push(&self) -> bool {
         matches!(
             &self.command,
-            Some(Commands::Resolve { remote_push: true, .. })
+            Some(Commands::Resolve {
+                remote_push: true,
+                ..
+            })
         )
     }
 
@@ -164,7 +167,10 @@ impl Cli {
     pub fn remote_comment(&self) -> bool {
         matches!(
             &self.command,
-            Some(Commands::Resolve { remote_comment: true, .. })
+            Some(Commands::Resolve {
+                remote_comment: true,
+                ..
+            })
         )
     }
 }

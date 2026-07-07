@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-07T17:52:11.105Z'
-  updated_at: '2026-07-07T18:16:02.010Z'
+  updated_at: '2026-07-07T18:27:36.605Z'
 phases:
   discovery:
     status: skipped
@@ -40,6 +40,7 @@ phases:
     commits:
       - e1a9526
       - a08a51d
+      - 22600df
   pr:
     status: pending
   complete:
@@ -152,5 +153,11 @@ history:
     details: >-
       ST2 landed: host detection, structured GcmError variants, git remote_url helper, core refactor run_resolve_in_repo
       with allow_no_conflict_state flag. Commit a08a51d.
+  - timestamp: '2026-07-07T18:27:36.605Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST3+ST4+ST5 landed: scratch clone via fetch.rs, optional push/comment via publish.rs, remote wiring in main.rs and
+      resolve/remote/mod.rs, RemoteReport in report.rs, Cli helpers remote_push()/remote_comment(). Commit 22600df.
 task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2

@@ -80,8 +80,14 @@ pub fn prepare_scratch_repo(remote_ref: &RemoteRef) -> Result<ScratchRepo, GcmEr
 
 fn format_origin_url(remote_ref: &RemoteRef) -> String {
     match remote_ref.host {
-        Host::GitHub => format!("https://github.com/{}/{}", remote_ref.owner, remote_ref.repo),
-        Host::GitLab => format!("https://gitlab.com/{}/{}", remote_ref.owner, remote_ref.repo),
+        Host::GitHub => format!(
+            "https://github.com/{}/{}",
+            remote_ref.owner, remote_ref.repo
+        ),
+        Host::GitLab => format!(
+            "https://gitlab.com/{}/{}",
+            remote_ref.owner, remote_ref.repo
+        ),
     }
 }
 
@@ -90,7 +96,11 @@ fn configure_credential_helper(repo: &Repo, host: Host) -> Result<(), GcmError> 
         Host::GitHub => "!gh auth git-credential",
         Host::GitLab => "!glab auth git-credential",
     };
-    run_git(Some(repo), &["config", "credential.helper", helper], CHECKOUT_TIMEOUT)
+    run_git(
+        Some(repo),
+        &["config", "credential.helper", helper],
+        CHECKOUT_TIMEOUT,
+    )
 }
 
 fn discover_base_branch(repo: &Repo, remote_ref: &RemoteRef) -> Result<String, GcmError> {
@@ -112,10 +122,11 @@ fn discover_github_base_branch(repo: &Repo, remote_ref: &RemoteRef) -> Result<St
         ],
         CHECKOUT_TIMEOUT,
     )?;
-    let parsed: serde_json::Value = serde_json::from_str(&out).map_err(|e| GcmError::RemoteHost {
-        host: "github".to_string(),
-        reason: format!("could not parse gh pr view JSON: {e}"),
-    })?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&out).map_err(|e| GcmError::RemoteHost {
+            host: "github".to_string(),
+            reason: format!("could not parse gh pr view JSON: {e}"),
+        })?;
     parsed["baseRefName"]
         .as_str()
         .map(|s| s.to_string())
@@ -139,10 +150,11 @@ fn discover_gitlab_base_branch(repo: &Repo, remote_ref: &RemoteRef) -> Result<St
         ],
         CHECKOUT_TIMEOUT,
     )?;
-    let parsed: serde_json::Value = serde_json::from_str(&out).map_err(|e| GcmError::RemoteHost {
-        host: "gitlab".to_string(),
-        reason: format!("could not parse glab mr view JSON: {e}"),
-    })?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&out).map_err(|e| GcmError::RemoteHost {
+            host: "gitlab".to_string(),
+            reason: format!("could not parse glab mr view JSON: {e}"),
+        })?;
     parsed["target_branch"]
         .as_str()
         .map(|s| s.to_string())

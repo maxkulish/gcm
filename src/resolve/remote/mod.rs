@@ -51,9 +51,10 @@ pub fn run_resolve_remote(current_repo: &Repo, args: &Cli) -> Result<ResolveRepo
     let _ = scratch
         .repo
         .run_git(&["checkout", "-B", &resolution_branch, &scratch.base_branch]);
-    let merge_result = scratch
-        .repo
-        .run_git(&["merge", "--no-ff", "--no-commit", &scratch.source_branch]);
+    let merge_result =
+        scratch
+            .repo
+            .run_git(&["merge", "--no-ff", "--no-commit", &scratch.source_branch]);
 
     // Even a clean merge leaves the tree merged but no conflict state. A
     // conflicted merge sets up conflict state. Either way, run the core engine
