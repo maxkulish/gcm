@@ -4,11 +4,14 @@
 //! domain heuristic. All detection is done from the user's existing remotes or
 //! from a full URL; no network calls.
 
+use serde::Serialize;
+
 use crate::error::GcmError;
 use crate::git::Repo;
 
 /// Supported remote hosts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Host {
     GitHub,
     GitLab,

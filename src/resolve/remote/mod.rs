@@ -5,13 +5,19 @@
 //! isolated scratch clone, checks out the source and target branches, runs
 //! the merge, and drives `resolve::run_resolve_in_repo` over the result.
 
+pub mod fetch;
 pub mod host;
+pub mod publish;
+
+use fetch::prepare_scratch_repo;
+use host::{require_host_cli, resolve_remote_ref, Host, RemoteRef};
+use publish::publish;
 
 use crate::cli::Cli;
 use crate::error::GcmError;
 use crate::git::Repo;
-use crate::resolve::report::ResolveReport;
-use host::{require_host_cli, resolve_remote_ref, Host, RemoteRef};
+use crate::resolve::report::{RemoteReport, ResolveReport};
+use crate::resolve::run_resolve_in_repo;
 
 /// Run the remote MR/PR resolution flow for the `resolve` subcommand.
 ///
@@ -34,15 +40,62 @@ pub fn run_resolve_remote(current_repo: &Repo, args: &Cli) -> Result<ResolveRepo
         return Ok(dry_run_report(&remote_ref));
     }
 
-    // TODO: build scratch clone, fetch branches, merge, then call
-    // run_resolve_in_repo(scratch_repo, args, true) on the scratch repo.
-    Err(GcmError::RemoteHost {
-        host: remote_ref.host.resolution_slug().to_string(),
-        reason: "scratch clone implementation pending in next sub-task".to_string(),
-    })
+    let scratch = prepare_scratch_repo(&remote_ref)?;
+    let resolution_branch = format!(
+        "gcm-resolve-{}-{}",
+        remote_ref.host.resolution_slug(),
+        remote_ref.number
+    );
+
+    // Create the resolution branch from the base and merge the source branch in.
+    let _ = scratch
+        .repo
+        .run_git(&["checkout", "-B", &resolution_branch, &scratch.base_branch]);
+    let merge_result = scratch
+        .repo
+        .run_git(&["merge", "--no-ff", "--no-commit", &scratch.source_branch]);
+
+    // Even a clean merge leaves the tree merged but no conflict state. A
+    // conflicted merge sets up conflict state. Either way, run the core engine
+    // with allow_no_conflict_state=true so a clean merge is reported as success.
+    let report = match merge_result {
+        Ok(()) => run_resolve_in_repo(&scratch.repo, args, true),
+        Err(e) => {
+            // If merge failed because of conflicts, the engine will find unmerged
+            // files and resolve them. Any other failure is propagated.
+            let unmerged = scratch.repo.unmerged_files()?;
+            if unmerged.is_empty() {
+                return Err(e);
+            }
+            run_resolve_in_repo(&scratch.repo, args, true)
+        }
+    };
+
+    let mut report = report?;
+
+    if args.remote_push() || args.remote_comment() {
+        let outcome = publish(
+            &scratch.repo,
+            &remote_ref,
+            &resolution_branch,
+            &report,
+            args.remote_push(),
+            args.remote_comment(),
+        )?;
+        report.remote = Some(RemoteReport {
+            host,
+            number: remote_ref.number,
+            base_branch: scratch.base_branch,
+            source_branch: scratch.source_branch,
+            resolution_branch,
+            pushed: outcome.pushed,
+            commented: outcome.commented,
+        });
+    }
+
+    Ok(report)
 }
 
-#[allow(dead_code)]
 fn extract_remote_arg(args: &Cli) -> Result<(String, Host), GcmError> {
     if let Some(crate::cli::Commands::Resolve { pr: Some(p), .. }) = &args.command {
         return Ok((p.clone(), Host::GitHub));
@@ -56,11 +109,23 @@ fn extract_remote_arg(args: &Cli) -> Result<(String, Host), GcmError> {
     })
 }
 
-#[allow(dead_code)]
-fn dry_run_report(_remote_ref: &RemoteRef) -> ResolveReport {
+fn dry_run_report(remote_ref: &RemoteRef) -> ResolveReport {
     ResolveReport {
         v: crate::output::SCHEMA_VERSION,
         status: crate::resolve::report::ResolveStatus::Noop,
         files: vec![],
+        remote: Some(RemoteReport {
+            host: remote_ref.host,
+            number: remote_ref.number,
+            base_branch: String::new(),
+            source_branch: String::new(),
+            resolution_branch: format!(
+                "gcm-resolve-{}-{}",
+                remote_ref.host.resolution_slug(),
+                remote_ref.number
+            ),
+            pushed: false,
+            commented: false,
+        }),
     }
 }

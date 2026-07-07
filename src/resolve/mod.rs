@@ -8,6 +8,7 @@ pub mod markers;
 pub mod mergiraf;
 pub mod prompt;
 pub mod remote;
+pub use remote::run_resolve_remote;
 pub mod report;
 pub mod validate;
 
@@ -74,6 +75,7 @@ pub fn run_resolve_in_repo(
                     v: output::SCHEMA_VERSION,
                     status: ResolveStatus::Noop,
                     files: vec![],
+                    remote: None,
                 });
             }
         }
@@ -176,6 +178,7 @@ pub fn run_resolve_in_repo(
                 action: r.action,
             })
             .collect(),
+        remote: None,
     })
 }
 

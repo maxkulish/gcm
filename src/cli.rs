@@ -142,13 +142,31 @@ pub enum Commands {
         mr: Option<String>,
 
         /// Push the resolution branch to the remote (requires a remote resolve).
-        #[arg(long)]
+        #[arg(long, requires = "remote")]
         remote_push: bool,
 
         /// Post a summary comment on the PR/MR (requires a remote resolve).
-        #[arg(long)]
+        #[arg(long, requires = "remote")]
         remote_comment: bool,
     },
+}
+
+impl Cli {
+    /// True if --remote-push was passed on a remote resolve.
+    pub fn remote_push(&self) -> bool {
+        matches!(
+            &self.command,
+            Some(Commands::Resolve { remote_push: true, .. })
+        )
+    }
+
+    /// True if --remote-comment was passed on a remote resolve.
+    pub fn remote_comment(&self) -> bool {
+        matches!(
+            &self.command,
+            Some(Commands::Resolve { remote_comment: true, .. })
+        )
+    }
 }
 
 #[cfg(test)]

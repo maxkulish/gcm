@@ -80,6 +80,65 @@ fn run(args: &Cli) -> i32 {
 /// Run the `gcm resolve` subcommand (CLO-531). Delegates to the resolve module
 /// and prints the outcome envelope.
 fn run_resolve_subcommand(args: &Cli) -> i32 {
+    let repo = match Repo::discover() {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            if args.json {
+                output::emit(&output::error(
+                    None,
+                    None,
+                    Some(output::MODE_DRY_RUN),
+                    &GcmError::NotARepo,
+                ));
+            } else {
+                eprintln!("gcm: {}", GcmError::NotARepo);
+            }
+            return 1;
+        }
+        Err(e) => {
+            if args.json {
+                output::emit(&output::error(None, None, Some(output::MODE_DRY_RUN), &e));
+            } else {
+                eprintln!("gcm: {e}");
+            }
+            return 1;
+        }
+    };
+
+    // Remote MR/PR orchestration path (CLO-533).
+    let is_remote = matches!(
+        args.command,
+        Some(Commands::Resolve {
+            pr: Some(_),
+            ..
+        }) | Some(Commands::Resolve {
+            mr: Some(_),
+            ..
+        })
+    );
+    if is_remote {
+        let report = match resolve::run_resolve_remote(&repo, args) {
+            Ok(r) => r,
+            Err(e) => {
+                if args.json {
+                    output::emit(&output::error(
+                        None,
+                        None,
+                        Some(output::MODE_DRY_RUN),
+                        &e,
+                    ));
+                } else {
+                    eprintln!("gcm: {e}");
+                }
+                return 1;
+            }
+        };
+        if args.json {
+            resolve::report::emit(&report);
+        }
+        return 0;
+    }
+
     match resolve::run_resolve(args) {
         Ok(()) => {
             if args.json {

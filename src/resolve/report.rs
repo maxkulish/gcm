@@ -6,12 +6,27 @@
 
 use serde::Serialize;
 
+use crate::resolve::remote::host::Host;
+
 /// The `--json` envelope for `gcm resolve`.
 #[derive(Debug, Serialize)]
 pub struct ResolveReport {
     pub v: i32,
     pub status: ResolveStatus,
     pub files: Vec<FileReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote: Option<RemoteReport>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoteReport {
+    pub host: Host,
+    pub number: u64,
+    pub base_branch: String,
+    pub source_branch: String,
+    pub resolution_branch: String,
+    pub pushed: bool,
+    pub commented: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -75,6 +90,7 @@ mod tests {
                 hunks_escalated: 1,
                 action: FileAction::Accepted,
             }],
+            remote: None,
         };
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("\"status\":\"partial\""));
