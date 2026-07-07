@@ -134,6 +134,7 @@ fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
         "systemInstruction": { "parts": [ { "text": super::RESOLVE_SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": super::resolve_user_content(ctx) } ] } ],
         "generationConfig": {
+            "temperature": ctx.temperature,
             "responseMimeType": "application/json",
             "responseSchema": super::resolve_schema(),
             "thinkingConfig": { "thinkingLevel": "MINIMAL" }

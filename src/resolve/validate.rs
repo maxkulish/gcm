@@ -91,7 +91,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         std::process::Command::new("git")
             .current_dir(&root)
-            .args([&"init", "-q"])
+            .args(["init", "-q"])
             .output()
             .expect("git init");
         (dir, Repo::at_root(root))

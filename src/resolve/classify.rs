@@ -64,6 +64,16 @@ pub fn classify(hunk: &Hunk) -> HunkResolution {
     HunkResolution::Complex
 }
 
+impl HunkResolution {
+    #[cfg(test)]
+    fn auto_text(&self) -> String {
+        match self {
+            HunkResolution::Auto { text, .. } => text.clone(),
+            HunkResolution::Complex => panic!("expected Auto"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,15 +166,5 @@ mod tests {
         // hunk was malformed; escalate to the provider.
         let r = classify(&h(None, "", ""));
         assert_eq!(r, HunkResolution::Complex);
-    }
-}
-
-impl HunkResolution {
-    #[cfg(test)]
-    fn auto_text(&self) -> String {
-        match self {
-            HunkResolution::Auto { text, .. } => text.clone(),
-            HunkResolution::Complex => panic!("expected Auto"),
-        }
     }
 }

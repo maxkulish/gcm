@@ -57,8 +57,11 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
     let conflict = resolve_conflict_config(args);
 
     // Re-checkout with zdiff3 markers so every file has a parseable base/ours/theirs.
-    let paths: Vec<&str> = unmerged.iter().map(String::as_str).collect();
-    repo.checkout_conflict_zdiff3(&paths)?;
+    // Skip in dry-run mode to avoid mutating the working tree.
+    if !args.dry_run {
+        let paths: Vec<&str> = unmerged.iter().map(String::as_str).collect();
+        repo.checkout_conflict_zdiff3(&paths)?;
+    }
 
     let binary = repo.binary_unmerged_files()?;
     let binary_set: HashSet<String> = binary.into_iter().collect();
@@ -66,6 +69,11 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
     let provider = crate::provider::select(args.provider, args.model.as_deref())
         .map_err(GcmError::Provider)?;
     let privacy = Privacy::load(&repo, args.secret_scan)?;
+
+    // Non-interactive guard: if we would need to prompt but can't, error early.
+    if crate::ui::needs_terminal_but_absent(args.yes, args.dry_run) {
+        return Err(GcmError::NonInteractive);
+    }
 
     let mut resolutions = Vec::new();
     let mut any_skipped_or_escalated = false;
@@ -271,8 +279,8 @@ fn resolve_file(
         });
     }
 
-    // Optional mergiraf pre-stage.
-    if conflict.mergiraf && mergiraf::try_resolve(repo, path)? {
+    // Optional mergiraf pre-stage. Skip in dry-run to avoid mutating the working tree.
+    if !args.dry_run && conflict.mergiraf && mergiraf::try_resolve(repo, path)? {
         let after = repo.read_file(path)?;
         let file = parse(path.to_string(), &after);
         if file.hunks.is_empty() {
@@ -299,7 +307,11 @@ fn resolve_file(
     let mut llm_indices = Vec::new();
 
     for (i, hunk) in file.hunks.iter().enumerate() {
-        match classify(hunk) {
+        let resolution = match conflict.auto_policy {
+            AutoPolicy::Complex => HunkResolution::Complex,
+            AutoPolicy::Trivial | AutoPolicy::Moderate => classify(hunk),
+        };
+        match resolution {
             HunkResolution::Auto { text, .. } => {
                 resolutions[i] = Some(text);
                 auto_count += 1;
@@ -315,7 +327,12 @@ fn resolve_file(
 
     if !llm_indices.is_empty() {
         // Privacy filter on hunk text before provider egress.
-        if privacy.secret_scan_mode() == SecretScanMode::Abort {
+        // Abort mode: fail if secrets detected. Redact mode: transform hunk text.
+        // Off mode: no filtering.
+        let scan_mode = privacy.secret_scan_mode();
+
+        // For Abort mode, pre-scan all hunks and fail before any provider call.
+        if scan_mode == SecretScanMode::Abort {
             for i in &llm_indices {
                 let h = &file.hunks[*i];
                 let combined = format!("{}{}{}", h.base.as_deref().unwrap_or(""), h.ours, h.theirs);
@@ -325,10 +342,28 @@ fn resolve_file(
 
         let provider_hunks: Vec<ConflictHunk> = llm_indices
             .iter()
-            .map(|i| ConflictHunk {
-                base: file.hunks[*i].base.clone(),
-                ours: file.hunks[*i].ours.clone(),
-                theirs: file.hunks[*i].theirs.clone(),
+            .map(|i| {
+                let h = &file.hunks[*i];
+                if scan_mode == SecretScanMode::Redact {
+                    // Redact mode: transform hunk text to remove secrets.
+                    let base = h
+                        .base
+                        .as_ref()
+                        .map(|b| privacy.scan_text(b.clone()).unwrap_or_else(|_| b.clone()));
+                    let ours = privacy
+                        .scan_text(h.ours.clone())
+                        .unwrap_or_else(|_| h.ours.clone());
+                    let theirs = privacy
+                        .scan_text(h.theirs.clone())
+                        .unwrap_or_else(|_| h.theirs.clone());
+                    ConflictHunk { base, ours, theirs }
+                } else {
+                    ConflictHunk {
+                        base: h.base.clone(),
+                        ours: h.ours.clone(),
+                        theirs: h.theirs.clone(),
+                    }
+                }
             })
             .collect();
 
@@ -342,9 +377,15 @@ fn resolve_file(
         let budget = provider.diff_budget();
         let batches = batch_hunks(ctx, budget.total_bytes);
         let mut llm_results: Vec<Resolution> = Vec::new();
+        let mut hunk_offset = 0;
         for batch in batches {
+            let num_hunks = batch.hunks.len();
             let mut batch_results = provider.resolve_hunks(&batch)?;
+            for r in &mut batch_results {
+                r.hunk_index += hunk_offset;
+            }
             llm_results.append(&mut batch_results);
+            hunk_offset += num_hunks;
         }
 
         // Map back to original hunk indices (batch hunks are in 0..N order).
@@ -377,21 +418,36 @@ fn resolve_file(
                     provider,
                     &file,
                     &resolutions,
+                    &content,
                     conflict.temperature,
                     repo,
                     path,
                 )?
             }
             Err(ValidationError::ValidateCmdFailed { .. }) => {
-                escalated_count += llm_count;
-                return Ok(FileResolution {
-                    path: path.to_string(),
-                    hunks_total: total,
-                    hunks_auto: auto_count,
-                    hunks_llm: 0,
-                    hunks_escalated: escalated_count,
-                    action: FileAction::Escalated,
-                });
+                // One bounded retry: ask the provider to fix its own output.
+                match attempt_validation_retry(
+                    provider,
+                    &file,
+                    &resolutions,
+                    &content,
+                    conflict.temperature,
+                    repo,
+                    path,
+                ) {
+                    Ok(retried) => retried,
+                    Err(_) => {
+                        escalated_count += llm_count;
+                        return Ok(FileResolution {
+                            path: path.to_string(),
+                            hunks_total: total,
+                            hunks_auto: auto_count,
+                            hunks_llm: 0,
+                            hunks_escalated: escalated_count,
+                            action: FileAction::Escalated,
+                        });
+                    }
+                }
             }
         };
 
@@ -488,6 +544,7 @@ fn attempt_validation_retry(
     provider: &dyn Provider,
     file: &ConflictFile,
     resolutions: &[Option<String>],
+    content: &str,
     temperature: f64,
     repo: &Repo,
     path: &str,
@@ -525,7 +582,7 @@ fn attempt_validation_retry(
             new_resolutions[retry_indices[r.hunk_index]] = Some(r.replacement);
         }
     }
-    let text = reconstruct(file, &new_resolutions, "");
+    let text = reconstruct(file, &new_resolutions, content);
     if has_conflict_markers(&text) {
         return Err(GcmError::ResolutionEscalated {
             path: path.to_string(),
@@ -541,13 +598,22 @@ fn attempt_validation_retry(
 
 fn reconstruct(file: &ConflictFile, resolutions: &[Option<String>], original: &str) -> String {
     let original_lines: Vec<&str> = original.lines().collect();
+    // Detect dominant line ending to preserve CRLF files.
+    let uses_crlf = original.contains("\r\n");
     let mut out = String::new();
     let mut hunk_idx = 0;
     let mut line_no = 1usize;
     while line_no <= original_lines.len() {
         if hunk_idx < file.hunks.len() && line_no == file.hunks[hunk_idx].start_line {
             if let Some(text) = &resolutions[hunk_idx] {
-                out.push_str(text);
+                // Normalize resolution text line endings to match the file.
+                if uses_crlf && !text.contains("\r\n") {
+                    // Convert LF to CRLF in the resolution text.
+                    let normalized = text.replace('\n', "\r\n");
+                    out.push_str(&normalized);
+                } else {
+                    out.push_str(text);
+                }
             } else {
                 // Escalated: keep the original hunk block verbatim.
                 for l in line_no..=file.hunks[hunk_idx].end_line {

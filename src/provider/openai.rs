@@ -141,6 +141,16 @@ fn apply_model_params(payload: &mut Value, model: &str) {
     }
 }
 
+/// Add model-family params for resolve payloads, using ctx.temperature.
+fn apply_model_params_resolve(payload: &mut Value, model: &str, temperature: f64) {
+    let obj = payload.as_object_mut().expect("payload is a JSON object");
+    if is_reasoning_model(model) {
+        obj.insert("reasoning_effort".into(), json!("low"));
+    } else {
+        obj.insert("temperature".into(), json!(temperature));
+    }
+}
+
 fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
     let mut payload = json!({
         "model": model,
@@ -157,7 +167,7 @@ fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
             }
         }
     });
-    apply_model_params(&mut payload, model);
+    apply_model_params_resolve(&mut payload, model, ctx.temperature);
     payload
 }
 

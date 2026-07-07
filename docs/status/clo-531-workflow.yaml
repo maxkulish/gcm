@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-06T15:19:48.900Z'
+  updated_at: '2026-07-07T10:06:52.916Z'
 phases:
   discovery:
     status: complete
@@ -120,7 +120,7 @@ phases:
     plan_file: docs/plans/clo-531-gcm-resolve.md
     approved: true
   implement:
-    status: pending
+    status: validating
     commits:
       - dd97fa8
       - b4e48eb
@@ -131,6 +131,8 @@ phases:
       - 4bb1a57
       - c8f9acd
       - f22a058
+      - 53360de
+      - e7c2456
     subtasks_completed:
       - ST1
       - ST2
@@ -141,6 +143,57 @@ phases:
       - ST7
       - ST8
       - ST9
+      - ST10
+    assumption_outcomes:
+      - evidence: src/git.rs::checkout_conflict_zdiff3 + integration tests
+        outcome: held
+        text: >-
+          git checkout --conflict=zdiff3 re-materializes conflict markers for all unmerged paths without losing the
+          merge state.
+      - evidence: src/resolve/mergiraf.rs::is_available + try_resolve
+        outcome: held
+        text: mergiraf is an optional external tool; its absence degrades gracefully to the pure-LLM path.
+      - evidence: src/resolve/mergiraf.rs::try_resolve + re-parse after mergiraf
+        outcome: held
+        text: >-
+          mergiraf exits 0 when it fully resolves a file and non-zero when hunks remain; residual markers are detected
+          by re-parsing.
+      - evidence: src/provider/mod.rs::resolve_hunks + all 5 backends implement it
+        outcome: held
+        text: The existing Provider trait can accommodate a new resolve_hunks method without breaking existing backends.
+      - evidence: src/resolve/markers.rs::parse handles both zdiff3 and diff3
+        outcome: held
+        text: zdiff3 markers always include a ||||||| base block (unlike plain diff3 which omits it).
+      - evidence: src/main.rs::run_resolve_subcommand + resolve_json_envelope integration test
+        outcome: held
+        text: >-
+          The --json stdout discipline (stderr for human prose, stdout for JSON only) applies to gcm resolve the same as
+          the commit flow.
+      - evidence: src/resolve/mod.rs::resolve_file uses Privacy::filter_changed + scan_text
+        outcome: held
+        text: >-
+          --secret-scan and .gcmignore filtering apply to hunk text sent to the provider the same way they apply to diff
+          text.
+      - evidence: Reuses existing http::post_json retry/backoff
+        outcome: held
+        text: Provider HTTP timeouts for the resolve path should not preempt the outer resolve-command timeout.
+      - evidence: src/resolve/validate.rs::validate checks for conflict markers
+        outcome: held
+        text: >-
+          The default syntax-safe validation (no conflict markers in output) is sufficient to catch most LLM
+          hallucinations.
+      - evidence: Requires manual cross-provider testing; not verifiable by automated tests
+        outcome: untested
+        text: >-
+          A temperature of 0.1 is low enough for reproducible conflict resolution and high enough to avoid degenerate
+          outputs.
+    assumptions_revalidated: true
+    codex_report: docs/reviews/clo-531-codex-validation.md
+    codex_validated: true
+    codex_verdict: FAIL
+    gemini_validation_report: docs/reviews/clo-531-gemini-validation.md
+    validation_synthesis_report: docs/reviews/clo-531-validation-synthesis.md
+    validation_synthesis_verdict: FAIL
   pr:
     status: pending
   complete:
@@ -290,5 +343,42 @@ history:
       classification, privacy filter, provider batching, validation gate (with retry), per-file [Y/n/e] preview loop,
       JSON/human reporting. Added confirm_file + FileDecision + pub(crate) edit_in_editor to ui.rs; added
       Privacy::secret_scan_mode getter.
+  - timestamp: '2026-07-06T15:52:42.100Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST10 landed: end-to-end integration tests for gcm resolve. Commit 53360de. 8 integration tests covering: no merge
+      in progress, no unmerged files, dry-run, JSON envelope, complex conflict with mock provider, binary file skipped,
+      gcmignore excludes, secret scan abort. All pass. Clippy fixes in e7c2456.
+  - timestamp: '2026-07-06T15:52:57.669Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      10 assumptions reviewed. held: 9, violated: 0, untested: 1. A10 (temperature 0.1) is untested - requires manual
+      cross-provider testing.
+  - timestamp: '2026-07-06T15:53:01.439Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 10 sub-tasks landed. 11 commits. fmt+clippy+test green (328 pass, 0 fail). 8 integration tests. 30 unit tests
+      in resolve module. Pre-merge gate passed.
+  - timestamp: '2026-07-06T16:31:41.719Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Validation gate complete. Codex: FAIL (9 findings). Gemini: PASS_WITH_NOTES (2 findings). Synthesis: FAIL -
+      recommends STOP_FOR_USER. Key concerns: secret scan redact mode, dry-run tree mutation, non-interactive safety,
+      validate_cmd retry, byte/line-ending preservation, auto_policy enforcement, temperature passthrough. Some findings
+      are false positives (dry-run design intent, binary detection approach, test coverage scope).
+  - timestamp: '2026-07-06T16:31:45.525Z'
+    action: validation_gate_failed
+    phase: implement
+    details: >-
+      Synthesis verdict: FAIL. The implementation diverges materially from the approved design on multiple criteria. See
+      docs/reviews/clo-531-validation-synthesis.md for full findings. User decision needed before proceeding.
+  - timestamp: '2026-07-07T10:06:52.916Z'
+    action: fix_iteration_started
+    phase: implement
+    details: User accepted FAIL verdict and approved bounded fix iteration. Addressing 10 Must Fix items from synthesis report.
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local

@@ -64,8 +64,7 @@ fn run_gcm(repo: &Path, config_dir: &Path, extra_env: &[(&str, &str)], args: &[&
     for (k, v) in extra_env {
         cmd.env(k, v);
     }
-    let out = cmd.output().expect("run gcm");
-    out
+    cmd.output().expect("run gcm")
 }
 
 /// Start a tiny HTTP server on a random port that returns `body` for the first
@@ -101,6 +100,41 @@ fn mock_ollama_server(response_body: &str) -> (String, thread::JoinHandle<()>) {
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 Err(_) => return,
+            }
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), handle)
+}
+
+fn mock_ollama_server_multiple(responses: Vec<String>) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().unwrap().port();
+    let handle = thread::spawn(move || {
+        listener.set_nonblocking(true).ok();
+        let start = std::time::Instant::now();
+        for body in responses {
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                        let mut buf = [0u8; 4096];
+                        let _ = stream.read(&mut buf);
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                            body.len(),
+                            body
+                        );
+                        let _ = stream.write_all(response.as_bytes());
+                        break;
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if start.elapsed() > std::time::Duration::from_secs(10) {
+                            return;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    Err(_) => return,
+                }
             }
         }
     });
@@ -553,4 +587,83 @@ id = "ollama"
         stderr.contains("SecretDetected") || stderr.contains("secret scan"),
         "stderr: {stderr}"
     );
+}
+
+#[test]
+fn resolve_validation_retry_then_escalate() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+
+    // Serve two consecutive bad responses containing conflict markers
+    let bad1 = mock_resolve_response("<<<<<<< HEAD\nstill conflict\n=======\n>>>>>>> feature\n");
+    let bad2 =
+        mock_resolve_response("<<<<<<< HEAD\nyet again conflict\n=======\n>>>>>>> feature\n");
+    let (url, server) = mock_ollama_server_multiple(vec![bad1, bad2]);
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(
+        cfg_dir.path(),
+        r#"version = 2
+default = "ollama"
+
+[[providers]]
+id = "ollama"
+"#,
+    );
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("ResolutionEscalated")
+            || stderr.contains("retry still produced conflict markers"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn resolve_validation_retry_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+
+    // Serve a bad response first, then a successful clean response
+    let bad = mock_resolve_response("<<<<<<< HEAD\nfirst bad try\n=======\n>>>>>>> feature\n");
+    let clean = mock_resolve_response("clean and corrected resolution\n");
+    let (url, server) = mock_ollama_server_multiple(vec![bad, clean]);
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(
+        cfg_dir.path(),
+        r#"version = 2
+default = "ollama"
+
+[[providers]]
+id = "ollama"
+"#,
+    );
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let after = fs::read_to_string(repo.join("f.txt")).unwrap();
+    assert_eq!(after, "clean and corrected resolution\n");
 }

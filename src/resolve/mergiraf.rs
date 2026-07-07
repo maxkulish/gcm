@@ -72,7 +72,7 @@ mod tests {
         std::env::set_var("PATH", "/tmp/nonexistent-merge-dir");
         let dir = tempfile::tempdir().unwrap();
         let repo = Repo::at_root(dir.path().to_path_buf());
-        assert_eq!(try_resolve(&repo, "any.txt").unwrap(), false);
+        assert!(!try_resolve(&repo, "any.txt").unwrap());
         if let Some(p) = prev {
             std::env::set_var("PATH", p);
         }

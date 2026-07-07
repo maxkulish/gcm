@@ -141,6 +141,7 @@ fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
     json!({
         "model": model,
         "max_tokens": 4096,
+        "temperature": ctx.temperature,
         "system": super::RESOLVE_SYSTEM_PROMPT,
         "messages": [
             { "role": "user", "content": super::resolve_user_content(ctx) }
