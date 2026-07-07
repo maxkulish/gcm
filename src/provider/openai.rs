@@ -92,6 +92,17 @@ impl Provider for OpenAi {
         Ok(message)
     }
 
+    fn resolve_hunks(
+        &self,
+        ctx: &super::ResolveContext,
+    ) -> Result<Vec<super::Resolution>, ProviderError> {
+        let key = self.api_key()?;
+        let payload = build_resolve_payload(ctx, &self.model);
+        let raw = http::post_json(&self.request(&key, &payload))?;
+        let json = super::extract_openai_content(NAME, &raw)?;
+        super::parse_resolutions(NAME, &json, ctx.hunks.len())
+    }
+
     fn cache_model_id(&self) -> String {
         format!("openai:{}", self.model)
     }
@@ -128,6 +139,36 @@ fn apply_model_params(payload: &mut Value, model: &str) {
     } else {
         obj.insert("temperature".into(), json!(0.2));
     }
+}
+
+/// Add model-family params for resolve payloads, using ctx.temperature.
+fn apply_model_params_resolve(payload: &mut Value, model: &str, temperature: f64) {
+    let obj = payload.as_object_mut().expect("payload is a JSON object");
+    if is_reasoning_model(model) {
+        obj.insert("reasoning_effort".into(), json!("low"));
+    } else {
+        obj.insert("temperature".into(), json!(temperature));
+    }
+}
+
+fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
+    let mut payload = json!({
+        "model": model,
+        "messages": [
+            { "role": system_role(model), "content": super::RESOLVE_SYSTEM_PROMPT },
+            { "role": "user", "content": super::resolve_user_content(ctx) },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "conflict_resolutions",
+                "strict": true,
+                "schema": super::resolve_schema(),
+            }
+        }
+    });
+    apply_model_params_resolve(&mut payload, model, ctx.temperature);
+    payload
 }
 
 fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {

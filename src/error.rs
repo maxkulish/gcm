@@ -35,6 +35,15 @@ pub enum GcmError {
     SecretDetected {
         count: usize,
     },
+    /// `gcm resolve` was called but no merge/rebase/cherry-pick is in progress.
+    NoConflictInProgress,
+    /// `gcm resolve` was called but no unmerged files were found.
+    NoConflicts,
+    /// A conflict resolution failed validation and was left conflicted for human review.
+    ResolutionEscalated {
+        path: String,
+        reason: String,
+    },
 }
 
 impl GcmError {
@@ -83,6 +92,18 @@ impl fmt::Display for GcmError {
                 "secret scan detected {count} credential-like value(s); no provider request was sent. \
                  Remove the secret, add the path to .gcmignore, or re-run with --secret-scan=redact."
             ),
+            GcmError::NoConflictInProgress => write!(
+                f,
+                "no merge, rebase, or cherry-pick is in progress; run `git merge`, `git rebase`, or `git cherry-pick` first."
+            ),
+            GcmError::NoConflicts => write!(
+                f,
+                "merge/rebase/cherry-pick in progress, but no unmerged files remain."
+            ),
+            GcmError::ResolutionEscalated { path, reason } => write!(
+                f,
+                "resolution for {path} failed validation: {reason}. The file is left conflicted for manual resolution."
+            ),
         }
     }
 }
@@ -108,6 +129,13 @@ mod tests {
         // CLO-496: onboarding-required occurs before staging, so nothing is kept.
         assert!(!GcmError::OnboardingRequired.leaves_staged());
         assert!(!GcmError::SecretDetected { count: 1 }.leaves_staged());
+        assert!(!GcmError::NoConflictInProgress.leaves_staged());
+        assert!(!GcmError::NoConflicts.leaves_staged());
+        assert!(!GcmError::ResolutionEscalated {
+            path: "x".to_string(),
+            reason: "r".to_string()
+        }
+        .leaves_staged());
     }
 
     #[test]
@@ -126,5 +154,21 @@ mod tests {
         let msg = GcmError::SecretDetected { count: 2 }.to_string();
         assert!(msg.contains("no provider request was sent"));
         assert!(msg.contains("--secret-scan=redact"));
+    }
+
+    #[test]
+    fn new_resolve_error_messages_are_actionable() {
+        let msg = GcmError::NoConflictInProgress.to_string();
+        assert!(msg.contains("merge"));
+        assert!(msg.contains("rebase"));
+        let msg = GcmError::NoConflicts.to_string();
+        assert!(msg.contains("no unmerged files"));
+        let msg = GcmError::ResolutionEscalated {
+            path: "src/lib.rs".to_string(),
+            reason: "validation failed".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("src/lib.rs"));
+        assert!(msg.contains("validation failed"));
     }
 }

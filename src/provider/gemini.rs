@@ -98,6 +98,20 @@ impl Provider for Gemini {
         Ok(message)
     }
 
+    fn resolve_hunks(
+        &self,
+        ctx: &super::ResolveContext,
+    ) -> Result<Vec<super::Resolution>, ProviderError> {
+        let key = self.api_key()?;
+        let payload = build_resolve_payload(ctx);
+        let raw = http::post_json(&self.request(&key, &payload))?;
+        let json = extract_text(&raw)?;
+        if json.is_empty() {
+            return Err(empty());
+        }
+        super::parse_resolutions(NAME, &json, ctx.hunks.len())
+    }
+
     fn cache_model_id(&self) -> String {
         format!("google:{}", self.model)
     }
@@ -113,6 +127,19 @@ fn empty() -> ProviderError {
         provider: NAME,
         kind: ErrorKind::EmptyResponse,
     }
+}
+
+fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
+    json!({
+        "systemInstruction": { "parts": [ { "text": super::RESOLVE_SYSTEM_PROMPT } ] },
+        "contents": [ { "role": "user", "parts": [ { "text": super::resolve_user_content(ctx) } ] } ],
+        "generationConfig": {
+            "temperature": ctx.temperature,
+            "responseMimeType": "application/json",
+            "responseSchema": super::resolve_schema(),
+            "thinkingConfig": { "thinkingLevel": "MINIMAL" }
+        }
+    })
 }
 
 fn build_plan_payload(ctx: &GroupingContext) -> Value {

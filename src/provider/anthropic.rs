@@ -107,6 +107,23 @@ impl Provider for Anthropic {
         Ok(message)
     }
 
+    fn resolve_hunks(
+        &self,
+        ctx: &super::ResolveContext,
+    ) -> Result<Vec<super::Resolution>, ProviderError> {
+        let key = self.api_key()?;
+        let payload = build_resolve_payload(ctx, &self.model);
+        let raw = http::post_json(&self.request(&key, &payload))?;
+        let json_str = extract_tool_use_input(NAME, &raw)?;
+        if json_str.is_empty() {
+            return Err(ProviderError {
+                provider: NAME,
+                kind: ErrorKind::EmptyResponse,
+            });
+        }
+        super::parse_resolutions(NAME, &json_str, ctx.hunks.len())
+    }
+
     fn cache_model_id(&self) -> String {
         format!("anthropic:{}", self.model)
     }
@@ -119,6 +136,24 @@ impl Provider for Anthropic {
 // ---------------------------------------------------------------------------
 // Payload builders
 // ---------------------------------------------------------------------------
+
+fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
+    json!({
+        "model": model,
+        "max_tokens": 4096,
+        "temperature": ctx.temperature,
+        "system": super::RESOLVE_SYSTEM_PROMPT,
+        "messages": [
+            { "role": "user", "content": super::resolve_user_content(ctx) }
+        ],
+        "tools": [{
+            "name": "conflict_resolutions",
+            "description": "Return the resolved conflict hunks",
+            "input_schema": super::resolve_schema()
+        }],
+        "tool_choice": { "type": "tool", "name": "conflict_resolutions" }
+    })
+}
 
 /// Build the forced tool-use plan request payload.
 ///
@@ -520,9 +555,15 @@ mod tests {
     #[test]
     fn request_sends_correct_headers() {
         // Verify the request() method produces the expected auth + extra headers.
+        // Guard against a leftover env override from the parallel base-url test.
+        let prev = std::env::var("GCM_ANTHROPIC_BASE_URL").ok();
+        std::env::remove_var("GCM_ANTHROPIC_BASE_URL");
         let a = Anthropic::new("claude-haiku-4-5".to_string());
         let payload = serde_json::json!({"model": "test"});
         let req = a.request("sk-ant-test", &payload);
+        if let Some(u) = prev {
+            std::env::set_var("GCM_ANTHROPIC_BASE_URL", u);
+        }
         let (auth_name, auth_value) = req.auth.as_ref().expect("anthropic sends an auth header");
         assert_eq!(*auth_name, "x-api-key");
         assert_eq!(auth_value, "sk-ant-test");

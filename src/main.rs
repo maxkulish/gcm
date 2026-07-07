@@ -10,6 +10,7 @@ mod paths;
 mod plan;
 mod privacy;
 mod provider;
+mod resolve;
 mod status;
 mod ui;
 
@@ -55,6 +56,11 @@ fn run(args: &Cli) -> i32 {
         return run_provider_subcommand();
     }
 
+    // The `resolve` subcommand is an LLM-assisted conflict resolver (CLO-531).
+    if matches!(args.command, Some(Commands::Resolve { .. })) {
+        return run_resolve_subcommand(args);
+    }
+
     let env = execute(args);
     let is_error = env.status == output::STATUS_ERROR;
 
@@ -68,6 +74,27 @@ fn run(args: &Cli) -> i32 {
         1
     } else {
         0
+    }
+}
+
+/// Run the `gcm resolve` subcommand (CLO-531). Delegates to the resolve module
+/// and prints the outcome envelope.
+fn run_resolve_subcommand(args: &Cli) -> i32 {
+    match resolve::run_resolve(args) {
+        Ok(()) => {
+            if args.json {
+                // run_resolve already emitted the JSON envelope.
+            }
+            0
+        }
+        Err(e) => {
+            if args.json {
+                output::emit(&output::error(None, None, Some(output::MODE_DRY_RUN), &e));
+            } else {
+                eprintln!("gcm: {e}");
+            }
+            1
+        }
     }
 }
 

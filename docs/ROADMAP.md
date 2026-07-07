@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-06-24 (CLO-497 cross-platform releases + alias cutover merged PR #20, Done — the LAST v1 slice; Phase 1 complete, the bash→Rust migration is done. CLO-514 secret-scanner rule-pack + entropy engine merged PR #18, Done — new FR-60, hardens FR-50. CLO-496 first-run onboarding wizard merged PR #17, Done; CLO-490 secret scanning + gcmignore merged PR #16, Done; CLO-488 finalized to Done — PR #6 merged 2026-06-21, `9052a7e`; CLO-494 Anthropic provider merged PR #11, Done; CLO-495 Ollama local provider merged PR #14, Done; CLO-493 automation surface merged PR #12, Done; CLO-489 merged PR #10; CLO-492 merged PR #9; CLO-491 merged on main)
+**Last Updated**: 2026-07-06 (CLO-531 started)
 
 ## Summary
 

@@ -41,7 +41,7 @@ const DEFAULT_OLLAMA_ENDPOINT: &str = "http://localhost:11434";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Persisted configuration, written as TOML to `config.toml`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default)]
     pub version: u32,
@@ -49,6 +49,9 @@ pub struct Config {
     pub default: ProviderId,
     /// Every provider the user enabled during onboarding.
     pub providers: Vec<ProviderConfig>,
+    /// Conflict-resolution settings for `gcm resolve` (CLO-531).
+    #[serde(default)]
+    pub conflict: ConflictConfig,
 }
 
 /// One enabled provider. `key == None` => read from the provider env var at run
@@ -72,6 +75,50 @@ pub struct ProviderConfig {
     /// is the chosen default and is always a member when this is non-empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<String>,
+}
+
+/// Conflict-resolution settings for `gcm resolve` (CLO-531).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ConflictConfig {
+    /// LLM temperature for resolution (default 0.1).
+    #[serde(default = "default_conflict_temperature")]
+    pub temperature: f64,
+    /// Optional validation command (e.g. `cargo check`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validate_cmd: Option<String>,
+    /// Glob patterns for paths that always require manual review.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sensitive_paths: Vec<String>,
+    /// Auto-resolution policy: which hunk classes to auto-resolve.
+    #[serde(default = "default_auto_policy")]
+    pub auto_policy: AutoPolicy,
+    /// Whether to use mergiraf if on PATH (default true).
+    #[serde(default = "default_mergiraf")]
+    pub mergiraf: bool,
+}
+
+fn default_conflict_temperature() -> f64 {
+    0.1
+}
+
+fn default_auto_policy() -> AutoPolicy {
+    AutoPolicy::Trivial
+}
+
+fn default_mergiraf() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AutoPolicy {
+    /// Auto-resolve only trivial hunks (identical, one-side-unchanged, one-side-empty).
+    #[default]
+    Trivial,
+    /// Also auto-resolve moderate hunks (reserved for future heuristics).
+    Moderate,
+    /// Send everything to the LLM (no auto-resolution).
+    Complex,
 }
 
 /// Why a present config file is not usable; drives the stderr warning in [`load`].
@@ -543,6 +590,7 @@ pub(crate) fn merge_provider_config(
         existing.map(|c| c.default).unwrap_or(updated.id)
     };
     Config {
+        conflict: ConflictConfig::default(),
         version: CONFIG_FORMAT_VERSION,
         default,
         providers,
@@ -577,6 +625,7 @@ fn build_config(enabled: &[ProviderConfig], default: ProviderId) -> Result<Confi
         ));
     }
     Ok(Config {
+        conflict: ConflictConfig::default(),
         version: CONFIG_FORMAT_VERSION,
         default,
         providers: enabled.to_vec(),
@@ -1282,6 +1331,7 @@ mod tests {
     #[test]
     fn config_round_trips_toml() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Groq,
             providers: vec![
@@ -1402,6 +1452,7 @@ mod tests {
     #[test]
     fn apply_to_env_does_not_override_existing() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Groq,
             providers: vec![pc(ProviderId::Groq, Some("sk-inline"), None)],
@@ -1417,6 +1468,7 @@ mod tests {
     #[test]
     fn apply_to_env_sets_inline_key_endpoint_and_default() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Groq,
             providers: vec![
@@ -1434,6 +1486,7 @@ mod tests {
     #[test]
     fn apply_to_env_skips_ollama_url_when_ollama_host_set() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Ollama,
             providers: vec![pc(ProviderId::Ollama, None, Some("http://host:1234"))],
@@ -1446,6 +1499,7 @@ mod tests {
     #[test]
     fn env_plan_bridges_config_model_when_env_unset() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Openai,
             providers: vec![pcm(ProviderId::Openai, "gpt-x")],
@@ -1457,6 +1511,7 @@ mod tests {
     #[test]
     fn env_plan_yields_to_real_model_env_var() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Openai,
             providers: vec![pcm(ProviderId::Openai, "gpt-x")],
@@ -1469,6 +1524,7 @@ mod tests {
     #[test]
     fn env_plan_config_model_yields_to_google_alias_env() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Google,
             providers: vec![pcm(ProviderId::Google, "cfg-model")],
@@ -1487,6 +1543,7 @@ mod tests {
     #[test]
     fn env_plan_bridges_google_model_to_primary_var() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Google,
             providers: vec![pcm(ProviderId::Google, "gemini-x")],
@@ -1499,6 +1556,7 @@ mod tests {
     #[test]
     fn render_config_includes_live_values_and_commented_reference() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
             providers: vec![pc(ProviderId::Openai, None, None)],
@@ -1526,6 +1584,7 @@ mod tests {
     #[test]
     fn config_round_trips_model_field() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
             providers: vec![pcm(ProviderId::Openai, "gpt-5.4-mini")],
@@ -1625,12 +1684,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(CONFIG_FILE_NAME);
         let first = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Groq,
             providers: vec![pc(ProviderId::Groq, Some("k1"), None)],
         };
         save_to(&path, &first).unwrap();
         let second = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
             providers: vec![pc(ProviderId::Openai, Some("k2"), None)],
@@ -1716,6 +1777,7 @@ mod tests {
         let path = dir.path().join(CONFIG_FILE_NAME);
 
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Ollama,
             providers: vec![
@@ -1788,6 +1850,7 @@ mod tests {
     #[test]
     fn v2_config_round_trips_models() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
             providers: vec![pcw(
@@ -1807,6 +1870,7 @@ mod tests {
         // Even if an in-memory config still carries version 1, the serialized file
         // is the current format (closes the version-write trap).
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: 1,
             default: ProviderId::Groq,
             providers: vec![pc(ProviderId::Groq, None, None)],
@@ -1819,6 +1883,7 @@ mod tests {
     #[test]
     fn model_is_enabled_empty_set_is_unrestricted() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Groq,
             providers: vec![pc(ProviderId::Groq, None, None)], // models empty
@@ -1831,6 +1896,7 @@ mod tests {
     #[test]
     fn model_is_enabled_non_empty_set_enforces_membership() {
         let cfg = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
             providers: vec![pcw(
@@ -1850,6 +1916,7 @@ mod tests {
     fn model_is_enabled_canonicalizes_ollama_tag_and_gemini_prefix() {
         // Ollama: a tagless `--model` matches an enabled `:latest` entry.
         let ollama = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Ollama,
             providers: vec![pcw(
@@ -1862,6 +1929,7 @@ mod tests {
         assert!(model_is_enabled(&ollama, ProviderId::Ollama, "llama3:latest").is_ok());
         // Gemini: the `models/`-prefixed list value matches the bare resolved id.
         let gem = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Google,
             providers: vec![pcw(
@@ -1892,6 +1960,7 @@ mod tests {
     #[test]
     fn merge_provider_config_preserves_others_and_sets_default() {
         let existing = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Groq,
             providers: vec![
@@ -1923,6 +1992,7 @@ mod tests {
     fn merge_provider_config_appends_absent_and_handles_no_existing() {
         // append when absent
         let existing = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Groq,
             providers: vec![pc(ProviderId::Groq, Some("k"), None)],
@@ -1953,6 +2023,7 @@ mod tests {
         ];
         // ...against a prior config where openai had a whitelist + default model.
         let prev = Config {
+            conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
             providers: vec![pcw(

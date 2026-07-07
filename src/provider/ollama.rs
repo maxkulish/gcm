@@ -127,6 +127,21 @@ impl Provider for Ollama {
         Ok(message)
     }
 
+    fn resolve_hunks(
+        &self,
+        ctx: &super::ResolveContext,
+    ) -> Result<Vec<super::Resolution>, ProviderError> {
+        let payload = build_resolve_payload(ctx, &self.model);
+        let json = self.chat(&payload)?;
+        if json.is_empty() {
+            return Err(ProviderError {
+                provider: NAME,
+                kind: ErrorKind::EmptyResponse,
+            });
+        }
+        super::parse_resolutions(NAME, &json, ctx.hunks.len())
+    }
+
     fn cache_model_id(&self) -> String {
         format!("ollama:{}", self.model)
     }
@@ -136,6 +151,18 @@ impl Provider for Ollama {
         // env-overridable (FR-13a).
         DiffBudget::standard()
     }
+}
+
+fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
+    json!({
+        "model": model,
+        "messages": [
+            { "role": "system", "content": super::RESOLVE_SYSTEM_PROMPT },
+            { "role": "user", "content": super::resolve_user_content(ctx) }
+        ],
+        "format": super::resolve_schema(),
+        "options": { "temperature": ctx.temperature }
+    })
 }
 
 /// Build the `/api/chat` endpoint from a base URL, trimming a trailing slash so

@@ -489,13 +489,14 @@ fn print_provider_block(p: &ProviderStatus) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ProviderConfig;
+    use crate::config::{ConflictConfig, ProviderConfig};
 
     fn cfg(default: ProviderId, providers: Vec<ProviderConfig>) -> Config {
         Config {
             version: 1,
             default,
             providers,
+            conflict: ConflictConfig::default(),
         }
     }
 
