@@ -198,6 +198,8 @@ fn gcm_error_code(err: &GcmError) -> String {
         GcmError::NoConflictInProgress => "NoConflictInProgress".to_string(),
         GcmError::NoConflicts => "NoConflicts".to_string(),
         GcmError::ResolutionEscalated { .. } => "ResolutionEscalated".to_string(),
+        GcmError::RemoteHost { .. } => "RemoteHost".to_string(),
+        GcmError::RemoteCliMissing { .. } => "RemoteCliMissing".to_string(),
     }
 }
 

@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-07 (synced from Linear: added `gcm resolve` feature area CLO-531/533/534, bugfix CLO-517; CLO-533 Phase 2 is the one open task)
+**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --start)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -39,7 +39,7 @@
 | [CLO-531](https://linear.app/cloud-ai/issue/CLO-531) | R1 | `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers) | HITL/Feature | Medium | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) | new: conflict-resolver core |
 | [CLO-534](https://linear.app/cloud-ai/issue/CLO-534) | Bugfix | Fix `gcm resolve` HTTP 400 on Gemini: resolve schema emits unsupported `additionalProperties` | Bug | High | Done | CLO-531 | resolve was non-functional on Gemini/Google default |
 | [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | CLO-531 (related) | — |
-| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | **Backlog** | CLO-531 (Done → ready) | thin fetch→core wrapper over the Phase-1 engine; only open task |
+| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | **In Progress** | CLO-531 (Done → ready) | thin fetch→core wrapper over the Phase-1 engine; only open task |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes.
 
@@ -81,13 +81,12 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | In Progress | spec | — |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| Low | [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | CLO-531 (Done) | thin fetch→core wrapper; `gh`/`glab` on PATH, resolution branch, opt-in push |
 
 > **CLO-533** is the only open task. Phase-1 core (CLO-531) merged (PR #25), so it is unblocked and ready. Low priority, HITL (design-time flag/isolation decisions). Everything else — all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1 (CLO-531 + fixes CLO-534/535) — is Done.
 >

@@ -7,6 +7,7 @@ pub mod classify;
 pub mod markers;
 pub mod mergiraf;
 pub mod prompt;
+pub mod remote;
 pub mod report;
 pub mod validate;
 
@@ -39,8 +40,43 @@ struct FileResolution {
 /// Entry point for `gcm resolve`.
 pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
     let repo = Repo::discover()?.ok_or(GcmError::NotARepo)?;
+    let report = run_resolve_in_repo(&repo, args, false)?;
+    if args.json {
+        report::emit(&report);
+    } else {
+        print_human_report(&report);
+    }
+    Ok(())
+}
 
+/// Core resolution engine used by both the local and remote paths.
+///
+/// Local callers discover the repo first; remote callers build a scratch repo
+/// and pass it in. Returns a `ResolveReport` rather than printing it, so the
+/// caller decides how to present the result and can attach remote metadata.
+///
+/// `allow_no_conflict_state` should be `false` for the local path (a plain
+/// `gcm resolve` with no merge in progress is a user error) and `true` for the
+/// remote path (a clean merge in the scratch repo is a successful noop).
+pub fn run_resolve_in_repo(
+    repo: &Repo,
+    args: &Cli,
+    allow_no_conflict_state: bool,
+) -> Result<ResolveReport, GcmError> {
     if !repo.has_conflict_state() {
+        // A remote caller that already performed a clean merge can legitimately
+        // have no conflict state. Treat this as a successful noop so the remote
+        // wrapper can report the merged tree without erroring.
+        if allow_no_conflict_state {
+            let unmerged = repo.unmerged_files()?;
+            if unmerged.is_empty() {
+                return Ok(ResolveReport {
+                    v: output::SCHEMA_VERSION,
+                    status: ResolveStatus::Noop,
+                    files: vec![],
+                });
+            }
+        }
         return Err(GcmError::NoConflictInProgress);
     }
 
@@ -68,7 +104,7 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
 
     let provider = crate::provider::select(args.provider, args.model.as_deref())
         .map_err(GcmError::Provider)?;
-    let privacy = Privacy::load(&repo, args.secret_scan)?;
+    let privacy = Privacy::load(repo, args.secret_scan)?;
 
     // Non-interactive guard: if we would need to prompt but can't, error early.
     if crate::ui::needs_terminal_but_absent(args.yes, args.dry_run) {
@@ -100,7 +136,7 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
         }
 
         let file_resolution = resolve_file(
-            &repo,
+            repo,
             path,
             &conflict,
             &binary_set,
@@ -126,7 +162,7 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
         ResolveStatus::Resolved
     };
 
-    let report = ResolveReport {
+    Ok(ResolveReport {
         v: output::SCHEMA_VERSION,
         status,
         files: resolutions
@@ -140,15 +176,7 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
                 action: r.action,
             })
             .collect(),
-    };
-
-    if args.json {
-        report::emit(&report);
-    } else {
-        print_human_report(&report);
-    }
-
-    Ok(())
+    })
 }
 
 fn resolve_conflict_config(args: &Cli) -> ConflictConfig {

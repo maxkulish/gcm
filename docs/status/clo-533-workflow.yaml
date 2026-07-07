@@ -1,0 +1,143 @@
+task_id: clo-533
+task_type: specification
+classification_reason: >-
+  Title begins with 'Add' and ACs are mechanical (fetch/merge/core wrapper, explicit opt-in push, dry-run safety).
+  Phase-1 core already shipped; Phase 2 is a thin orchestration wrapper with well-defined acceptance criteria.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-533-add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2
+  priority: Low
+  branch_actual: feat/clo-533-remote-mr
+workflow:
+  current_phase: implement
+  status: active
+  created_at: '2026-07-07T17:52:11.105Z'
+  updated_at: '2026-07-07T18:05:39.754Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: Specification task - using /spec instead of full design doc
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  implement:
+    status: pending
+    commits:
+      - e1a9526
+  pr:
+    status: pending
+  complete:
+    status: pending
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-07-clo-533-remote-mrpr-conflict-orchestration.md
+    applied_suggestions:
+      - Refactor run_resolve into run_resolve_in_repo(repo,args) returning ResolveReport
+      - Add clean-merge success path returning resolved/noop instead of NoConflictInProgress
+      - Define RemoteReport struct and ResolveReport.remote field
+      - Add structured GcmError variants RemoteHost{host,reason} and RemoteCliMissing{cli,install_hint}
+      - Add AC13 scratch-cleanup invariant and test
+      - 'Tighten AC8: dry-run creates no temp dir, no gh/glab invocation, ignores --remote-push/--remote-comment'
+      - Decompose ST3 into clone/fetch base/fetch source/create resolution branch/invoke engine sub-tasks
+      - Document credential-helper injection for HTTPS scratch clone
+      - Capture stdout/stderr separately for all shell-outs to preserve JSON stdout
+      - Add branch-collision EC11 (checkout -B deterministic overwrite)
+      - Add clean-merge and partial-resolution evaluation rows
+      - Align integration test file naming with existing tests/resolve_integration.rs convention
+    flagged_suggestions:
+      - >-
+        Custom-host parsing for self-hosted GHE/GitLab beyond domain heuristics may need human decision on supported
+        patterns
+      - Minimum gh/glab CLI version not specified; implement phase should verify --branch flag availability
+      - Remote diff_budget policy left unchanged from local (may revisit if large MRs hit context limits)
+      - SIGINT/SIGTERM cleanup guarantee beyond TempDir Drop not explicitly tested
+    review_applied: true
+    review_completed: true
+    review_gemini: docs/reviews/clo-533-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-533-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-533-spec-review-synthesis.md
+    review_verdict: approve_with_suggestions
+    token_usage:
+      - recorded_at: '2026-07-07T18:01:24.975Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: spec-review-gemini-no-count
+      - recorded_at: '2026-07-07T18:01:24.975Z'
+        provider: ollama
+        model: glm-5:cloud
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: spec-review-ollama-no-count
+    approved: true
+    auto_approval_reason: >-
+      Specification task with mechanical ACs, real file references, and AI review suggestions applied. Clean-merge
+      handling, RemoteReport, structured errors, and core refactor are all specified.
+    auto_approved: true
+history:
+  - timestamp: '2026-07-07T17:52:11.105Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-533 as development
+  - timestamp: '2026-07-07T17:54:32.017Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as specification: title starts with 'Add' and acceptance criteria are mechanical (fetch+merge+invoke
+      core, isolation/branch/push defaults, dry-run purity)
+  - timestamp: '2026-07-07T17:54:34.559Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-533 --start; WIP limit OK, no blockers, Linear
+      status moved Backlog -> Todo
+  - timestamp: '2026-07-07T17:54:36.277Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to spec
+  - timestamp: '2026-07-07T17:55:42.092Z'
+    action: spec_branch_checked_out
+    phase: spec
+    details: Branch feat/clo-533-remote-mr already checked out; recorded as branch_actual
+  - timestamp: '2026-07-07T18:01:24.975Z'
+    action: spec_review_complete
+    phase: spec
+    details: >-
+      Verdict: approve_with_suggestions. Applied: clean-merge handling, RemoteReport struct, structured GcmError
+      variants, scratch-cleanup AC, tightened dry-run AC, decomposed ST3, credential-helper/stderr/timeout notes,
+      branch-collision EC. Flagged: custom-host parsing depth, min CLI versions, diff_budget remote policy, SIGINT
+      cleanup guarantee.
+  - timestamp: '2026-07-07T18:01:28.650Z'
+    action: spec_approved
+    phase: spec
+    details: >-
+      Auto-approved after applying P0/P1 review suggestions. All ACs have explicit verification commands; sub-tasks
+      reference real files/modules; task is mechanically testable.
+  - timestamp: '2026-07-07T18:01:43.814Z'
+    action: phase_transition
+    phase: spec
+    details: Transitioned from spec to implement
+  - timestamp: '2026-07-07T18:05:39.754Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST1 landed: Add --mr/--pr CLI flags with mutual exclusivity and remote_push/remote_comment options. Commit
+      e1a9526.
+task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
+task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2

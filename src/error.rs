@@ -44,6 +44,16 @@ pub enum GcmError {
         path: String,
         reason: String,
     },
+    /// Remote MR/PR host could not be detected or is unsupported.
+    RemoteHost {
+        host: String,
+        reason: String,
+    },
+    /// The external host CLI (`gh` or `glab`) is missing or not on PATH.
+    RemoteCliMissing {
+        cli: String,
+        install_hint: String,
+    },
 }
 
 impl GcmError {
@@ -103,6 +113,14 @@ impl fmt::Display for GcmError {
             GcmError::ResolutionEscalated { path, reason } => write!(
                 f,
                 "resolution for {path} failed validation: {reason}. The file is left conflicted for manual resolution."
+            ),
+            GcmError::RemoteHost { host, reason } => write!(
+                f,
+                "remote host '{host}': {reason}. Pass a full github.com/gitlab.com URL (or a recognizable self-hosted domain)."
+            ),
+            GcmError::RemoteCliMissing { cli, install_hint } => write!(
+                f,
+                "missing host CLI '{cli}': {install_hint}."
             ),
         }
     }
@@ -170,5 +188,33 @@ mod tests {
         .to_string();
         assert!(msg.contains("src/lib.rs"));
         assert!(msg.contains("validation failed"));
+        let msg = GcmError::RemoteHost {
+            host: "bitbucket.org".to_string(),
+            reason: "unsupported".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("bitbucket.org"));
+        assert!(msg.contains("unsupported"));
+        let msg = GcmError::RemoteCliMissing {
+            cli: "gh".to_string(),
+            install_hint: "install gh".to_string(),
+        }
+        .to_string();
+        assert!(msg.contains("gh"));
+        assert!(msg.contains("install gh"));
+    }
+
+    #[test]
+    fn remote_errors_do_not_leave_staged() {
+        assert!(!GcmError::RemoteHost {
+            host: "h".to_string(),
+            reason: "r".to_string()
+        }
+        .leaves_staged());
+        assert!(!GcmError::RemoteCliMissing {
+            cli: "gh".to_string(),
+            install_hint: "hint".to_string()
+        }
+        .leaves_staged());
     }
 }
