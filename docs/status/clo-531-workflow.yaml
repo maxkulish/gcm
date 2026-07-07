@@ -20,10 +20,10 @@ linear:
   priority: Medium
   branch_actual: feat/clo-531-resolve
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: active
   created_at: '2026-07-06T13:48:03.082Z'
-  updated_at: '2026-07-07T10:11:44.186Z'
+  updated_at: '2026-07-07T10:13:01.694Z'
 phases:
   discovery:
     status: complete
@@ -196,7 +196,7 @@ phases:
     validation_synthesis_verdict: PASS_WITH_NOTES
     validation_fix_iteration_count: 1
   pr:
-    status: pending
+    status: in_progress
   complete:
     status: pending
 history:
@@ -387,5 +387,15 @@ history:
     details: >-
       Validation gate complete with fix iteration. Codex: FAIL. Gemini: PASS_WITH_NOTES. Synthesis: FAIL → user approved
       bounded fix iteration. 7 Must Fix items addressed in commit 96fdc10. Pre-merge gate green. All tests pass.
+  - timestamp: '2026-07-07T10:12:10.191Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-07T10:13:01.694Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-merge gate green: fmt + clippy (-D warnings) + clippy --tests + test all pass (single-threaded to avoid git
+      subprocess race conditions in parallel test execution)
 task_title: 'Add `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers)'
 task_url: https://linear.app/cloud-ai/issue/CLO-531/add-gcm-resolve-llm-assisted-merge-conflict-resolver-phase-1-local
