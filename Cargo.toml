@@ -1,6 +1,6 @@
 [package]
 name = "gcm"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "AI git commit tool: turns working-tree changes into a signed conventional commit"
 license = "MIT"
