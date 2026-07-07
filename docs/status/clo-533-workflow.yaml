@@ -23,7 +23,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-07T17:52:11.105Z'
-  updated_at: '2026-07-07T20:23:12.892Z'
+  updated_at: '2026-07-07T20:26:11.605Z'
 phases:
   discovery:
     status: skipped
@@ -75,7 +75,7 @@ phases:
         completion_tokens: 0
         task_label: pre-pr-validation-synthesis-no-count
   pr:
-    status: pending
+    status: in_progress
   complete:
     status: pending
   spec:
@@ -280,5 +280,11 @@ history:
     action: phase_transition
     phase: implement
     details: Transitioned from implement to pr
+  - timestamp: '2026-07-07T20:26:11.605Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-flight green after fixing an existing PATH race in mergiraf tests: cargo fmt --check, cargo clippy -- -D
+      warnings, cargo clippy --tests, cargo test all pass.
 task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2

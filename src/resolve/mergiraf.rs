@@ -5,20 +5,25 @@
 //! attempts to resolve conflict markers structurally; any file that still has
 //! markers after the run is forwarded to the LLM stage.
 
+use std::ffi::OsString;
+use std::path::PathBuf;
+
 use crate::error::GcmError;
 use crate::git::Repo;
 
 use super::markers::has_conflict_markers;
 
+fn find_mergiraf_in_path(paths: Option<OsString>) -> Option<PathBuf> {
+    paths.and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|p| p.join("mergiraf"))
+            .find(|p| p.is_file())
+    })
+}
+
 /// Detect whether `mergiraf` is on PATH.
 pub fn is_available() -> bool {
-    std::env::var_os("PATH")
-        .and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|p| p.join("mergiraf"))
-                .find(|p| p.is_file())
-        })
-        .is_some()
+    find_mergiraf_in_path(std::env::var_os("PATH")).is_some()
 }
 
 /// Run `mergiraf solve` on a single conflicted file. Returns `Ok(true)` when
@@ -29,7 +34,18 @@ pub fn try_resolve(repo: &Repo, path: &str) -> Result<bool, GcmError> {
     if !is_available() {
         return Ok(false);
     }
-    let status = std::process::Command::new("mergiraf")
+    try_resolve_with_binary(repo, path, Some(PathBuf::from("mergiraf")))
+}
+
+fn try_resolve_with_binary(
+    repo: &Repo,
+    path: &str,
+    mergiraf: Option<PathBuf>,
+) -> Result<bool, GcmError> {
+    let Some(mergiraf) = mergiraf else {
+        return Ok(false);
+    };
+    let status = std::process::Command::new(mergiraf)
         .current_dir(repo.root())
         .args(["solve", "--keep-backup=false", "--", path])
         .status()
@@ -57,24 +73,14 @@ mod tests {
 
     #[test]
     fn unavailable_mergiraf_is_graceful() {
-        // Simulate absence by pointing PATH somewhere that cannot contain it.
-        let prev = std::env::var("PATH").ok();
-        std::env::set_var("PATH", "/tmp/nonexistent-merge-dir");
-        assert!(!is_available());
-        if let Some(p) = prev {
-            std::env::set_var("PATH", p);
-        }
+        let missing_path = Some(OsString::from("/tmp/nonexistent-merge-dir"));
+        assert!(find_mergiraf_in_path(missing_path).is_none());
     }
 
     #[test]
     fn try_resolve_when_unavailable_returns_false() {
-        let prev = std::env::var("PATH").ok();
-        std::env::set_var("PATH", "/tmp/nonexistent-merge-dir");
         let dir = tempfile::tempdir().unwrap();
         let repo = Repo::at_root(dir.path().to_path_buf());
-        assert!(!try_resolve(&repo, "any.txt").unwrap());
-        if let Some(p) = prev {
-            std::env::set_var("PATH", p);
-        }
+        assert!(!try_resolve_with_binary(&repo, "any.txt", None).unwrap());
     }
 }
