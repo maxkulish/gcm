@@ -133,25 +133,56 @@ fn parse_url(url: &str, preferred_host: Option<Host>) -> Result<RemoteRef, GcmEr
     }
 
     // GitHub: /owner/repo/pull/42
-    // GitLab: /owner/repo/-/merge_requests/42
-    let number = if host == Host::GitHub {
-        extract_number(&path_segments, "pull")?
+    // GitLab: /group/subgroup/repo/-/merge_requests/42
+    let (number, owner, repo) = if host == Host::GitHub {
+        let n = extract_number(&path_segments, "pull")?;
+        // Everything before /pull/ is the project path.
+        let pull_idx = path_segments
+            .iter()
+            .position(|s| s.eq_ignore_ascii_case("pull"))
+            .unwrap_or(path_segments.len());
+        let project = &path_segments[..pull_idx.min(path_segments.len())];
+        if project.len() < 2 {
+            return Err(GcmError::RemoteHost {
+                host: parsed.host_str().unwrap_or("").to_string(),
+                reason: "GitHub URL does not contain owner/repo before /pull/".to_string(),
+            });
+        }
+        (n, project[0].to_string(), project[1].to_string())
     } else {
-        extract_number_gitlab(&path_segments)?
+        let n = extract_number_gitlab(&path_segments)?;
+        // Everything before /-/merge_requests/ is the project path.
+        let mr_idx = path_segments
+            .iter()
+            .position(|s| s.eq_ignore_ascii_case("merge_requests"))
+            .unwrap_or(path_segments.len());
+        // For GitLab, the segment before merge_requests is usually "-".
+        // The project path is everything before that.
+        let project_end = if mr_idx > 0 && path_segments.get(mr_idx - 1) == Some(&"-") {
+            mr_idx - 1
+        } else {
+            mr_idx
+        };
+        let project = &path_segments[..project_end.min(path_segments.len())];
+        if project.len() < 2 {
+            return Err(GcmError::RemoteHost {
+                host: parsed.host_str().unwrap_or("").to_string(),
+                reason: "GitLab URL does not contain owner/repo before /-/merge_requests/"
+                    .to_string(),
+            });
+        }
+        // For GitLab subgroups, join all segments except the last as owner,
+        // and the last as repo.
+        let repo_name = project.last().unwrap().to_string();
+        let owner_name = project[..project.len() - 1].join("/");
+        (n, owner_name, repo_name)
     };
-
-    if path_segments.len() < 2 {
-        return Err(GcmError::RemoteHost {
-            host: parsed.host_str().unwrap_or("").to_string(),
-            reason: "URL does not contain owner/repo".to_string(),
-        });
-    }
 
     Ok(RemoteRef {
         host,
         domain: parsed.host_str().unwrap_or("").to_string(),
-        owner: path_segments[0].to_string(),
-        repo: path_segments[1].to_string(),
+        owner,
+        repo,
         number,
     })
 }
@@ -190,11 +221,16 @@ fn parse_origin_url(url: &str, preferred_host: Option<Host>) -> Result<RemoteRef
         });
     }
 
+    // For GitLab, the path may contain subgroups: /group/subgroup/repo.git
+    // Join all segments except the last as owner, and the last as repo.
+    let repo_name = path_segments.last().unwrap().to_string();
+    let owner_name = path_segments[..path_segments.len() - 1].join("/");
+
     Ok(RemoteRef {
         host,
         domain: parsed.host_str().unwrap_or("").to_string(),
-        owner: path_segments[0].to_string(),
-        repo: path_segments[1].to_string(),
+        owner: owner_name,
+        repo: repo_name,
         number: 0,
     })
 }

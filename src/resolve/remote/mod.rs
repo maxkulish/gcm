@@ -60,9 +60,9 @@ pub fn run_resolve_remote_opt(
     );
 
     // Create the resolution branch from the base and merge the source branch in.
-    let _ = scratch
+    scratch
         .repo
-        .run_git(&["checkout", "-B", &resolution_branch, &scratch.base_branch]);
+        .run_git(&["checkout", "-B", &resolution_branch, &scratch.base_branch])?;
     let merge_result =
         scratch
             .repo

@@ -9,40 +9,32 @@
 
 ## Findings
 
-**CRITICAL** - Remote resolutions are never staged or committed, so the result is lost or pushes the wrong tree.
-The spec requires resolutions to land on `gcm-resolve-<host>-<number>` (spec line 26), but the remote flow only writes files via the Phase-1 engine and then optionally runs `git push` (remote/mod.rs:75, fetch.rs:205). There is no `git add`, no merge commit, and the `TempDir` is dropped at return (fetch.rs:22). Default mode discards the work; `--remote-push` pushes the branch ref, not the resolved tree.
+HIGH - Default remote resolve loses the only local result. The spec says default mode is local-only and prints the scratch path plus resolution branch, while cleanup is also required. Current code commits inside a `TempDir` scratch repo, does not push by default, does not include a scratch path in `RemoteReport`, and `main.rs` only prints branch/base/source/status. Once `run_resolve_remote_opt` returns, the temp repo is dropped, so default users have no usable branch.
 
-**HIGH** - Self-hosted and unsupported hosts are handled incorrectly and can target the wrong public repo.
-`RemoteRef` stores only `Host`, `owner`, `repo`, and `number`, then `format_origin_url` hardcodes `https://github.com/...` or `https://gitlab.com/...` (host.rs:46, fetch.rs:81). A self-hosted `gitlab.company.corp/acme/app` resolves to `gitlab.com/acme/app`. Also, `detect_host` accepts any unknown full URL as GitHub/GitLab when `--pr`/`--mr` supplies a preferred host (host.rs:197), violating the unsupported-host edge case.
+HIGH - Acceptance tests are misleadingly named but mostly dry-run only. Tests do not exercise the non-dry-run merge/commit/push/comment behavior they claim to verify. This leaves AC5, AC6, AC9, AC10, AC13, and AC14 effectively unproven.
 
-**HIGH** - Clean merges still fail as `NoConflicts`.
-After `git merge --no-ff --no-commit`, a clean merge still leaves a merge state with no unmerged paths. `run_resolve_in_repo(..., allow_no_conflict_state=true)` only treats no-conflict as success when there is no conflict state; if there is merge state and `unmerged_files()` is empty, it returns `GcmError::NoConflicts` (resolve/mod.rs:67, resolve/mod.rs:85). AC14 is not implemented.
+MEDIUM - URL parsing can target the wrong repo for common GitLab shapes and malformed URLs. `parse_url` searches for `pull` / `merge_requests` anywhere, then blindly assigns `owner = path_segments[0]` and `repo = path_segments[1]`. GitLab subgroup URLs like `group/subgroup/repo/-/merge_requests/42` would clone `group/subgroup`, not `group/subgroup/repo`; malformed GitHub URLs like `/acme/pull/42` can parse as repo `pull`.
 
-**HIGH** - Default remote runs do not print or emit required remote metadata.
-AC7 requires the scratch repo path and resolution branch by default (spec line 28). In non-JSON remote mode, `main.rs` prints nothing (main.rs:125). In JSON mode, `report.remote` is only populated inside the push/comment branch, so default remote runs omit `remote` entirely (remote/mod.rs:77).
+MEDIUM - Resolution branch checkout errors are ignored. `checkout -B <resolution_branch> <base>` is assigned to `_`, so a failure can continue into merge/commit/reporting on the wrong branch. This violates the AC5/AC6 orchestration guarantee and weakens error handling.
 
-**MEDIUM** - Dry-run full URLs still require a local git repo and host CLI.
-`run_resolve_subcommand` calls `Repo::discover()` before deciding whether a remote dry-run can be parsed from a full URL (main.rs:82). Then `run_resolve_remote` checks `gh`/`glab` before the dry-run short-circuit (remote/mod.rs:34). That is stricter than the dry-run purity/preview contract.
-
-**MEDIUM** - The documented bounded timeouts are not implemented.
-The helpers accept `Duration` but discard it and call blocking `.output()` (fetch.rs:233, fetch.rs:262, publish.rs:98). This violates the spec's bounded shell-out constraint.
-
-**MEDIUM** - Comment failure aborts the whole resolution, contrary to EC7.
-`publish(...)?` propagates comment errors and fails the command (remote/mod.rs:77), while the spec says a closed/merged PR/MR comment failure should be surfaced without aborting the local resolution.
-
-**LOW** - Acceptance coverage is far below the spec.
-Only `parse_github_url` and `dry_run_no_clone` exist under `tests/resolve_remote.rs`, plus a few host unit tests. The named tests for GitLab integration, origin lookup, missing CLIs, scratch isolation, branch naming, default no-push, push/comment, partial escalation, cleanup, and clean merge are absent. `git diff --check main...HEAD` also fails on trailing whitespace in docs.
+LOW - The worktree has an uncommitted `docs/status/clo-533-workflow.yaml` update claiming rework completion. It is not part of `main...HEAD`; either commit it intentionally or remove it before PR.
 
 ## Missing Items
 
-AC4, AC5, AC6, AC7, AC9, AC10, AC13, and AC14 are not functionally covered. AC2 is only partially implemented and is wrong for self-hosted/unsupported hosts. AC8 is only partially implemented.
+AC7 is not implemented correctly: default local-only output is not durable and does not print a scratch repo path.
+
+AC2 is incomplete for robust full URL parsing, especially GitLab subgroup namespaces and malformed path rejection.
+
+AC5, AC6, AC9, AC10, AC13, and AC14 are not adequately acceptance-tested despite test names matching the spec.
 
 ## Recommendations
 
-1. Persist the remote result: after `run_resolve_in_repo`, stage the merged/resolved tree and create a commit on `gcm-resolve-<host>-<number>` before any push or cleanup.
-2. Preserve the actual remote clone URL/domain in `RemoteRef`; reject unsupported full URLs instead of mapping them to public GitHub/GitLab.
-3. Fix clean-merge handling before invoking the resolver, or make `allow_no_conflict_state` return success when merge state exists but `unmerged_files()` is empty.
-4. Always attach `RemoteReport` for remote runs and print the branch/path summary in human mode.
-5. Implement real subprocess timeouts and add the missing acceptance tests named in the spec.
+Resolve the AC7/AC13 contract first: either retain/export the scratch repo for default local-only success, or make default produce a durable local artifact somewhere outside `TempDir`; then include that path in human and JSON output.
 
-Verification: `cargo fmt --check` passed. `git diff --check main...HEAD` failed on trailing whitespace. I did not run `cargo test`/`clippy` in this read-only review sandbox.
+Replace the dry-run placeholder tests with real fake-CLI integration tests that assert the resolution branch commit contents, push invocation, comment invocation, clean merge behavior, partial escalation markers, and cleanup-on-error.
+
+Tighten URL parsing to validate exact GitHub/GitLab PR/MR path shapes and preserve GitLab namespace paths correctly.
+
+Change the ignored checkout to `?` and add a regression test for branch creation failure.
+
+Verification: `cargo fmt --check` passed. `git diff --check main...HEAD` fails on doc trailing whitespace. Read-only sandbox, did not run `cargo test` or `clippy`.

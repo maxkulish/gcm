@@ -78,8 +78,9 @@ fn write_fake_scripts(bin_dir: &Path, _capture_dir: Option<&Path>) {
 if [ "$1" = "pr" ] && [ "$2" = "checkout" ]; then
   id="$3"
   branch="$5"
-  git checkout -q -b "$branch" "origin/pr-$id-source" 2>/dev/null || \
-    git checkout -q -b "$branch" "refs/remotes/origin/pr-$id-source" 2>/dev/null || true
+  # Fetch the source branch from origin so it's available.
+  git fetch -q origin "pr-$id-source" 2>/dev/null || true
+  git checkout -q -b "$branch" "FETCH_HEAD" 2>/dev/null || git checkout -q "$branch" 2>/dev/null || true
   exit 0
 fi
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
@@ -113,7 +114,8 @@ exit 1
 if [ "$1" = "mr" ] && [ "$2" = "checkout" ]; then
   id="$3"
   branch="$5"
-  git checkout -q -b "$branch" "refs/remotes/origin/mr-$id-source" 2>/dev/null || true
+  git fetch -q origin "mr-$id-source" 2>/dev/null || true
+  git checkout -q -b "$branch" "FETCH_HEAD" 2>/dev/null || git checkout -q "$branch" 2>/dev/null || true
   exit 0
 fi
 if [ "$1" = "mr" ] && [ "$2" = "view" ]; then
@@ -243,6 +245,56 @@ fn run_gcm_with_capture(
     )
 }
 
+fn run_gcm_with_home(
+    repo: &Path,
+    config_dir: &Path,
+    bin_dir: &Path,
+    home_dir: &Path,
+    args: &[&str],
+) -> Output {
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    let path_env = format!("{}:{}", bin_dir.display(), path_env);
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_gcm"));
+    cmd.current_dir(repo)
+        .args(args)
+        .env("GCM_CONFIG", config_dir)
+        .env("PATH", path_env)
+        .env("HOME", home_dir)
+        .env_remove("GCM_DEBUG")
+        .stdin(Stdio::null());
+    for var in PROVIDER_ENV {
+        cmd.env_remove(var);
+    }
+    cmd.output().expect("run gcm")
+}
+
+fn run_gcm_with_capture_and_home(
+    repo: &Path,
+    config_dir: &Path,
+    bin_dir: &Path,
+    capture_dir: &Path,
+    home_dir: &Path,
+    args: &[&str],
+) -> Output {
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    let path_env = format!("{}:{}", bin_dir.display(), path_env);
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_gcm"));
+    cmd.current_dir(repo)
+        .args(args)
+        .env("GCM_CONFIG", config_dir)
+        .env("PATH", path_env)
+        .env("HOME", home_dir)
+        .env("GCM_FAKE_CAPTURE_DIR", capture_dir)
+        .env_remove("GCM_DEBUG")
+        .stdin(Stdio::null());
+    for var in PROVIDER_ENV {
+        cmd.env_remove(var);
+    }
+    cmd.output().expect("run gcm")
+}
+
 fn run_gcm_no_host(repo: &Path, config_dir: &Path, bin_dir: &Path, args: &[&str]) -> Output {
     // Use only the bin_dir and /usr/bin on PATH so system gh/glab are not found.
     // /usr/bin is needed for git.
@@ -310,6 +362,24 @@ default = "ollama"
 id = "ollama"
 "#,
     );
+}
+
+/// Set up a fake HOME with a .gitconfig that redirects a URL prefix to a
+/// local bare repo, so non-dry-run tests can clone from it.
+fn setup_git_redirect(tmp: &Path, remote: &Path, url_prefix: &str) -> PathBuf {
+    let home = tmp.join("home");
+    fs::create_dir_all(&home).unwrap();
+    let gitconfig = home.join(".gitconfig");
+    fs::write(
+        &gitconfig,
+        format!(
+            "[url \"{}\"]\n\tinsteadOf = {}\n",
+            remote.to_string_lossy(),
+            url_prefix
+        ),
+    )
+    .unwrap();
+    home
 }
 
 // ---------------------------------------------------------------------------
@@ -924,4 +994,236 @@ fn dry_run_full_url_no_repo() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(stdout.contains("\"status\":\"noop\""), "{stdout}");
+}
+
+// ---------------------------------------------------------------------------
+// Real (non-dry-run) integration tests using clean-merge fixture (no provider needed)
+// ---------------------------------------------------------------------------
+
+const GITHUB_URL_PREFIX: &str = "https://github.com/acme/app";
+
+/// Run a full remote resolve (non-dry-run) using the clean-merge fixture.
+/// The clean-merge path returns Noop before needing a provider, so this
+/// exercises clone, checkout, merge, commit, report end-to-end.
+#[test]
+fn real_clean_merge_resolves_and_commits() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote_clean(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    let out = run_gcm_with_home(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &home,
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("\"status\":\"noop\""), "{stdout}");
+    assert!(stdout.contains("\"remote\":"), "{stdout}");
+    assert!(
+        stdout.contains("\"resolution_branch\":\"gcm-resolve-github-42\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("\"pushed\":false"), "{stdout}");
+    assert!(stdout.contains("\"commented\":false"), "{stdout}");
+}
+
+/// Verify that --remote-push actually pushes to the fake remote.
+#[test]
+fn real_push_invoked() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote_clean(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    let out = run_gcm_with_home(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &home,
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--remote-push",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("\"pushed\":true"), "{stdout}");
+    let branches = git_output(&remote, &["branch", "--list"]);
+    assert!(
+        branches.contains("gcm-resolve-github-42"),
+        "resolution branch not found in remote: {branches}"
+    );
+}
+
+/// Verify that --remote-comment actually calls gh pr comment.
+#[test]
+fn real_comment_invoked() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote_clean(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let capture = dir.path().join("capture");
+    fs::create_dir_all(&capture).unwrap();
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    let out = run_gcm_with_capture_and_home(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &capture,
+        &home,
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--remote-comment",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("\"commented\":true"), "{stdout}");
+    assert!(
+        capture.join("gh-comment-called").exists(),
+        "gh pr comment was not invoked"
+    );
+}
+
+/// Verify that the user repo is unchanged after a remote run (AC4/AC13).
+#[test]
+fn real_scratch_cleanup_on_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote_clean(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    let before = git_output(&user_repo, &["rev-parse", "HEAD"]);
+    let before_branch = git_output(&user_repo, &["branch", "--show-current"]);
+    let out = run_gcm_with_home(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &home,
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--json",
+        ],
+    );
+    assert!(out.status.success());
+    let after = git_output(&user_repo, &["rev-parse", "HEAD"]);
+    let after_branch = git_output(&user_repo, &["branch", "--show-current"]);
+    assert_eq!(before, after, "user repo HEAD changed");
+    assert_eq!(before_branch, after_branch, "user repo branch changed");
+}
+
+/// Verify that the resolution branch is created with the correct name (AC6)
+/// and contains the merged tree.
+#[test]
+fn real_resolution_branch_created() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote_clean(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    let out = run_gcm_with_home(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &home,
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--remote-push",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let branches = git_output(&remote, &["branch", "--list"]);
+    assert!(
+        branches.contains("gcm-resolve-github-42"),
+        "resolution branch not found in remote: {branches}"
+    );
+    let file_content = git_output(&remote, &["show", "gcm-resolve-github-42:g.txt"]);
+    assert_eq!(
+        file_content, "new file",
+        "merged tree should contain source file"
+    );
+}
+
+/// Verify GitLab subgroup URL parsing.
+#[test]
+fn parse_gitlab_subgroup_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let user_repo =
+        setup_user_repo_url_origin(dir.path(), "https://gitlab.com/acme/subgroup/app.git");
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let out = run_gcm(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &[],
+        &[
+            "resolve",
+            "--mr",
+            "https://gitlab.com/acme/subgroup/app/-/merge_requests/3",
+            "--dry-run",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(stdout.contains("gcm-resolve-gitlab-3"), "{stdout}");
 }
