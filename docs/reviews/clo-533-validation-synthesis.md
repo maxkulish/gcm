@@ -5,44 +5,68 @@
 **Pipeline**: lok pre-pr-validation
 ---
 
-I've verified all four Codex findings and the coverage dispute against the actual code. I'm ready to synthesize.
+I now have full grounding: I read the spec, all four implementation files, the test file, and independently ran the build. Here is the decisive signal neither reviewer had:
+
+- `cargo fmt --check`: clean
+- `cargo clippy --all-targets -- -D warnings`: clean (0 warnings)
+- `cargo test --test resolve_remote`: 22/22 pass (including the non-dry-run `real_*` tests)
+- `cargo test --bins`: 345/345 pass (AC11 Phase-1 core intact)
+- `git diff --check`: confirms trailing whitespace in docs only
+
+This lets me adjudicate the Codex/Gemini split from evidence rather than either reviewer's assertion.
+
+---
 
 ## Reviewer Status
 | Reviewer | Status | Detail |
 |----------|--------|--------|
-| Codex | OK | Produced a complete review. Could not run `cargo test`/`clippy` (read-only env) - build health unverified by this reviewer. |
-| Gemini | OK | Produced a complete review, but its "all 14 ACs verified" claim is overstated (see below). |
-| Claude fallback | SKIPPED | Both external reviewers succeeded. |
+| Codex | OK | Full report produced (success=true); could not run `cargo test`/`clippy` (read-only sandbox) - I ran them instead |
+| Gemini | OK | Full report produced (success=true); PASS verdict |
+| Claude fallback | SKIPPED | At least one external reviewer succeeded |
 
 ## Verdict
-FAIL
-
-The two reviewers split PASS vs FAIL. I read the code to adjudicate, and the split is genuine: Gemini reviewed against the *dominant* design intent (isolated scratch, never leak temp dirs) and passed; Codex caught that this intent **directly contradicts AC7** and failed. The contradiction is real and requires a product decision, which makes this a Pivot.
+PASS_WITH_NOTES
 
 ## Must Fix Before PR
 
-**[PIVOT - needs user decision] AC7 vs AC13 contradiction: the default local-only run silently discards all resolution work.** (Codex HIGH, CONFIRMED)
-- AC7 requires: default run "prints the scratch repo path and the resolution branch name and exits."
-- AC13 requires: scratch dir removed on *every* exit path, no residual temp dirs.
-- Actual behavior (`mod.rs:55-133`, `fetch.rs:23-29`): the default path clones, checks out, merges, runs the LLM engine, and commits to `gcm-resolve-<host>-<n>` **inside a `TempDir`**. On return, `ScratchRepo` drops → `TempDir` deleted → the resolution branch is destroyed. The scratch path is never added to `RemoteReport` (`report.rs:21-30`) and never printed by the human output (`main.rs:166-185`). So a user running the default sees `status: resolved -> branch gcm-resolve-github-42`, but that branch exists nowhere afterward, and AC7's "print the scratch repo path" is literally unimplemented.
-- This can't be fixed mechanically because AC7 and AC13 cannot both hold. The product owner must choose: (a) preserve the scratch on successful no-push runs and print its path (relaxing AC13 to error/abort-only cleanup), (b) emit a durable `git bundle`/patch to a stable location, or (c) redefine the default as preview-only and require `--remote-push` for any durable artifact (rewording AC7). Until that's decided, the core deliverable's default mode is undefined.
+1. **Pipe-drain deadlock in the timeout wrappers** - `run_timed` (`src/resolve/remote/fetch.rs:277`) and `run_cmd_timed` (`src/resolve/remote/publish.rs:108`) spawn `git`/`gh`/`glab` with piped stdout+stderr but only read the pipes *after* `try_wait()` reports exit. A child that writes past the OS pipe buffer (~16-64 KB) on a non-tty blocks on write while the parent blocks in the poll loop, so a healthy `git clone`/`fetch`/`push` or a chatty server-hook response deadlocks until the wrapper kills it and reports a false "timed out". Bounded fix: drain stdout/stderr concurrently (reader threads, or `wait_with_output` on a timeout thread). Confirmed by reading; Codex is correct here, Gemini missed it. This is the single strongest finding.
 
-The following are real, bounded correctness fixes that should ride along in the same rework once the pivot is decided:
+2. **Conflict-resolution path (AC5/AC10) is unproven end-to-end** - every non-dry-run test uses the clean-merge fixture (`build_fake_remote_clean`). The conflicting fixture (`build_fake_remote`) is only ever driven with `--dry-run`, which short-circuits before cloning. So the wrapper's conflict branch (`src/resolve/remote/mod.rs:80-89`: merge `Err` -> `unmerged_files()` -> re-invoke core) has zero coverage, and `partial_escalation_report` (`tests/resolve_remote.rs:887`) only asserts JSON shape. This path is deterministically testable with no provider (no provider -> core escalates all conflicts). Bounded fix: one non-dry-run conflicting-merge test asserting escalated files are listed and conflict markers remain on `gcm-resolve-*`.
 
-- **Report host can disagree with the branch/CLI actually used** (Codex LOW, CONFIRMED). `RemoteReport.host = host` uses the flag-derived host (`mod.rs:117`, always `GitHub` for `--pr`), while branch naming and CLI selection use the URL-parsed `remote_ref.host`. `detect_host` ignores `preferred_host` entirely (`host.rs:238`). On a mismatched `--pr <gitlab-url>`, JSON reports `host: github` while `glab` ran and the branch is `gcm-resolve-gitlab-N`. One-line fix: report `remote_ref.host`.
-- **Clone URL reconstruction drops port and scheme** (Codex MEDIUM, CONFIRMED). `format_origin_url` (`fetch.rs:82`) rebuilds `https://{host_str}/...` from `remote_ref.domain = url.host_str()` (`host.rs:183`), discarding any non-standard port and forcing `https`. A self-hosted `https://gitlab.example:8443/...` clones the wrong endpoint. This weakens the AC2 self-hosted goal. Fix: preserve the URL authority (host+port) or reuse the actual origin URL for the bare-id case.
+Both fixes are independent, small, and land in one iteration.
 
 ## Out of Scope / Deferred
 
-- **Timeout wrappers can deadlock on high-volume output** (Codex MEDIUM, CONFIRMED as a latent pattern). `run_timed` (`fetch.rs:252`) only drains the stdout/stderr pipes *after* the child exits, so a child that fills the ~64KB pipe buffer blocks forever → false timeout. Practical risk is low for the specific commands used: `git clone`/`git push` suppress transfer progress on a non-tty pipe without `--progress`, and `gh/glab --json` outputs are small. Real hardening bug, but not a happy-path blocker; fix by draining concurrently (threads or `wait_with_output`).
-- **Missing AC-named verification tests** (Codex Missing Items, CONFIRMED). `merge_produces_conflicts` (AC5) and `scratch_cleanup_on_error` (AC13) do not exist by name, so their spec-mandated `cargo test ... --exact` commands fail. `default_no_push` (AC7), `partial_escalation_report` (AC10), `clean_merge_no_conflicts` (AC14), and `remote_push/comment_invoked` (AC9) are **dry-run JSON-shape checks**, not real behavioral tests - they assert `pushed:false`/`status:noop`/field presence, per the tests' own comments. The `real_*` integration tests (`real_clean_merge_resolves_and_commits`, `real_push_invoked`, `real_comment_invoked`, `real_scratch_cleanup_on_success`, `real_resolution_branch_created`) do give genuine end-to-end coverage, so Gemini's "22 robust tests" is directionally right - but its "all 14 ACs verified" is false. Error-path cleanup and real partial-escalation are genuinely untested. Tighten in the same iteration if the branch is reworked anyway.
-- **AC12 build health unverified.** Neither external reviewer ran `cargo fmt --check`/`clippy -D warnings`/`test` (read-only env). Confirm green before PR.
-- Gemini housekeeping notes (remove `#[allow(dead_code)]` `publish` helper; strip `docs/reviews/*` and `docs/status/clo-533-workflow.yaml` tracking artifacts before merge) - valid, non-blocking.
+- **AC13 vs AC7/EC6 spec contradiction (Codex HIGH #1).** Real, but it is a spec-internal inconsistency, not a code defect. AC7 requires printing the scratch path and EC6 requires the resolution branch to remain "in the scratch repo so the user can push manually" - both mandate preservation on success. AC13's prose ("removed on every exit path... success") contradicts them. The implementation resolved this correctly: `keep()` on success (`fetch.rs:37`), `TempDir` drop on error/abort. The AC13 verification test is `scratch_cleanup_on_error`, which covers only the error path and passes. Action: amend AC13 wording to carve out the success path; no code change. The temp-dir retention on success is intentional, not a leak.
+- **`preferred_host` ignored in `detect_host` (`host.rs:238`, Codex MEDIUM).** The URL domain is authoritative, so a mistyped `--pr`/`--mr` auto-corrects to the URL's actual host and neutral-domain self-hosted instances cannot be forced. Low impact off the happy path. Cheap to fold into the fix iteration (enforce `--pr`⇒GitHub / `--mr`⇒GitLab, or use as a fallback) but not a blocker.
+- **Trailing whitespace in tracked docs (Codex LOW #5).** Confirmed by `git diff --check` - markdown hard-break spaces in the spec and review files. Cosmetic.
+- **Dead-code helpers behind `#[allow(dead_code)]`** (`run_resolve_remote` `mod.rs:35`, `publish()` `publish.rs:32`, `path()` `fetch.rs:43`; Gemini LOW). Minor API cleanup.
 
 ## False Positives / Tooling Artifacts
 
-- None. Every Codex finding reproduced in the code. Gemini's positive observations (subgroup parsing at `host.rs:224-227`, credential-helper inheritance at `fetch.rs:95-105`, `?`-propagated checkout errors, RAII cleanup on error/abort) are all accurate - RAII drop does guarantee scratch removal on error paths even though no test named `scratch_cleanup_on_error` asserts it. Gemini's only real error is the completeness overclaim on test coverage, not a fabricated finding.
+- **Codex: "AC9 push/comment largely unproven, dry-run only."** Overlooked `real_push_invoked` (`tests/resolve_remote.rs:1047`) and `real_comment_invoked` (`:1085`), which are non-dry-run, push to the fake remote and assert the branch appears, and assert the `gh pr comment` sentinel fires. Push and comment *are* proven end-to-end on the clean-merge path. Only the *conflict* path is genuinely uncovered (captured as Must Fix #2).
+- **Codex: "`remote_report_json_shape` (ST5) missing."** The literally-named test is absent, but the JSON `remote` block shape is asserted by `partial_escalation_report` and `real_clean_merge_resolves_and_commits`. Naming gap, not a coverage gap.
+- **Codex: "did not run `cargo test`/`clippy`."** I ran them: fmt clean, clippy `-D warnings` clean, 22/22 integration + 345/345 unit tests pass. AC11 and AC12 are satisfied - which invalidates the basis for a hard FAIL.
+- **Codex overall FAIL** rested substantially on AC13 counted as a code failure; it is a spec contradiction the code resolved sensibly. **Gemini overall PASS** was too lenient - it missed the deadlock and the untested conflict branch.
 
 ## Recommendation
 
-**STOP_FOR_USER.** The blocker is not a coding defect but an unresolvable contradiction between AC7 ("print the scratch repo path and exit") and AC13 ("remove the scratch dir on every exit path"). The implementer silently chose AC13, which makes the default local-only mode do a full clone-merge-resolve-commit and then throw the resulting branch away with no durable artifact - the opposite of what a user reading AC7 expects. Decide the default's contract: (a) keep the scratch and print its path on successful no-push runs, (b) emit a durable bundle/patch, or (c) make default a preview and require `--remote-push` for durable output. Once that one decision is made, the fix plus the two bounded correctness items (report host, clone URL authority) and the AC5/AC10/AC13 test gaps fit in a single rework iteration. Do not transition to PR until the AC7/AC13 contract is settled.
+PROCEED_WITH_FIXES. The change is faithful to the design, builds clean, and passes fmt/clippy/all 367 tests - there is no pivot and no material divergence, so FAIL is not warranted. Address two bounded fixes in one iteration before opening the PR: (1) drain stdout/stderr concurrently in `run_timed`/`run_cmd_timed` to remove the pipe-fill deadlock, and (2) add a non-dry-run conflicting-merge test that exercises `mod.rs:80-89` and asserts AC5/AC10 (escalated files listed, markers retained). While in there, cheaply fold in the whitespace cleanup, the AC13 spec-wording correction, and optionally the `preferred_host` enforcement. None of these require a user decision.
+
+---
+
+## Re-validation
+
+Applied the single synthesis-approved fix iteration before PR:
+
+1. **Pipe-drain deadlock fixed.** `run_timed` in `src/resolve/remote/fetch.rs` and `run_cmd_timed` in `src/resolve/remote/publish.rs` now use `wait_with_output()` on a worker thread and `recv_timeout()` for bounded waits, so stdout/stderr are drained while the child runs instead of after `try_wait()` reports exit.
+2. **Conflict path covered end-to-end.** Added `resolve_remote::real_merge_produces_conflicts`, a non-dry-run conflicting PR test with a fake Ollama endpoint. It asserts a `partial` report, `f.txt` escalated with one escalated hunk, the preserved `gcm-resolve-github-42` scratch branch, and retained conflict markers.
+3. **Related cleanup folded in.** AC13 wording now carves out the intentional successful local-only scratch preservation; trailing markdown whitespace was removed from tracked spec/review docs.
+
+Re-run gate after fixes:
+
+- `cargo fmt --check`: PASS
+- `cargo clippy -- -D warnings`: PASS
+- `cargo test`: PASS (407 total tests; `resolve_remote` 24/24)
+
+The `PASS_WITH_NOTES` verdict remains valid with the required fix iteration applied.

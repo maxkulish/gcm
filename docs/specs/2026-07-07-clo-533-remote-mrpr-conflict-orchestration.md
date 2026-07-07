@@ -1,8 +1,8 @@
 # CLO-533 Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 
-**Status:** draft  
-**Type:** specification  
-**Linear:** https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2  
+**Status:** draft
+**Type:** specification
+**Linear:** https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2
 **Design context:** `docs/designs/clo-531-gcm-resolve.md` §3 (layered pipeline), §4 (CLI surface), §7 (test plan). Phase 1 core (`src/resolve/`) is reused unchanged.
 
 ## 1. Problem and goal
@@ -37,7 +37,7 @@ This is intentionally a thin fetch-then-invoke-core wrapper: all LLM resolution,
   - *Verification:* `cargo test resolve:: -- --exact` and `cargo test markers:: -- --exact`
 - [ ] **AC12 - Code quality:** `cargo fmt --check` and `cargo clippy -- -D warnings` pass; all new modules have unit tests.
   - *Verification:* `cargo fmt --check && cargo clippy -- -D warnings && cargo test`
-- [ ] **AC13 - Scratch repo cleanup:** On every exit path (success, error, or user abort), the scratch directory is removed. No residual `gcm-*` temp directories remain after execution.
+- [ ] **AC13 - Scratch repo cleanup:** On error or user abort, the scratch directory is removed. On successful local-only runs, the scratch repo is intentionally preserved and reported so the user can inspect or manually push the resolution branch.
   - *Verification:* `cargo test resolve_remote::scratch_cleanup_on_error -- --exact`
 - [ ] **AC14 - Clean merge path:** If the source branch merges cleanly into the base, the remote path returns a success status (`resolved` or `noop`) with no provider call and a resolution branch containing the merged tree.
   - *Verification:* `cargo test resolve_remote::clean_merge_no_conflicts -- --exact`
@@ -45,15 +45,15 @@ This is intentionally a thin fetch-then-invoke-core wrapper: all LLM resolution,
 ## 3. Sub-tasks
 
 ### ST1 Add `--mr` / `--pr` flags to `Commands::Resolve`
-**Files:** `src/cli.rs`, `src/cli.rs` tests.  
-**Tests:** `resolve_subcommand_parses_with_flags` extended; new `resolve_remote_flags_parses`.  
-**Estimate:** S  
+**Files:** `src/cli.rs`, `src/cli.rs` tests.
+**Tests:** `resolve_subcommand_parses_with_flags` extended; new `resolve_remote_flags_parses`.
+**Estimate:** S
 Add two optional `Option<String>` arguments (`--mr`, `--pr`) to the existing `Resolve` variant. They are mutually exclusive at parse time via a `clap` `group` or a runtime check. When neither is provided, dispatch to the existing local path.
 
 ### ST2 Host detection and CLI availability
-**Files:** `src/resolve/remote/host.rs` (new), `src/resolve/remote/mod.rs` (new), `src/error.rs`.  
-**Tests:** `parse_github_url`, `parse_gitlab_url`, `host_from_origin_remote`, `missing_gh_error`, `missing_glab_error`, `custom_gitlab_domain`.  
-**Estimate:** S  
+**Files:** `src/resolve/remote/host.rs` (new), `src/resolve/remote/mod.rs` (new), `src/error.rs`.
+**Tests:** `parse_github_url`, `parse_gitlab_url`, `host_from_origin_remote`, `missing_gh_error`, `missing_glab_error`, `custom_gitlab_domain`.
+**Estimate:** S
 Define `enum Host { GitHub, GitLab }` with `cli_name()` (`gh`/`glab`), URL patterns, and a parser. Add structured `GcmError` variants:
 ```rust
 RemoteHost { host: String, reason: String }
@@ -62,9 +62,9 @@ RemoteCliMissing { cli: String, install_hint: String }
 Detection uses `git remote get-url origin` for bare ids and domain heuristics for full URLs and self-hosted remotes (e.g. `git@gitlab.company.corp:group/repo.git`).
 
 ### ST3 Temp-clone isolation and merge orchestration
-**Files:** `src/resolve/remote/fetch.rs` (new), `src/resolve/remote/orchestrate.rs` (new), `src/git.rs` helpers, `src/resolve/mod.rs`.  
-**Tests:** `scratch_repo_is_isolated`, `merge_produces_conflicts`, `resolution_branch_naming`, `scratch_cleanup_on_error`, `clean_merge_no_conflicts`.  
-**Estimate:** M  
+**Files:** `src/resolve/remote/fetch.rs` (new), `src/resolve/remote/orchestrate.rs` (new), `src/git.rs` helpers, `src/resolve/mod.rs`.
+**Tests:** `scratch_repo_is_isolated`, `merge_produces_conflicts`, `resolution_branch_naming`, `scratch_cleanup_on_error`, `clean_merge_no_conflicts`.
+**Estimate:** M
 Create a `tempfile::TempDir` scratch clone of the remote repo. Decompose the work:
 - **ST3a - Clone:** `git clone <remote-url> <tempdir>`; configure the host CLI credential helper for HTTPS (e.g. `git config credential.helper "!gh auth git-credential"` for GitHub).
 - **ST3b - Fetch source branch:** Run `gh pr checkout <id> --branch gcm-resolve-source-<id>` / `glab mr checkout <id> --branch gcm-resolve-source-<id>` in the scratch repo.
@@ -75,15 +75,15 @@ Create a `tempfile::TempDir` scratch clone of the remote repo. Decompose the wor
 All shell-outs capture stdout/stderr separately and forward diagnostics to `stderr` only, so `--json` stdout remains clean. If the merge produces no conflicts, the engine returns `ResolveStatus::Resolved`/`Noop` instead of `NoConflictInProgress`/`NoConflicts`.
 
 ### ST4 Optional publish step (push + comment)
-**Files:** `src/resolve/remote/publish.rs` (new), `src/resolve/remote/mod.rs`, `src/resolve/report.rs`.  
-**Tests:** `remote_push_invoked`, `remote_comment_invoked`, `default_no_push`.  
-**Estimate:** M  
+**Files:** `src/resolve/remote/publish.rs` (new), `src/resolve/remote/mod.rs`, `src/resolve/report.rs`.
+**Tests:** `remote_push_invoked`, `remote_comment_invoked`, `default_no_push`.
+**Estimate:** M
 If `--remote-push` is passed, run `git push -u <remote> <resolution-branch>`. If `--remote-comment` is passed, run `gh pr comment <id> --body-file <tmp>` / `glab mr note <id> --message <tmp>` with a short summary (file count, escalated count). Both are off by default.
 
 ### ST5 Wire remote path and enrich the report
-**Files:** `src/resolve/mod.rs`, `src/resolve/report.rs`, `src/main.rs`.  
-**Tests:** `partial_escalation_report`, `dry_run_no_clone`, `remote_report_json_shape`, `clean_merge_no_conflicts`.  
-**Estimate:** M  
+**Files:** `src/resolve/mod.rs`, `src/resolve/report.rs`, `src/main.rs`.
+**Tests:** `partial_escalation_report`, `dry_run_no_clone`, `remote_report_json_shape`, `clean_merge_no_conflicts`.
+**Estimate:** M
 Refactor `resolve::run_resolve` into `resolve::run_resolve_in_repo(repo: &Repo, args: &Cli) -> Result<ResolveReport, GcmError>` so the local path and remote path share the same core. The local path discovers the repo then calls `run_resolve_in_repo`; the remote path calls it on the scratch repo. Extend `ResolveReport` with an optional `remote: RemoteReport` block:
 
 ```rust
@@ -101,9 +101,9 @@ pub struct RemoteReport {
 Emit it on `--json`.
 
 ### ST6 Integration/acceptance tests with fixture scripts
-**Files:** `tests/resolve_remote_integration.rs`, `tests/fixtures/fake-gh`, `tests/fixtures/fake-glab`.  
-**Tests:** host-scenario table (see §4).  
-**Estimate:** L  
+**Files:** `tests/resolve_remote_integration.rs`, `tests/fixtures/fake-gh`, `tests/fixtures/fake-glab`.
+**Tests:** host-scenario table (see §4).
+**Estimate:** L
 Build shell-script mocks for `gh`/`glab` and `git` helpers that return JSON/refs as needed. Assert command-line invocations, branch names, and dry-run behavior. Real network calls are never made in tests.
 
 ## 4. Evaluation table

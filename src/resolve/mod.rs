@@ -447,6 +447,36 @@ fn resolve_file(
     // Reconstruct the resolved file text.
     let resolved_text = reconstruct(&file, &resolutions, &content);
 
+    // If at least one hunk could not be resolved, keep the original conflict
+    // marker block(s) in place and report the file as escalated. Do not run the
+    // validation gate here: retained markers are the expected escalation
+    // artifact, not a provider-output validation failure.
+    if escalated_count > 0 {
+        if args.dry_run {
+            if !args.json {
+                eprintln!(
+                    "gcm resolve: {path} would be partially resolved ({auto_count} auto, {llm_count} LLM, {escalated_count} escalated)"
+                );
+            }
+            return Ok(FileResolution {
+                path: path.to_string(),
+                hunks_total: total,
+                hunks_auto: auto_count,
+                hunks_llm: llm_count,
+                hunks_escalated: escalated_count,
+                action: FileAction::DryRun,
+            });
+        }
+        return Ok(FileResolution {
+            path: path.to_string(),
+            hunks_total: total,
+            hunks_auto: auto_count,
+            hunks_llm: llm_count,
+            hunks_escalated: escalated_count,
+            action: FileAction::Escalated,
+        });
+    }
+
     // Validation gate.
     let validated_text =
         match validate(&resolved_text, conflict.validate_cmd.as_deref(), repo, path) {

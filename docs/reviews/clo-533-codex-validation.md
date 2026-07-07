@@ -9,28 +9,28 @@
 
 ## Findings
 
-**HIGH** - Default local-only remote resolve loses the resolved branch.
-AC7 requires default runs to print the scratch repo path and branch name, with no push/comment. The implementation commits into a `TempDir` scratch repo, does not include the scratch path in `RemoteReport`, and the human output only prints branch/base/source/status. When `run_resolve_remote_opt` returns, the `TempDir` is dropped, so a default non-pushed resolution is effectively discarded. See [spec](/Users/mk/Code/gcm--feat-clo-533-remote-mr/docs/specs/2026-07-07-clo-533-remote-mrpr-conflict-orchestration.md:28), [ScratchRepo](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/fetch.rs:23), [remote flow](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/mod.rs:55), and [human output](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/main.rs:166).
+- HIGH: AC13 is not implemented as written. The spec requires scratch cleanup on every exit path, but success calls `TempDir::keep()` and reports the preserved path. That leaves a cloned repo behind by design. See [spec](</Users/mk/Code/gcm--feat-clo-533-remote-mr/docs/specs/2026-07-07-clo-533-remote-mrpr-conflict-orchestration.md:40>), [fetch.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/fetch.rs:34>), and [mod.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/mod.rs:125>). The spec conflicts with AC7/EC6 here, but the branch currently fails AC13.
 
-**MEDIUM** - Shell-out timeout wrappers can deadlock on verbose commands.
-`run_timed` pipes stdout/stderr, waits with `try_wait()`, and only drains the pipes after the child exits. A verbose `git clone`, `gh`, or `glab` command can fill a pipe and block before exit, causing a false timeout. Same pattern exists in publish. See [fetch.rs](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/fetch.rs:257) and [publish.rs](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/publish.rs:109).
+- HIGH: The timeout wrappers can deadlock healthy commands. `git`, `gh`, and `glab` are spawned with piped stdout/stderr, but output is only drained after `try_wait()` reports process exit. A verbose `git clone`, `fetch`, `push`, or host CLI command can fill the pipe and block until the wrapper times out. See [fetch.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/fetch.rs:277>) and [publish.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/publish.rs:108>).
 
-**MEDIUM** - Remote clone URL reconstruction drops important URL components.
-`RemoteRef.domain` is populated with `Url::host_str()`, then `format_origin_url` rebuilds `https://{domain}/{owner}/{repo}`. That loses ports and other original URL details, so self-hosted URLs like `https://gitlab.example:8443/group/app/-/merge_requests/1` clone the wrong remote. This weakens AC2/self-hosted support and AC5 orchestration. See [host parsing](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/host.rs:181) and [clone URL build](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/fetch.rs:82).
+- MEDIUM: The selected `--pr`/`--mr` host is ignored during host detection. `resolve_remote_ref` receives `preferred_host`, but `detect_host` discards it, so `gcm resolve --pr <gitlab-url>` can silently use GitLab/glab instead of enforcing GitHub PR semantics and missing-`gh` behavior. See [host.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/host.rs:62>) and [host.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/host.rs:238>).
 
-**LOW** - Report host can disagree with the actual parsed host on mismatched flag/URL input.
-`extract_remote_arg` returns host from `--pr`/`--mr`, but `resolve_remote_ref` can parse a different host family from the URL; the branch uses `remote_ref.host`, while the report uses the flag-derived `host`. Either reject mismatches or report `remote_ref.host`. See [extract_remote_arg](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/mod.rs:159) and [report assignment](/Users/mk/Code/gcm--feat-clo-533-remote-mr/src/resolve/remote/mod.rs:117).
+- MEDIUM: The conflict-producing remote path is not covered end to end. The tests named for push/comment are dry-run checks, `partial_escalation_report` only verifies dry-run JSON shape, and the non-dry-run tests use clean merges. That leaves AC5 and AC10 largely unproven. See [tests/resolve_remote.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/tests/resolve_remote.rs:760>) and [tests/resolve_remote.rs](</Users/mk/Code/gcm--feat-clo-533-remote-mr/tests/resolve_remote.rs:888>).
+
+- LOW: `git diff --check main...HEAD` fails due trailing whitespace in new docs/review files, including the spec. `cargo fmt --check` passed.
 
 ## Missing Items
 
-- AC7 is not complete: no scratch repo path is printed or serialized, and the default non-pushed result is not durable.
-- AC5/AC10 acceptance coverage is incomplete: there is no `merge_produces_conflicts` test, and `partial_escalation_report` only checks dry-run JSON shape, not a real partial escalation.
-- AC13 error-path cleanup is not covered by the requested `scratch_cleanup_on_error` test name; only success/user-repo isolation is covered.
-- I did not run `cargo test`/`clippy` because this review environment is read-only and Rust builds need to write to `target`.
+- AC5: no `merge_produces_conflicts` test exists.
+- AC10: no real partial escalation test verifies unresolved files and retained conflict markers.
+- AC13: no `scratch_cleanup_on_error` test exists, and success cleanup is contradicted by implementation.
+- ST5 mentions `remote_report_json_shape`, but I did not find that test.
+- I did not run `cargo test` or `cargo clippy` because this sandbox is read-only and those need build artifacts.
 
 ## Recommendations
 
-- Resolve the AC7/AC13 design conflict explicitly. Either preserve the scratch repo on successful default local-only runs and print its path, or change the product contract so default runs emit a patch/bundle or require `--remote-push` for durable output.
-- Replace the polling pipe wrappers with a timeout implementation that drains stdout/stderr concurrently, or avoid piping noisy streams when output is not needed.
-- Preserve the original clone URL or store `scheme`, `host`, `port`, and project path separately instead of reconstructing from `host_str()`.
-- Add real non-dry-run conflict tests for merge-to-core, partial escalation, checkout failure propagation, and cleanup-on-error.
+- Resolve the AC7 vs AC13 contract first. Either preserve a user-visible worktree intentionally and remove AC13, or clean temp dirs and provide another way to access/push the resolution branch.
+- Replace the manual `try_wait()` loops with a helper that drains stdout/stderr concurrently while enforcing timeout.
+- Enforce `--pr => GitHub/gh` and `--mr => GitLab/glab`, or document and test cross-host URL auto-detection explicitly.
+- Add a fake provider or deterministic resolver test path so remote conflicted merges, partial escalation, marker retention, push, and comment behavior are exercised without network calls.
+- Clean trailing whitespace or stop using Markdown hard-break spaces in tracked docs if `git diff --check` is expected to stay clean.

@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-07T17:52:11.105Z'
-  updated_at: '2026-07-07T19:58:25.826Z'
+  updated_at: '2026-07-07T20:21:14.848Z'
 phases:
   discovery:
     status: skipped
@@ -211,5 +211,32 @@ history:
     details: >-
       Rework iteration 3: resolve AC7/AC13 contradiction (keep scratch on success, cleanup on error), fix
       RemoteReport.host mismatch, fix format_origin_url dropping port/scheme.
+  - timestamp: '2026-07-07T20:02:01.062Z'
+    action: rework_complete
+    phase: implement
+    details: >-
+      Rework iteration 3 complete: AC7/AC13 contradiction resolved (scratch preserved on success, path in report),
+      RemoteReport.host uses URL-parsed host, format_origin_url preserves port. 405 tests green. Commit d52159a.
+  - timestamp: '2026-07-07T20:10:35.204Z'
+    action: rework_started
+    phase: implement
+    details: >-
+      Rework iteration 4: fix pipe-drain deadlock in run_timed/run_cmd_timed using wait_with_output in a thread with
+      recv_timeout. Add conflicting-merge test. Clean trailing whitespace.
+  - timestamp: '2026-07-07T20:19:01.800Z'
+    action: rework_progress
+    phase: implement
+    details: >-
+      Rework iteration 4 pre-merge gate passed after initial pipe-drain fix and placeholder conflict test. Tightening
+      conflict test to assert AC5/AC10 with a fake Ollama endpoint and adding core handling so unresolved hunks report
+      escalation instead of erroring during validation.
+  - timestamp: '2026-07-07T20:21:14.848Z'
+    action: pre_merge_gate_passed
+    phase: implement
+    details: >-
+      Validation fix iteration 4 applied. Full pre-merge gate passed: cargo fmt --check, cargo clippy -- -D warnings,
+      cargo test (407 total tests; resolve_remote now 24/24). Must-fix #1 addressed with wait_with_output-based timeout
+      wrappers; must-fix #2 addressed with non-dry-run conflicting merge test using fake Ollama and retained marker
+      assertions.
 task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2

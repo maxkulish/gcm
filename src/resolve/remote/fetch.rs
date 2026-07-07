@@ -3,10 +3,9 @@
 //! All git/gh/glab shell-outs are wrapped with bounded timeouts, stdout/stderr
 //! capture, and stderr-only diagnostics so `--json` stdout stays clean.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tempfile::TempDir;
 
@@ -267,8 +266,11 @@ fn run_cmd(cmd: Command, name: &str, timeout: Duration) -> Result<(), GcmError> 
     run_timed(cmd, name, timeout).map(|_| ())
 }
 
-/// Run a command with a bounded timeout using `try_wait()` polling.
-/// On timeout, kills the child process and returns an error.
+/// Run a command with a bounded timeout. Uses a thread to call `wait_with_output`
+/// which drains stdout/stderr concurrently, avoiding the pipe-fill deadlock that
+/// occurs when pipes are only drained after the child exits. The timeout is
+/// enforced via `recv_timeout` on a channel. On timeout, the child process is
+/// killed.
 fn run_timed(
     mut cmd: Command,
     name: &str,
@@ -280,48 +282,36 @@ fn run_timed(
         .spawn()
         .map_err(|e| GcmError::Git(format!("failed to run {name}: {e}")))?;
 
-    let deadline = Instant::now() + timeout;
-    let mut child = child;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let pid = child.id();
+    std::thread::spawn(move || {
+        let result = child.wait_with_output();
+        let _ = tx.send(result);
+    });
 
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                if let Some(ref mut s) = child.stdout.take() {
-                    let _ = s.read_to_end(&mut stdout);
-                }
-                if let Some(ref mut s) = child.stderr.take() {
-                    let _ = s.read_to_end(&mut stderr);
-                }
-                if status.success() {
-                    return Ok(std::process::Output {
-                        status,
-                        stdout,
-                        stderr,
-                    });
-                }
-                let stderr_str = String::from_utf8_lossy(&stderr);
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                Ok(output)
+            } else {
+                let stderr_str = String::from_utf8_lossy(&output.stderr);
                 eprintln!("gcm resolve: {name} failed: {stderr_str}");
-                return Err(GcmError::RemoteHost {
+                Err(GcmError::RemoteHost {
                     host: name.to_string(),
                     reason: stderr_str.trim().to_string(),
-                });
+                })
             }
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(GcmError::RemoteHost {
-                        host: name.to_string(),
-                        reason: format!("timed out after {timeout:?}"),
-                    });
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => {
-                return Err(GcmError::Git(format!("failed to wait on {name}: {e}")));
-            }
+        }
+        Ok(Err(e)) => Err(GcmError::Git(format!("failed to wait on {name}: {e}"))),
+        Err(_) => {
+            // Timeout: kill the child process.
+            let _ = std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .status();
+            Err(GcmError::RemoteHost {
+                host: name.to_string(),
+                reason: format!("timed out after {timeout:?}"),
+            })
         }
     }
 }

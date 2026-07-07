@@ -8,7 +8,7 @@
 
 ## 1. Problem Statement Assessment
 
-The problem statement in the specification is exceptionally clear, self-contained, and completely aligned with the Linear task description. It correctly frames Phase 2 as a thin fetch-then-invoke orchestration layer over the Phase 1 core engine. 
+The problem statement in the specification is exceptionally clear, self-contained, and completely aligned with the Linear task description. It correctly frames Phase 2 as a thin fetch-then-invoke orchestration layer over the Phase 1 core engine.
 
 However, there is an unstated assumption regarding authentication. The specification assumes that the external CLI tools (`gh` and `glab`) are already authenticated and have correct read/write permissions for target repositories. If authentication is missing, the orchestration layer must fail gracefully with highly actionable hints for user setup.
 

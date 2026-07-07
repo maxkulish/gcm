@@ -64,7 +64,7 @@ The problem statement is **clear and self-contained**. It correctly identifies t
    - ST3b: Fetch branches via `gh`/`glab`
    - ST3c: Create resolution branch and merge
    - ST3d: Invoke `run_resolve_in_repo`
-   
+
    Each of these has error paths that need handling.
 
 2. **Missing sub-task for error type extensions**: Adding `GcmError::RemoteHost` and `GcmError::RemoteCliMissing` should be an explicit sub-task (or part of ST2).
@@ -174,7 +174,7 @@ The specification is well-structured, correctly scopes Phase 2 as orchestration 
    RemoteCliMissing { cli: String, install_hint: String }
    ```
 
-3. **Add AC for cleanup invariant**: 
+3. **Add AC for cleanup invariant**:
    > AC13 - Scratch repo cleanup: On any exit path (success, error, user abort), the scratch directory is removed. No residual `gcm-*` temp directories remain after execution.
    > Verification: `cargo test resolve_remote::scratch_cleanup_on_error -- --exact`
 
