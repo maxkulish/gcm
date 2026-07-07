@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --start)
+**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --complete)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -39,7 +39,7 @@
 | [CLO-531](https://linear.app/cloud-ai/issue/CLO-531) | R1 | `gcm resolve` LLM-assisted merge conflict resolver (Phase 1: local markers) | HITL/Feature | Medium | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) | new: conflict-resolver core |
 | [CLO-534](https://linear.app/cloud-ai/issue/CLO-534) | Bugfix | Fix `gcm resolve` HTTP 400 on Gemini: resolve schema emits unsupported `additionalProperties` | Bug | High | Done | CLO-531 | resolve was non-functional on Gemini/Google default |
 | [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | CLO-531 (related) | — |
-| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | **In Progress** | CLO-531 (Done → ready) | thin fetch→core wrapper over the Phase-1 engine; only open task |
+| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | Done | CLO-531 | thin fetch→core wrapper over the Phase-1 engine |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes.
 
@@ -68,27 +68,26 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 └─ CLO-531  R1  gcm resolve — conflict engine (Phase 1)   ← builds on 489/487, 496·516, 490·514
    ├─ CLO-534  bug  resolve HTTP 400 on Gemini
    ├─ CLO-535  bug  resolve trailing-newline splice
-   └─ CLO-533  R2  resolve remote MR/PR orchestration (Phase 2)   ← OPEN / Backlog, ready
+   └─ CLO-533  R2  resolve remote MR/PR orchestration (Phase 2)   ← Done (PR #30)
 ```
 
 **Critical path (v1):** CLO-485 → CLO-486 → CLO-487 → CLO-491/CLO-492 → … → CLO-497 (complete).
 
 **Two parallel fronts after the tracer (CLO-486):** the workflow chain (CLO-487 → CLO-491 → CLO-492) and the provider chain (CLO-489 → CLO-494/CLO-495).
 
-**Live frontier:** the `gcm resolve` chain. Phase 1 (CLO-531) shipped (PR #25) with two bug fixes (CLO-534/535); **Phase 2 (CLO-533)** — remote MR/PR orchestration — is the sole remaining task, unblocked and ready.
+**Live frontier:** all tracked `gcm resolve` Phase 1/2 work is complete. Phase 1 (CLO-531) shipped (PR #25) with two bug fixes (CLO-534/535); Phase 2 (CLO-533) — remote MR/PR orchestration — shipped in PR #30.
 
 ## Active Work (WIP Limit: 3)
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | In Progress | spec | — |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
 
-> **CLO-533** is the only open task. Phase-1 core (CLO-531) merged (PR #25), so it is unblocked and ready. Low priority, HITL (design-time flag/isolation decisions). Everything else — all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1 (CLO-531 + fixes CLO-534/535) — is Done.
+> No open tasks remain in the tracked gcm roadmap. CLO-533 (remote MR/PR conflict orchestration) merged in PR #30; all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1/2 (CLO-531 + fixes CLO-534/535 + CLO-533) are Done.
 >
 > **CLO-497** (cross-platform releases + alias cutover) merged PR #20 (squash) 2026-06-24 → Done. It was the last open v1 slice: **the bash→Rust migration is complete**. The release pipeline (`.github/workflows/release.yml`) ships static-musl Linux + native macOS binaries on `v*` tags; cutover documented in `docs/guides/cutover-from-bash.md`. **CLO-514** (secret-scanner rule-pack + entropy engine) merged PR #18 2026-06-23 — new FR-60, hardens FR-50. All feature work Done: **CLO-514** secret-scanner rule-pack (PR #18), **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
 
@@ -102,6 +101,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | 2026-07-07 | Feature (HITL). Adds `gcm resolve --pr/--mr` remote orchestration over the Phase-1 resolver: host detection for GitHub/GitLab, isolated scratch clone, deterministic resolution branch, clean-merge noop, partial escalation reporting, opt-in `--remote-push`/`--remote-comment`, and integration tests with fake `gh`/`glab`. PR #30 merged. |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | 2026-07-07 | Bug (Low). When `gcm resolve` wrote a resolved hunk back and the provider's resolution text lacked a trailing newline, the first line after the conflict block was joined onto the last resolved line (cosmetic mis-format, e.g. a closing brace pulled up). Guarded the splice against a missing trailing newline. PR #29 merged. |
 | CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini | 2026-07-07 | Bug (High). `gcm resolve` was completely non-functional on the Gemini/Google provider (a common default) — the resolve schema emitted `additionalProperties`, which the Gemini API rejects with HTTP 400 before any resolution. Stripped the unsupported keyword from the resolve schema path. PR merged (same day as CLO-531). |
 | CLO-531 | `gcm resolve` LLM-assisted merge conflict resolver (Phase 1) | 2026-07-07 | New feature (HITL). `gcm resolve` subcommand resolves in-progress merge/rebase/cherry-pick conflicts via the existing `Provider` layer. Layered pipeline (LLM is last resort): `git checkout --conflict=zdiff3` → optional `mergiraf` structural pre-stage (on PATH) → provider resolves remaining hunks at function granularity with anti-hallucination prompt → syntax-safe validation gate (optional `conflict.validate_cmd`, one bounded retry, else escalate) → per-file preview + `[Y/n/e]`, never auto `git add`/`--continue`. New `[conflict]` config block; honors `--dry-run`/`--json`/`--yes`/`.gcmignore`/`--secret-scan`. Reuses provider trait (CLO-489), structured output (CLO-487), config (CLO-496/516), secret-scan (CLO-490/514). PR #25 merged. Unblocks CLO-533 (Phase 2). |

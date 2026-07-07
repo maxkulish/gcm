@@ -20,10 +20,10 @@ linear:
   priority: Low
   branch_actual: feat/clo-533-remote-mr
 workflow:
-  current_phase: pr
-  status: active
+  current_phase: complete
+  status: complete
   created_at: '2026-07-07T17:52:11.105Z'
-  updated_at: '2026-07-07T20:26:11.605Z'
+  updated_at: '2026-07-07T20:53:27.747Z'
 phases:
   discovery:
     status: skipped
@@ -75,9 +75,27 @@ phases:
         completion_tokens: 0
         task_label: pre-pr-validation-synthesis-no-count
   pr:
-    status: in_progress
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/30
+    pr_number: 30
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-07-07T20:47:48Z'
+    reviews_addressed: true
+    pre_merge_refetch_passed: true
+    pre_merge_refetch_at: '2026-07-07T20:49:32Z'
+    merged_at: '2026-07-07T20:50:18Z'
+    merge_commit: 02b0a09bdd02967d360ff207e683265fe441bef4
   complete:
-    status: pending
+    status: complete
+    merged_at: '2026-07-07T20:50:18Z'
+    merge_commit: 02b0a09bdd02967d360ff207e683265fe441bef4
+    aggregation_files_updated: true
+    lessons_learned:
+      - L1 - Decide durable artifact semantics before implementing temp-dir workflows
+      - L2 - Timed subprocess wrappers must drain stdout/stderr while the child runs
+      - L3 - Integration tests must not depend on ambient PATH, global git identity, or default branch names
+    lessons_file: .pi/lessons/clo-533-remote-mr-lessons.md
   spec:
     status: complete
     spec_file: docs/specs/2026-07-07-clo-533-remote-mrpr-conflict-orchestration.md
@@ -286,5 +304,65 @@ history:
     details: >-
       Pre-flight green after fixing an existing PATH race in mergiraf tests: cargo fmt --check, cargo clippy -- -D
       warnings, cargo clippy --tests, cargo test all pass.
+  - timestamp: '2026-07-07T20:26:41.692Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #30 opened: https://github.com/maxkulish/gcm/pull/30'
+  - timestamp: '2026-07-07T20:31:29.698Z'
+    action: ci_iteration
+    phase: pr
+    details: >-
+      Initial CI failed on clean GitHub runners: remote tests assumed no system gh in /usr/bin, deterministic default
+      branch, and git identity before scratch merge. Fixed by adding git-only PATH shim for missing-host tests, forcing
+      test user repos to main, and configuring scratch identity before merge. Local preflight green; pushed 7cac6e8.
+  - timestamp: '2026-07-07T20:35:59.998Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required GitHub checks passing on PR #30 after CI fix push 7cac6e8 (ubuntu-latest and macos-latest passed).'
+  - timestamp: '2026-07-07T20:48:35.488Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
+      inline comments expected after 10-minute current-head wait for PR #30 head
+      7cac6e8abb0172eda7d856a403cbded7949e9d1a.
+  - timestamp: '2026-07-07T20:48:51.928Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      0 review threads/comments found; 0 replies needed; /gemini review trailer verification vacuously satisfied;
+      unresolved-thread re-check clean.
+  - timestamp: '2026-07-07T20:49:15.304Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: 'Pre-merge re-fetch passed: no new inline comments since review_addressed and no unresolved review threads.'
+  - timestamp: '2026-07-07T20:49:47.835Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-07-07T20:50:46.671Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #30 merged. Merge commit 02b0a09bdd02967d360ff207e683265fe441bef4.'
+  - timestamp: '2026-07-07T20:50:50.523Z'
+    action: pr_merged
+    phase: pr
+    details: Merge commit 02b0a09bdd02967d360ff207e683265fe441bef4.
+  - timestamp: '2026-07-07T20:52:32.755Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-533 --complete. CLO-533 moved to Done/Recently
+      Completed; Phase 4 complete (2/2); no downstream tasks unblocked.
+  - timestamp: '2026-07-07T20:53:03.083Z'
+    action: lessons_extracted
+    phase: complete
+    details: '3 lessons recorded. File: .pi/lessons/clo-533-remote-mr-lessons.md'
+  - timestamp: '2026-07-07T20:53:27.747Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-533 fully completed. PR #30 merged. Project sync complete; no downstream tasks unblocked. Post-merge docs
+      PR will carry terminal workflow YAML, lessons, and aggregation updates.
 task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2
