@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-07T17:52:11.105Z'
-  updated_at: '2026-07-07T18:27:36.605Z'
+  updated_at: '2026-07-07T18:59:39.117Z'
 phases:
   discovery:
     status: skipped
@@ -36,11 +36,14 @@ phases:
     status: skipped
     skip_reason: Specification task - spec decomposition is the plan
   implement:
-    status: pending
+    status: validating
     commits:
       - e1a9526
       - a08a51d
       - 22600df
+      - 9e77fa2
+    assumption_outcomes: []
+    assumptions_revalidated: true
   pr:
     status: pending
   complete:
@@ -159,5 +162,37 @@ history:
     details: >-
       ST3+ST4+ST5 landed: scratch clone via fetch.rs, optional push/comment via publish.rs, remote wiring in main.rs and
       resolve/remote/mod.rs, RemoteReport in report.rs, Cli helpers remote_push()/remote_comment(). Commit 22600df.
+  - timestamp: '2026-07-07T18:29:27.628Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST6 landed: integration tests/tests/resolve_remote.rs with fake gh/glab scripts covering URL parsing and dry-run
+      purity. Commit 9e77fa2.
+  - timestamp: '2026-07-07T18:30:07.924Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All sub-tasks landed. fmt+clippy+test green. 4 commits: CLI flags, host detection/core refactor, scratch
+      clone/publish wiring, integration tests.
+  - timestamp: '2026-07-07T18:30:12.889Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      Specification task with no design phase. No design assumptions to revalidate. Phase-1 core assumptions (clean
+      merge, dry-run purity, host CLI on PATH) are covered by the spec and new tests.
+  - timestamp: '2026-07-07T18:58:25.836Z'
+    action: validation_gate_failed
+    phase: implement
+    details: >-
+      lok pre-pr-validation produced synthesis verdict FAIL. Must-fix: remote resolutions never committed (critical),
+      clean merge returns NoConflicts, self-hosted URL bug, default metadata missing, comment failure aborts, missing
+      integration tests. Routing back to implementation rework.
+  - timestamp: '2026-07-07T18:59:39.117Z'
+    action: rework_started
+    phase: implement
+    details: >-
+      Validation gate returned FAIL with 7 must-fix items. Starting rework iteration: (1) commit resolved tree, (2) fix
+      clean merge, (3) fix self-hosted URL, (4) always emit RemoteReport, (5) non-aborting comment, (6) bounded
+      timeouts, (7) integration tests.
 task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2

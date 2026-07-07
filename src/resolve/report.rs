@@ -29,7 +29,7 @@ pub struct RemoteReport {
     pub commented: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResolveStatus {
     /// All non-escalated files were accepted.
@@ -61,6 +61,18 @@ pub enum FileAction {
     Edited,
     Escalated,
     DryRun,
+}
+
+impl ResolveReport {
+    /// Human-readable status label for non-JSON output.
+    pub fn status_label(&self) -> &'static str {
+        match self.status {
+            ResolveStatus::Resolved => "resolved",
+            ResolveStatus::Partial => "partial",
+            ResolveStatus::Noop => "noop",
+            ResolveStatus::Error => "error",
+        }
+    }
 }
 
 /// Serialize and emit the report to stdout. This is the only place `gcm resolve`

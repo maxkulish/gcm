@@ -4,6 +4,9 @@
 //! It detects the host, verifies the required CLI is on PATH, builds an
 //! isolated scratch clone, checks out the source and target branches, runs
 //! the merge, and drives `resolve::run_resolve_in_repo` over the result.
+//!
+//! After resolution, the resolved tree is committed to the
+//! `gcm-resolve-<host>-<number>` branch. Optional push and comment are opt-in.
 
 pub mod fetch;
 pub mod host;
@@ -11,12 +14,11 @@ pub mod publish;
 
 use fetch::prepare_scratch_repo;
 use host::{require_host_cli, resolve_remote_ref, Host, RemoteRef};
-use publish::publish;
 
 use crate::cli::Cli;
 use crate::error::GcmError;
 use crate::git::Repo;
-use crate::resolve::report::{RemoteReport, ResolveReport};
+use crate::resolve::report::{RemoteReport, ResolveReport, ResolveStatus};
 use crate::resolve::run_resolve_in_repo;
 
 /// Run the remote MR/PR resolution flow for the `resolve` subcommand.
@@ -31,14 +33,24 @@ use crate::resolve::run_resolve_in_repo;
 /// `run_resolve_in_repo`.
 #[allow(dead_code)]
 pub fn run_resolve_remote(current_repo: &Repo, args: &Cli) -> Result<ResolveReport, GcmError> {
+    run_resolve_remote_opt(Some(current_repo), args)
+}
+
+/// Run the remote MR/PR resolution flow, accepting an optional repo.
+/// When `current_repo` is `None`, only full URLs work (bare ids need an origin).
+pub fn run_resolve_remote_opt(
+    current_repo: Option<&Repo>,
+    args: &Cli,
+) -> Result<ResolveReport, GcmError> {
     let (raw_arg, host) = extract_remote_arg(args)?;
-    let remote_ref = resolve_remote_ref(&raw_arg, Some(host), Some(current_repo))?;
-    require_host_cli(remote_ref.host)?;
+    let remote_ref = resolve_remote_ref(&raw_arg, Some(host), current_repo)?;
 
     if args.dry_run {
         // No temp dir, no clone, no host CLI invocation. Produce a preview report.
         return Ok(dry_run_report(&remote_ref));
     }
+
+    require_host_cli(remote_ref.host)?;
 
     let scratch = prepare_scratch_repo(&remote_ref)?;
     let resolution_branch = format!(
@@ -74,27 +86,74 @@ pub fn run_resolve_remote(current_repo: &Repo, args: &Cli) -> Result<ResolveRepo
 
     let mut report = report?;
 
-    if args.remote_push() || args.remote_comment() {
-        let outcome = publish(
-            &scratch.repo,
-            &remote_ref,
-            &resolution_branch,
-            &report,
-            args.remote_push(),
-            args.remote_comment(),
-        )?;
-        report.remote = Some(RemoteReport {
-            host,
-            number: remote_ref.number,
-            base_branch: scratch.base_branch,
-            source_branch: scratch.source_branch,
-            resolution_branch,
-            pushed: outcome.pushed,
-            commented: outcome.commented,
-        });
+    // Stage the resolved tree and create the merge commit on the resolution
+    // branch. This persists the resolution so it survives after the TempDir
+    // is dropped and so --remote-push pushes the correct tree.
+    commit_resolution(&scratch.repo, &resolution_branch, &remote_ref)?;
+
+    // Optional publish: push and/or comment. Comment failures are surfaced
+    // as warnings but do not abort the resolution (EC7).
+    let mut pushed = false;
+    let mut commented = false;
+    let mut comment_warning: Option<String> = None;
+
+    if args.remote_push() {
+        fetch::push_resolution_branch(&scratch.repo, &resolution_branch, remote_ref.host)?;
+        pushed = true;
+    }
+
+    if args.remote_comment() {
+        match publish::post_comment(&scratch.repo, &remote_ref, &report) {
+            Ok(()) => commented = true,
+            Err(e) => {
+                // EC7: surface but do not abort.
+                comment_warning = Some(e.to_string());
+                eprintln!("gcm resolve: warning: comment failed: {e}");
+            }
+        }
+    }
+
+    // Always attach RemoteReport so the caller can print metadata.
+    report.remote = Some(RemoteReport {
+        host,
+        number: remote_ref.number,
+        base_branch: scratch.base_branch,
+        source_branch: scratch.source_branch,
+        resolution_branch: resolution_branch.clone(),
+        pushed,
+        commented,
+    });
+
+    // If comment failed, downgrade status to Partial so the user knows not
+    // everything succeeded. (The resolution itself is still committed.)
+    if comment_warning.is_some() && report.status == ResolveStatus::Resolved {
+        report.status = ResolveStatus::Partial;
     }
 
     Ok(report)
+}
+
+/// Stage all changes and create the merge commit on the resolution branch.
+fn commit_resolution(repo: &Repo, branch: &str, remote_ref: &RemoteRef) -> Result<(), GcmError> {
+    // Stage all changes (resolved files + the merged tree).
+    repo.run_git(&["add", "-A"])?;
+
+    // Create the commit. Use --no-verify to skip hooks that might interfere
+    // in the scratch repo. Use --allow-empty so a clean merge (no changes
+    // beyond what merge --no-ff already staged) still commits.
+    let msg = format!(
+        "gcm resolve: merge {} into {} ({} #{})",
+        remote_ref.owner, // Simplified message
+        branch,
+        remote_ref.host.cli_name(),
+        remote_ref.number
+    );
+    // Set author/committer identity in case the scratch repo lacks it.
+    repo.run_git(&["config", "user.email", "gcm@resolve.local"])?;
+    repo.run_git(&["config", "user.name", "gcm resolve"])?;
+    repo.run_git(&["commit", "--no-verify", "--allow-empty", "-m", &msg])?;
+
+    Ok(())
 }
 
 fn extract_remote_arg(args: &Cli) -> Result<(String, Host), GcmError> {
@@ -113,7 +172,7 @@ fn extract_remote_arg(args: &Cli) -> Result<(String, Host), GcmError> {
 fn dry_run_report(remote_ref: &RemoteRef) -> ResolveReport {
     ResolveReport {
         v: crate::output::SCHEMA_VERSION,
-        status: crate::resolve::report::ResolveStatus::Noop,
+        status: ResolveStatus::Noop,
         files: vec![],
         remote: Some(RemoteReport {
             host: remote_ref.host,

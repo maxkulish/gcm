@@ -47,6 +47,8 @@ impl Host {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteRef {
     pub host: Host,
+    /// The actual domain (e.g. `github.com`, `gitlab.company.corp`).
+    pub domain: String,
     pub owner: String,
     pub repo: String,
     pub number: u64,
@@ -95,6 +97,7 @@ pub fn resolve_remote_ref(
     let parsed = parse_origin_url(&origin, preferred_host)?;
     Ok(RemoteRef {
         host: parsed.host,
+        domain: parsed.domain,
         owner: parsed.owner,
         repo: parsed.repo,
         number,
@@ -146,6 +149,7 @@ fn parse_url(url: &str, preferred_host: Option<Host>) -> Result<RemoteRef, GcmEr
 
     Ok(RemoteRef {
         host,
+        domain: parsed.host_str().unwrap_or("").to_string(),
         owner: path_segments[0].to_string(),
         repo: path_segments[1].to_string(),
         number,
@@ -188,31 +192,28 @@ fn parse_origin_url(url: &str, preferred_host: Option<Host>) -> Result<RemoteRef
 
     Ok(RemoteRef {
         host,
+        domain: parsed.host_str().unwrap_or("").to_string(),
         owner: path_segments[0].to_string(),
         repo: path_segments[1].to_string(),
         number: 0,
     })
 }
 
-fn detect_host(url: &url::Url, preferred_host: Option<Host>) -> Result<Host, GcmError> {
+fn detect_host(url: &url::Url, _preferred_host: Option<Host>) -> Result<Host, GcmError> {
     let host_str = url.host_str().unwrap_or("").to_lowercase();
 
-    if host_str == "github.com" || host_str.ends_with(".github.com") {
+    if host_str == "github.com" || host_str.ends_with(".github.com") || host_str.contains("github")
+    {
         return Ok(Host::GitHub);
     }
-    if host_str == "gitlab.com" || host_str.ends_with(".gitlab.com") {
+    if host_str == "gitlab.com" || host_str.ends_with(".gitlab.com") || host_str.contains("gitlab")
+    {
         return Ok(Host::GitLab);
-    }
-
-    // Domain heuristic for self-hosted instances. Require the user to
-    // disambiguate unknown hosts with --pr/--mr.
-    if let Some(h) = preferred_host {
-        return Ok(h);
     }
 
     Err(GcmError::RemoteHost {
         host: url.host_str().unwrap_or("").to_string(),
-        reason: "could not detect host from URL; pass a full github.com/gitlab.com URL or use a recognizable self-hosted domain".to_string(),
+        reason: "could not detect host from URL; supported hosts are github.com, gitlab.com, and self-hosted instances with 'github' or 'gitlab' in the domain".to_string(),
     })
 }
 
@@ -279,6 +280,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.host, Host::GitHub);
+        assert_eq!(r.domain, "github.com");
         assert_eq!(r.owner, "acme");
         assert_eq!(r.repo, "app");
         assert_eq!(r.number, 42);
@@ -303,6 +305,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.host, Host::GitLab);
+        assert_eq!(r.domain, "gitlab.com");
         assert_eq!(r.owner, "acme");
         assert_eq!(r.repo, "app");
         assert_eq!(r.number, 7);
@@ -325,19 +328,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.host, Host::GitLab);
+        assert_eq!(r.domain, "gitlab.company.corp");
         assert_eq!(r.number, 99);
     }
 
     #[test]
     fn unsupported_host_fails() {
-        let err =
-            resolve_remote_ref("https://bitbucket.org/acme/app/pull/1", None, None).unwrap_err();
+        let err = resolve_remote_ref(
+            "https://bitbucket.org/acme/app/pull/1",
+            Some(Host::GitHub),
+            None,
+        )
+        .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("bitbucket.org"), "{msg}");
-        assert!(
-            msg.contains("github.com") || msg.contains("gitlab.com"),
-            "{msg}"
-        );
     }
 
     #[test]

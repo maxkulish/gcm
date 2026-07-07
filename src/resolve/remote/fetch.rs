@@ -3,8 +3,9 @@
 //! All git/gh/glab shell-outs are wrapped with bounded timeouts, stdout/stderr
 //! capture, and stderr-only diagnostics so `--json` stdout stays clean.
 
+use std::io::Read;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
@@ -79,16 +80,16 @@ pub fn prepare_scratch_repo(remote_ref: &RemoteRef) -> Result<ScratchRepo, GcmEr
 }
 
 fn format_origin_url(remote_ref: &RemoteRef) -> String {
-    match remote_ref.host {
-        Host::GitHub => format!(
-            "https://github.com/{}/{}",
-            remote_ref.owner, remote_ref.repo
-        ),
-        Host::GitLab => format!(
-            "https://gitlab.com/{}/{}",
-            remote_ref.owner, remote_ref.repo
-        ),
-    }
+    let scheme =
+        if remote_ref.domain.starts_with("localhost") || remote_ref.domain.starts_with("127.") {
+            "http"
+        } else {
+            "https"
+        };
+    format!(
+        "{scheme}://{}/{}/{}",
+        remote_ref.domain, remote_ref.owner, remote_ref.repo
+    )
 }
 
 fn configure_credential_helper(repo: &Repo, host: Host) -> Result<(), GcmError> {
@@ -239,43 +240,68 @@ fn run_host_cmd(
     let mut cmd = Command::new(name);
     cmd.current_dir(repo.root());
     cmd.args(args);
-    // gcm is synchronous (ADR-001); document the budget but do not add a
-    // separate shorter transport timeout that could preempt the caller's intent.
-    let _ = timeout;
-    let out = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|e| GcmError::Git(format!("failed to run {name}: {e}")))?;
-
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        eprintln!("gcm resolve: {name} failed: {stderr}");
-        return Err(GcmError::RemoteHost {
-            host: name.to_string(),
-            reason: stderr.trim().to_string(),
-        });
-    }
-    Ok(out)
+    run_timed(cmd, name, timeout)
 }
 
-fn run_cmd(mut cmd: Command, name: &str, timeout: Duration) -> Result<(), GcmError> {
-    // gcm is synchronous (ADR-001); document the budget but do not add a
-    // separate shorter transport timeout that could preempt the caller's intent.
-    let _ = timeout;
-    let out = cmd
+fn run_cmd(cmd: Command, name: &str, timeout: Duration) -> Result<(), GcmError> {
+    run_timed(cmd, name, timeout).map(|_| ())
+}
+
+/// Run a command with a bounded timeout using `try_wait()` polling.
+/// On timeout, kills the child process and returns an error.
+fn run_timed(
+    mut cmd: Command,
+    name: &str,
+    timeout: Duration,
+) -> Result<std::process::Output, GcmError> {
+    let child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|e| GcmError::Git(format!("failed to run {name}: {e}")))?;
 
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        eprintln!("gcm resolve: {name} failed: {stderr}");
-        return Err(GcmError::RemoteHost {
-            host: name.to_string(),
-            reason: stderr.trim().to_string(),
-        });
+    let deadline = Instant::now() + timeout;
+    let mut child = child;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(ref mut s) = child.stdout.take() {
+                    let _ = s.read_to_end(&mut stdout);
+                }
+                if let Some(ref mut s) = child.stderr.take() {
+                    let _ = s.read_to_end(&mut stderr);
+                }
+                if status.success() {
+                    return Ok(std::process::Output {
+                        status,
+                        stdout,
+                        stderr,
+                    });
+                }
+                let stderr_str = String::from_utf8_lossy(&stderr);
+                eprintln!("gcm resolve: {name} failed: {stderr_str}");
+                return Err(GcmError::RemoteHost {
+                    host: name.to_string(),
+                    reason: stderr_str.trim().to_string(),
+                });
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(GcmError::RemoteHost {
+                        host: name.to_string(),
+                        reason: format!("timed out after {timeout:?}"),
+                    });
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                return Err(GcmError::Git(format!("failed to wait on {name}: {e}")));
+            }
+        }
     }
-    Ok(())
 }

@@ -8,7 +8,7 @@ pub mod markers;
 pub mod mergiraf;
 pub mod prompt;
 pub mod remote;
-pub use remote::run_resolve_remote;
+pub use remote::run_resolve_remote_opt;
 pub mod report;
 pub mod validate;
 
@@ -64,27 +64,31 @@ pub fn run_resolve_in_repo(
     args: &Cli,
     allow_no_conflict_state: bool,
 ) -> Result<ResolveReport, GcmError> {
-    if !repo.has_conflict_state() {
-        // A remote caller that already performed a clean merge can legitimately
-        // have no conflict state. Treat this as a successful noop so the remote
-        // wrapper can report the merged tree without erroring.
-        if allow_no_conflict_state {
-            let unmerged = repo.unmerged_files()?;
-            if unmerged.is_empty() {
-                return Ok(ResolveReport {
-                    v: output::SCHEMA_VERSION,
-                    status: ResolveStatus::Noop,
-                    files: vec![],
-                    remote: None,
-                });
-            }
-        }
-        return Err(GcmError::NoConflictInProgress);
-    }
-
+    let has_state = repo.has_conflict_state();
     let unmerged = repo.unmerged_files()?;
-    if unmerged.is_empty() {
-        return Err(GcmError::NoConflicts);
+
+    if allow_no_conflict_state {
+        // Remote path: a clean merge (no unmerged files) is a success regardless
+        // of whether MERGE_HEAD is set — `git merge --no-ff --no-commit` sets
+        // MERGE_HEAD even when the merge produces no conflicts.
+        if unmerged.is_empty() {
+            return Ok(ResolveReport {
+                v: output::SCHEMA_VERSION,
+                status: ResolveStatus::Noop,
+                files: vec![],
+                remote: None,
+            });
+        }
+    } else {
+        // Local path: no conflict state at all is a user error.
+        if !has_state {
+            return Err(GcmError::NoConflictInProgress);
+        }
+        // Has merge state but no unmerged files (e.g. clean merge with
+        // --no-commit) — also an error for the local path.
+        if unmerged.is_empty() {
+            return Err(GcmError::NoConflicts);
+        }
     }
 
     // Hydrate config so provider/model/env precedence works as usual.

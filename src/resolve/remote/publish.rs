@@ -4,8 +4,9 @@
 //! PR/MR. Both actions are opt-in and off by default.
 
 use std::fs;
+use std::io::Read;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::error::GcmError;
 use crate::git::Repo;
@@ -23,6 +24,11 @@ pub struct PublishOutcome {
 }
 
 /// Push the resolution branch and/or post a summary comment.
+///
+/// Kept for backward compatibility with callers that want both push and
+/// comment in one call. The remote orchestrator calls `push_resolution_branch`
+/// and `post_comment` directly so it can handle comment failure without aborting.
+#[allow(dead_code)]
 pub fn publish(
     repo: &Repo,
     remote_ref: &RemoteRef,
@@ -46,7 +52,9 @@ pub fn publish(
     Ok(outcome)
 }
 
-fn post_comment(
+/// Post a summary comment on the original PR/MR. Public so the orchestrator
+/// can call it directly and handle errors without aborting the resolution.
+pub fn post_comment(
     repo: &Repo,
     remote_ref: &RemoteRef,
     report: &ResolveReport,
@@ -95,20 +103,57 @@ fn build_summary_body(report: &ResolveReport) -> String {
     lines.join("\n")
 }
 
+/// Run a command with a bounded timeout. Uses `try_wait()` polling so it is
+/// cross-platform. On timeout, kills the child process and returns an error.
 fn run_cmd_timed(mut cmd: Command, name: &str, timeout: Duration) -> Result<(), GcmError> {
-    let _ = timeout;
-    let out = cmd
+    let child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|e| GcmError::Git(format!("failed to run {name}: {e}")))?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        eprintln!("gcm resolve: {name} failed: {stderr}");
-        return Err(GcmError::RemoteHost {
-            host: name.to_string(),
-            reason: stderr.trim().to_string(),
-        });
+
+    let deadline = Instant::now() + timeout;
+    let mut child = child;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    // Drain stdout/stderr (we don't need the content here).
+                    let mut stdout = child.stdout.take();
+                    let mut stderr = child.stderr.take();
+                    if let Some(ref mut s) = stdout {
+                        let _ = s.read_to_end(&mut Vec::new());
+                    }
+                    if let Some(ref mut s) = stderr {
+                        let _ = s.read_to_end(&mut Vec::new());
+                    }
+                    return Ok(());
+                }
+                let mut stderr_buf = String::new();
+                if let Some(ref mut s) = child.stderr.take() {
+                    let _ = s.read_to_string(&mut stderr_buf);
+                }
+                eprintln!("gcm resolve: {name} failed: {stderr_buf}");
+                return Err(GcmError::RemoteHost {
+                    host: name.to_string(),
+                    reason: stderr_buf.trim().to_string(),
+                });
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(GcmError::RemoteHost {
+                        host: name.to_string(),
+                        reason: format!("timed out after {timeout:?}"),
+                    });
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                return Err(GcmError::Git(format!("failed to wait on {name}: {e}")));
+            }
+        }
     }
-    Ok(())
 }
