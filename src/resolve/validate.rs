@@ -89,11 +89,8 @@ mod tests {
     fn repo() -> (tempfile::TempDir, Repo) {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().to_path_buf();
-        std::process::Command::new("git")
-            .current_dir(&root)
-            .args(["init", "-q"])
-            .output()
-            .expect("git init");
+        // No git init needed: validate() only uses repo.root() as the CWD for
+        // validate_cmd, and the tests use shell builtins (true/false).
         (dir, Repo::at_root(root))
     }
 
