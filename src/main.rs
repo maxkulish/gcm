@@ -182,6 +182,9 @@ fn run_remote_resolve(repo: Option<&Repo>, args: &Cli) -> i32 {
                     eprintln!("  commented: yes");
                 }
                 eprintln!("  status: {}", report.status_label());
+                if let Some(ref path) = remote.scratch_path {
+                    eprintln!("  scratch: {path}");
+                }
             }
             0
         }

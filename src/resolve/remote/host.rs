@@ -180,7 +180,7 @@ fn parse_url(url: &str, preferred_host: Option<Host>) -> Result<RemoteRef, GcmEr
 
     Ok(RemoteRef {
         host,
-        domain: parsed.host_str().unwrap_or("").to_string(),
+        domain: url_authority(&parsed),
         owner,
         repo,
         number,
@@ -228,7 +228,7 @@ fn parse_origin_url(url: &str, preferred_host: Option<Host>) -> Result<RemoteRef
 
     Ok(RemoteRef {
         host,
-        domain: parsed.host_str().unwrap_or("").to_string(),
+        domain: url_authority(&parsed),
         owner: owner_name,
         repo: repo_name,
         number: 0,
@@ -251,6 +251,14 @@ fn detect_host(url: &url::Url, _preferred_host: Option<Host>) -> Result<Host, Gc
         host: url.host_str().unwrap_or("").to_string(),
         reason: "could not detect host from URL; supported hosts are github.com, gitlab.com, and self-hosted instances with 'github' or 'gitlab' in the domain".to_string(),
     })
+}
+
+fn url_authority(url: &url::Url) -> String {
+    let host = url.host_str().unwrap_or("");
+    match url.port() {
+        Some(p) => format!("{host}:{p}"),
+        None => host.to_string(),
+    }
 }
 
 fn extract_number(segments: &[&str], keyword: &str) -> Result<u64, GcmError> {

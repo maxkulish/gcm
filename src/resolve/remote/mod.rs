@@ -71,11 +71,16 @@ pub fn run_resolve_remote_opt(
     // Even a clean merge leaves the tree merged but no conflict state. A
     // conflicted merge sets up conflict state. Either way, run the core engine
     // with allow_no_conflict_state=true so a clean merge is reported as success.
+    //
+    // On error, the scratch `TempDir` is dropped automatically, cleaning up
+    // (AC13: cleanup on error/abort). On success, we call `into_path()` to
+    // preserve the scratch and report its path (AC7: print scratch path).
     let report = match merge_result {
         Ok(()) => run_resolve_in_repo(&scratch.repo, args, true),
         Err(e) => {
             // If merge failed because of conflicts, the engine will find unmerged
-            // files and resolve them. Any other failure is propagated.
+            // files and resolve them. Any other failure is propagated (TempDir
+            // auto-deletes on the error path).
             let unmerged = scratch.repo.unmerged_files()?;
             if unmerged.is_empty() {
                 return Err(e);
@@ -87,8 +92,8 @@ pub fn run_resolve_remote_opt(
     let mut report = report?;
 
     // Stage the resolved tree and create the merge commit on the resolution
-    // branch. This persists the resolution so it survives after the TempDir
-    // is dropped and so --remote-push pushes the correct tree.
+    // branch. This persists the resolution so it survives after the scratch
+    // is preserved and so --remote-push pushes the correct tree.
     commit_resolution(&scratch.repo, &resolution_branch, &remote_ref)?;
 
     // Optional publish: push and/or comment. Comment failures are surfaced
@@ -113,15 +118,24 @@ pub fn run_resolve_remote_opt(
         }
     }
 
+    // Capture branch names before consuming scratch.
+    let scratch_base_branch = scratch.base_branch.clone();
+    let scratch_source_branch = scratch.source_branch.clone();
+
+    // Preserve the scratch repo on success (AC7) by consuming the TempDir.
+    let scratch_path = scratch.into_path();
+    let scratch_path_str = scratch_path.to_string_lossy().to_string();
+
     // Always attach RemoteReport so the caller can print metadata.
     report.remote = Some(RemoteReport {
-        host,
+        host: remote_ref.host,
         number: remote_ref.number,
-        base_branch: scratch.base_branch,
-        source_branch: scratch.source_branch,
+        base_branch: scratch_base_branch,
+        source_branch: scratch_source_branch,
         resolution_branch: resolution_branch.clone(),
         pushed,
         commented,
+        scratch_path: Some(scratch_path_str),
     });
 
     // If comment failed, downgrade status to Partial so the user knows not
@@ -186,6 +200,7 @@ fn dry_run_report(remote_ref: &RemoteRef) -> ResolveReport {
             ),
             pushed: false,
             commented: false,
+            scratch_path: None,
         }),
     }
 }

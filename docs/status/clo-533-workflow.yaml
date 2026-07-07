@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-07T17:52:11.105Z'
-  updated_at: '2026-07-07T19:33:57.370Z'
+  updated_at: '2026-07-07T19:58:25.826Z'
 phases:
   discovery:
     status: skipped
@@ -198,5 +198,18 @@ history:
     action: rework_complete
     phase: implement
     details: All 7 must-fix items addressed in commit 2da6dd4. fmt+clippy+test green (399 tests). Ready for re-validation.
+  - timestamp: '2026-07-07T19:50:57.791Z'
+    action: rework_complete
+    phase: implement
+    details: >-
+      Rework iteration 2 complete. All 3 must-fix items from PASS_WITH_NOTES gate addressed: (1) checkout error
+      propagation, (2) GitLab subgroup URL parsing, (3) real non-dry-run integration tests. 22 integration tests + 345
+      unit tests all green. Commit b11b9b4.
+  - timestamp: '2026-07-07T19:58:25.826Z'
+    action: rework_started
+    phase: implement
+    details: >-
+      Rework iteration 3: resolve AC7/AC13 contradiction (keep scratch on success, cleanup on error), fix
+      RemoteReport.host mismatch, fix format_origin_url dropping port/scheme.
 task_title: Add `gcm resolve` remote MR/PR conflict orchestration (Phase 2)
 task_url: https://linear.app/cloud-ai/issue/CLO-533/add-gcm-resolve-remote-mrpr-conflict-orchestration-phase-2

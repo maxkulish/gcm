@@ -4,6 +4,7 @@
 //! capture, and stderr-only diagnostics so `--json` stdout stays clean.
 
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -20,12 +21,28 @@ const PUSH_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A prepared scratch repository containing the source branch checked out and
 /// the base branch available locally.
+///
+/// The `dir` is a `TempDir` that auto-deletes on drop. On success, the caller
+/// calls `into_path()` to preserve the directory and report its path (AC7).
 pub struct ScratchRepo {
-    #[allow(dead_code)]
     pub dir: TempDir,
     pub repo: Repo,
     pub base_branch: String,
     pub source_branch: String,
+}
+
+impl ScratchRepo {
+    /// Consume the `TempDir` and return the path, preventing auto-deletion.
+    /// Use this on success to preserve the scratch repo per AC7.
+    pub fn into_path(self) -> PathBuf {
+        self.dir.keep()
+    }
+
+    /// Get the path to the scratch repo.
+    #[allow(dead_code)]
+    pub fn path(&self) -> &Path {
+        self.dir.path()
+    }
 }
 
 /// Build an isolated scratch clone, fetch the PR/MR source branch, and check
@@ -80,6 +97,9 @@ pub fn prepare_scratch_repo(remote_ref: &RemoteRef) -> Result<ScratchRepo, GcmEr
 }
 
 fn format_origin_url(remote_ref: &RemoteRef) -> String {
+    // Preserve the full domain (including port if present).
+    // The domain was captured from the URL's host_str() which includes the port
+    // if specified (e.g. "gitlab.example:8443").
     let scheme =
         if remote_ref.domain.starts_with("localhost") || remote_ref.domain.starts_with("127.") {
             "http"

@@ -27,6 +27,9 @@ pub struct RemoteReport {
     pub resolution_branch: String,
     pub pushed: bool,
     pub commented: bool,
+    /// Path to the scratch repo (preserved on success, per AC7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scratch_path: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
