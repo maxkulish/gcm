@@ -1,13 +1,13 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-07 (CLO-531 completed)
+**Last Updated**: 2026-07-07 (CLO-535 in progress)
 
 ## Summary
 
 | Phase | Tasks | Completed | Status |
 |-------|-------|-----------|--------|
 | Phase 1: Foundations | 13 | 13 | Complete |
-| Phase 2: Hardening | 1 | 1 | Complete |
+| Phase 2: Hardening | 2 | 1 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -36,3 +36,4 @@ Source: [PRD: gcm](prds/prd-gcm.md) FR-60 (added 2026-06-23, `e89ee14`). Replace
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | CLO-514 | Replace best-effort secret scanner with rule-pack + entropy engine | Done | CLO-490 (related) |
+| CLO-535 | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | In Progress | CLO-531 (related) |

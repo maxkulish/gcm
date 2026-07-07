@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-07 (CLO-531 completed)
+**Last Updated**: 2026-07-07 (CLO-535 started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -35,6 +35,7 @@
 | [CLO-514](https://linear.app/cloud-ai/issue/CLO-514) | S13 | Replace best-effort secret scanner with rule-pack + entropy engine | AFK | Medium | Done | CLO-490 (related) | 60; hardens 50 |
 | [CLO-515](https://linear.app/cloud-ai/issue/CLO-515) | v2 | Add `gcm status` command (active providers, models, paths, config sources) | AFK | Medium | Done | CLO-493, CLO-485, CLO-496 (related) | read-only introspection / source attribution |
 | [CLO-516](https://linear.app/cloud-ai/issue/CLO-516) | v2 | Add interactive `gcm provider` setting with cliclack (Goose-style provider/model picker) | AFK | Medium | Done | — | interactive provider/model config; runtime model fetch + enabled-models whitelist |
+| [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | In Progress | — | — |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514.
 
@@ -65,7 +66,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | In Progress | discovery | — |
 
 ## Up Next (Ready - no open blockers)
 
