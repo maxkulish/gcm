@@ -12,12 +12,20 @@ grouping and commits everything as one. Providers are selectable by flag/env -
 each via direct HTTP per its verified capability. Architecture is fixed by
 [ADR-001](docs/adrs/001-foundational-architecture-decisions.md).
 
+Beyond commits, **`gcm resolve`** uses the same providers to resolve an in-progress
+merge, rebase, or cherry-pick: it feeds each conflict's three-way context
+(`base` / `ours` / `theirs`) to the LLM, pre-merges the easy hunks with
+[`mergiraf`](https://crates.io/crates/mergiraf) when available, validates the result,
+and previews each file before writing - it never stages files or continues the merge on
+its own. See [Resolving merge conflicts](#resolving-merge-conflicts-gcm-resolve).
+
 ## Privacy / data egress
 
 `gcm` sends your **working-tree diff** and the **content of untracked, non-gitignored
 files** to the configured LLM provider (Groq by default; Google, OpenAI, Anthropic, or Ollama when selected)
-to generate the grouping plan and commit messages. Gitignored files (for example `.env`)
-are gathered with `git --exclude-standard` and are **never sent**. Review the selected
+to generate the grouping plan and commit messages. `gcm resolve` additionally sends the
+conflicting hunks and their surrounding file context to the provider. Gitignored files
+(for example `.env`) are gathered with `git --exclude-standard` and are **never sent**. Review the selected
 provider's data policy before use. This disclosure is also printed by `gcm --help`.
 
 Add repo-local `.gcmignore` or `gcmignore` patterns to exclude additional paths from
@@ -39,10 +47,20 @@ is proxied by the daemon to Ollama Cloud and is therefore **not** zero-egress.
   [Ollama](https://ollama.com) daemon with a pulled model (`--provider=ollama`, no key)
 - git commit signing configured (`commit.gpgsign=true` with a usable GPG or SSH key);
   every commit is signed (`git commit -S`)
+- optional: [`mergiraf`](https://crates.io/crates/mergiraf) on `PATH` for `gcm resolve`'s
+  structural pre-resolution stage (structurally trivial conflicts are merged with no LLM
+  call); gcm falls back to a pure-LLM path when it is absent
 
 ## Install
 
-### Option A - prebuilt release binary (recommended)
+### Option A - Homebrew (recommended)
+
+```sh
+brew install maxkulish/homebrew-tap/gcm
+gcm --version                 # update later with: brew upgrade gcm
+```
+
+### Option B - prebuilt release binary
 
 Download the archive for your platform from the [latest release](https://github.com/maxkulish/gcm/releases/latest).
 Prebuilt targets: macOS (`aarch64-apple-darwin`, `x86_64-apple-darwin`) and Linux
@@ -51,7 +69,7 @@ and run on any distro).
 
 ```sh
 # pick the archive for your platform, e.g. Apple Silicon macOS:
-VER=v0.1.0
+VER=v0.2.0
 TARGET=aarch64-apple-darwin
 curl -LO "https://github.com/maxkulish/gcm/releases/download/$VER/gcm-$VER-$TARGET.tar.gz"
 curl -LO "https://github.com/maxkulish/gcm/releases/download/$VER/gcm-$VER-$TARGET.tar.gz.sha256"
@@ -69,13 +87,13 @@ xattr -d com.apple.quarantine ~/.local/bin/gcm 2>/dev/null || true
 gcm --version
 ```
 
-### Option B - `cargo install` from source
+### Option C - `cargo install` from source
 
 ```sh
 cargo install --git https://github.com/maxkulish/gcm --locked
 ```
 
-### Option C - build it yourself
+### Option D - build it yourself
 
 ```sh
 cargo build --release
@@ -86,6 +104,48 @@ install -m 0755 target/release/gcm ~/.local/bin/gcm
 > Migrating from the bash `git-commit-ai.sh`? See the
 > [cutover guide](docs/guides/cutover-from-bash.md) for the alias mapping and a
 > one-line rollback.
+
+## Quick start
+
+Once `gcm` is on your `PATH`, go from zero to your first AI commit in three steps.
+
+**1. Configure a provider.** The first run with no config launches an interactive setup
+wizard automatically; you can also invoke it explicitly:
+
+```sh
+gcm config            # enable a provider, enter its API key, choose a default
+```
+
+Pick a cloud provider and paste its key (`GROQ_API_KEY`, `GEMINI_API_KEY`,
+`OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`), or choose **Ollama** for a fully local,
+zero-egress setup (needs a running daemon, no key). Commits are always signed, so make
+sure signing is configured once:
+
+```sh
+git config --global commit.gpgsign true   # with a usable GPG or SSH signing key
+```
+
+**2. Commit your changes.** In any repo with uncommitted work:
+
+```sh
+gcm                   # groups the changes, shows the plan, commits the first group on [Y]
+gcm                   # run again to commit the next group
+gcm --all             # or commit everything as one
+gcm --dry-run         # preview only; stage or commit nothing
+```
+
+**3. Resolve merge conflicts.** When a merge, rebase, or cherry-pick leaves conflicts:
+
+```sh
+git merge feature-branch      # ...leaves conflicts
+gcm resolve --dry-run         # preview the proposed resolutions, write nothing
+gcm resolve                   # resolve each file, confirming [Y/n/e] before it writes
+git add -A && git commit      # you stage and finish the merge - gcm never does it for you
+```
+
+Run `gcm status` anytime to see which provider, model, and key are active. See
+[Resolving merge conflicts](#resolving-merge-conflicts-gcm-resolve) for the full resolver
+behavior and configuration.
 
 ## Usage
 
@@ -113,6 +173,8 @@ gcm status --json                # the same as a machine-readable JSON object
 gcm --reconfigure                # re-run the wizard (update keys/selection), then continue
 gcm --secret-scan=redact         # redact common credential-looking values before provider egress
 gcm --secret-scan=abort          # abort before provider egress when a credential-looking value is found
+gcm resolve                      # resolve in-progress merge/rebase/cherry-pick conflicts (see below)
+gcm resolve --dry-run            # preview the resolutions; write nothing
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
@@ -254,6 +316,70 @@ endpoint. See [First-run setup](#first-run-setup).
 In a non-interactive context (no TTY) without `--yes`/`--no-input`, `gcm` exits non-zero
 with an actionable message rather than hanging on a prompt.
 
+## Resolving merge conflicts (`gcm resolve`)
+
+`gcm resolve` resolves the conflicts left by an in-progress `git merge`, `git rebase`, or
+`git cherry-pick`. It reuses the same provider layer as the commit flow, but instead of
+writing a commit message it proposes a resolution for each conflict and lets you review it
+before anything touches your files.
+
+The pipeline is layered so the LLM only sees what genuinely needs judgement:
+
+1. **Normalize** - each conflicted file is re-read as a three-way (`zdiff3`) conflict, so
+   `base`, `ours`, and `theirs` are all available.
+2. **Structural pre-merge** - if [`mergiraf`](https://crates.io/crates/mergiraf) is on
+   `PATH`, structurally trivial hunks are merged with no LLM call. Skipped when it is
+   absent or with `--no-mergiraf`.
+3. **LLM resolution** - the remaining hunks go to the provider with their three-way
+   context, instructed to combine both sides' intent and only use symbols that already
+   exist in the code.
+4. **Validation** - the resolved file is checked. With a validation command
+   (`--conflict-validate-cmd`, e.g. `cargo check`), a failure triggers one bounded retry
+   and then escalates the file to you rather than writing a broken resolution.
+5. **Preview** - each file is shown with a `[Y/n/e]` prompt (`e` opens `$EDITOR`). gcm
+   writes the resolved file only on `Y`, and **never runs `git add` or `--continue`** -
+   staging and finishing the merge stay in your hands.
+
+```sh
+gcm resolve                                       # resolve conflicts, confirming each file
+gcm resolve --dry-run                             # preview resolutions; write nothing
+gcm resolve --yes                                 # non-interactive: accept validated resolutions
+gcm resolve --no-mergiraf                         # skip the structural pre-merge stage
+gcm resolve --conflict-validate-cmd "cargo check" # gate each resolution on a build/test
+gcm resolve --conflict-auto-policy complex        # send every hunk to the LLM (no auto-resolve)
+gcm resolve --provider=ollama                     # local, zero-egress resolution
+```
+
+**Safety guarantees:** preview-before-write is always on; EOF / non-interactive input
+never auto-accepts (pass `--yes` to opt in); a resolution that fails validation is
+escalated rather than written; and an unparseable model response leaves the file
+conflicted for you to handle by hand.
+
+### `[conflict]` configuration
+
+Defaults are conservative; tune them in the `[conflict]` table of `config.toml`, or with
+the matching `--conflict-*` flags (which take precedence).
+
+| Key / flag | Default | Purpose |
+|------------|---------|---------|
+| `temperature` / `--conflict-temperature` | `0.1` | Sampling temperature for resolutions - kept low for reproducibility |
+| `auto_policy` / `--conflict-auto-policy` | `trivial` | Which hunks to auto-resolve: `trivial` (identical / one-side-only), `moderate` (reserved), or `complex` (auto-resolve nothing - send every hunk to the LLM) |
+| `validate_cmd` / `--conflict-validate-cmd` | (none) | Shell command run against each resolved file; a failure retries once, then escalates |
+| `sensitive_paths` / `--conflict-sensitive-paths` | (none) | Glob patterns whose files always require manual review |
+| `mergiraf` / `--no-mergiraf` | `true` | Use `mergiraf` for structural pre-resolution when it is on `PATH` |
+
+```toml
+[conflict]
+temperature = 0.1
+auto_policy = "trivial"
+validate_cmd = "cargo check"
+sensitive_paths = ["migrations/*", "**/secrets.rs"]
+mergiraf = true
+```
+
+`.gcmignore` and `--secret-scan` apply to conflict resolution exactly as they do to the
+commit flow.
+
 ## Behavior notes
 
 - **Grouping & progression**: each run requests a fresh plan over the *current* changes,
@@ -271,7 +397,8 @@ with an actionable message rather than hanging on a prompt.
 - **Safe fallback**: if the provider can't return a usable plan (structured output
   unavailable, unparseable JSON, or a plan that references files outside the change set),
   `gcm` announces it and falls back to a single commit. An unresolved merge conflict makes
-  `gcm` stop with an error rather than risk committing conflict markers.
+  `gcm` stop with an error rather than risk committing conflict markers - run
+  [`gcm resolve`](#resolving-merge-conflicts-gcm-resolve) to resolve them first.
 - **Resilient provider calls**: failures are classified into typed errors (rate-limit,
   bad-request, auth, server, timeout, transport, parse). Transient ones (HTTP 429 and 5xx)
   are retried with bounded exponential backoff, so a rate limit or a server blip self-heals
