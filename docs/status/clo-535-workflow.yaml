@@ -21,7 +21,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-07T15:13:22.455Z'
-  updated_at: '2026-07-07T15:35:07.308Z'
+  updated_at: '2026-07-07T15:48:33.379Z'
 phases:
   discovery:
     status: complete
@@ -145,7 +145,15 @@ phases:
         completion_tokens: 0
         task_label: pre-pr-validation-synthesis
   pr:
-    status: pending
+    status: complete
+    pr_number: 29
+    pr_url: https://github.com/maxkulish/gcm/pull/29
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-07-07T15:48:32Z'
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-07T15:49:18Z'
+    pre_merge_refetch_passed: true
   complete:
     status: pending
 history:
@@ -261,5 +269,29 @@ history:
     details: >-
       Pre-merge gate green: fmt + clippy + test all pass (with CARGO_TARGET_JOBS=1 due to parallel git::tests subprocess
       flakiness unrelated to this change).
+  - timestamp: '2026-07-07T15:35:30.011Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #29 opened: https://github.com/maxkulish/gcm/pull/29'
+  - timestamp: '2026-07-07T15:37:50.100Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required checks passing: build/test (macos-latest) pass, build/test (ubuntu-latest) pass.'
+  - timestamp: '2026-07-07T15:48:10.251Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
+      inline comments expected.
+  - timestamp: '2026-07-07T15:48:21.560Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      0 threads resolved; replies posted 0/0; /gemini review trailer verified on every reply (Gemini, Copilot, human
+      alike); unresolved-thread re-check clean.
+  - timestamp: '2026-07-07T15:48:33.379Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
 task_title: 'Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line'
 task_url: https://linear.app/cloud-ai/issue/CLO-535/fix-gcm-resolve-splice-resolution-missing-a-trailing-newline-joins-the
