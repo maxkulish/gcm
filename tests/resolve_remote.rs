@@ -312,10 +312,34 @@ fn run_gcm_with_capture_and_home(
     cmd.output().expect("run gcm")
 }
 
+fn host_binary(name: &str) -> PathBuf {
+    std::env::var_os("PATH")
+        .and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|p| p.join(name))
+                .find(|p| p.is_file())
+        })
+        .unwrap_or_else(|| PathBuf::from(name))
+}
+
+fn install_git_shim(bin_dir: &Path) {
+    fs::create_dir_all(bin_dir).unwrap();
+    let git = host_binary("git");
+    let shim = bin_dir.join("git");
+    #[cfg(unix)]
+    {
+        let _ = fs::remove_file(&shim);
+        std::os::unix::fs::symlink(&git, &shim).unwrap();
+    }
+    #[cfg(not(unix))]
+    fs::copy(git, shim).unwrap();
+}
+
 fn run_gcm_no_host(repo: &Path, config_dir: &Path, bin_dir: &Path, args: &[&str]) -> Output {
-    // Use only the bin_dir and /usr/bin on PATH so system gh/glab are not found.
-    // /usr/bin is needed for git.
-    let path_env = format!("{}:/usr/bin:/bin", bin_dir.display());
+    // Use only a test bin directory containing a git shim, so CI images with
+    // system `gh`/`glab` in /usr/bin still exercise the missing-CLI path.
+    install_git_shim(bin_dir);
+    let path_env = bin_dir.display().to_string();
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_gcm"));
     cmd.current_dir(repo)
@@ -348,6 +372,7 @@ fn setup_user_repo(tmp: &Path, remote: &Path) -> PathBuf {
     fs::write(user_repo.join("README.md"), "# user repo\n").unwrap();
     git(&user_repo, &["add", "-A"]);
     git(&user_repo, &["commit", "-q", "-m", "init"]);
+    git(&user_repo, &["branch", "-M", "main"]);
     git(
         &user_repo,
         &["remote", "add", "origin", &remote.to_string_lossy()],
@@ -364,6 +389,7 @@ fn setup_user_repo_url_origin(tmp: &Path, origin_url: &str) -> PathBuf {
     fs::write(user_repo.join("README.md"), "# user repo\n").unwrap();
     git(&user_repo, &["add", "-A"]);
     git(&user_repo, &["commit", "-q", "-m", "init"]);
+    git(&user_repo, &["branch", "-M", "main"]);
     git(&user_repo, &["remote", "add", "origin", origin_url]);
     user_repo
 }

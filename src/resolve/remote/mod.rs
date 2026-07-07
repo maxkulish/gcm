@@ -59,6 +59,8 @@ pub fn run_resolve_remote_opt(
         remote_ref.number
     );
 
+    ensure_scratch_identity(&scratch.repo)?;
+
     // Create the resolution branch from the base and merge the source branch in.
     scratch
         .repo
@@ -147,6 +149,13 @@ pub fn run_resolve_remote_opt(
     Ok(report)
 }
 
+/// Configure a local fallback identity for scratch-repo merge/commit operations.
+fn ensure_scratch_identity(repo: &Repo) -> Result<(), GcmError> {
+    repo.run_git(&["config", "user.email", "gcm@resolve.local"])?;
+    repo.run_git(&["config", "user.name", "gcm resolve"])?;
+    Ok(())
+}
+
 /// Stage all changes and create the merge commit on the resolution branch.
 fn commit_resolution(repo: &Repo, branch: &str, remote_ref: &RemoteRef) -> Result<(), GcmError> {
     // Stage all changes (resolved files + the merged tree).
@@ -162,9 +171,6 @@ fn commit_resolution(repo: &Repo, branch: &str, remote_ref: &RemoteRef) -> Resul
         remote_ref.host.cli_name(),
         remote_ref.number
     );
-    // Set author/committer identity in case the scratch repo lacks it.
-    repo.run_git(&["config", "user.email", "gcm@resolve.local"])?;
-    repo.run_git(&["config", "user.name", "gcm resolve"])?;
     repo.run_git(&["commit", "--no-verify", "--allow-empty", "-m", &msg])?;
 
     Ok(())
