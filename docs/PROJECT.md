@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-08 (synced from Linear; added CLO-537 Vertex provider)
+**Last Updated**: 2026-07-08 (CLO-537 started — design phase)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -40,7 +40,7 @@
 | [CLO-534](https://linear.app/cloud-ai/issue/CLO-534) | Bugfix | Fix `gcm resolve` HTTP 400 on Gemini: resolve schema emits unsupported `additionalProperties` | Bug | High | Done | CLO-531 | resolve was non-functional on Gemini/Google default |
 | [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | CLO-531 (related) | — |
 | [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | Done | CLO-531 | thin fetch→core wrapper over the Phase-1 engine |
-| [CLO-537](https://linear.app/cloud-ai/issue/CLO-537) | S14 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | HITL/Feature | Medium | Backlog | CLO-489, CLO-516, CLO-531 (all Done) | new: `ProviderId::Vertex` over gemini.rs payloads |
+| [CLO-537](https://linear.app/cloud-ai/issue/CLO-537) | S14 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | HITL/Feature | Medium | In Progress | CLO-489, CLO-516, CLO-531 (all Done) | new: `ProviderId::Vertex` over gemini.rs payloads |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes. **CLO-537** (Vertex AI provider, S14) is the first open post-`resolve` slice — provider expansion, no new FR.
 
@@ -71,27 +71,28 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 │  ├─ CLO-535  bug  resolve trailing-newline splice
 │  └─ CLO-533  R2  resolve remote MR/PR orchestration (Phase 2)   ← Done (PR #30)
 │
-└─ CLO-537  S14 Vertex AI provider (keyless ADC)   ← Backlog; reuses 489 gemini.rs, extends 516 wizard, works in 531 resolve
+└─ CLO-537  S14 Vertex AI provider (keyless ADC)   ← In Progress (design); reuses 489 gemini.rs, extends 516 wizard, works in 531 resolve
 ```
 
 **Critical path (v1):** CLO-485 → CLO-486 → CLO-487 → CLO-491/CLO-492 → … → CLO-497 (complete).
 
 **Two parallel fronts after the tracer (CLO-486):** the workflow chain (CLO-487 → CLO-491 → CLO-492) and the provider chain (CLO-489 → CLO-494/CLO-495).
 
-**Live frontier:** all tracked `gcm resolve` Phase 1/2 work is complete. Phase 1 (CLO-531) shipped (PR #25) with two bug fixes (CLO-534/535); Phase 2 (CLO-533) — remote MR/PR orchestration — shipped in PR #30. One open task remains: **CLO-537** (Vertex AI provider, keyless ADC) — Backlog, design doc drafted ([designs/clo-537-vertex-provider.md](designs/clo-537-vertex-provider.md), Draft), not yet started.
+**Live frontier:** all tracked `gcm resolve` Phase 1/2 work is complete. Phase 1 (CLO-531) shipped (PR #25) with two bug fixes (CLO-534/535); Phase 2 (CLO-533) — remote MR/PR orchestration — shipped in PR #30. One open task is in progress: **CLO-537** (Vertex AI provider, keyless ADC) — design phase, design doc drafted ([designs/clo-537-vertex-provider.md](designs/clo-537-vertex-provider.md), Draft), under AI review.
 
 ## Active Work (WIP Limit: 3)
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
+| [CLO-537](https://linear.app/cloud-ai/issue/CLO-537) | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | In Progress | Design | - |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| Medium | [CLO-537](https://linear.app/cloud-ai/issue/CLO-537) | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | CLO-489, CLO-516, CLO-531 (all Done) | design doc Draft; live verify is HITL (GCP ADC) |
+| — | — | None — CLO-537 moved to Active Work | — | — |
 
-> **CLO-537** (Vertex AI provider) is the only open task: Backlog, all code-level dependencies Done, design doc drafted in `docs/designs/clo-537-vertex-provider.md`. Live end-to-end verification is HITL (needs the maintainer's GCP project + `gcloud auth application-default login`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1/2 (CLO-531 + fixes CLO-534/535 + CLO-533).
+> **CLO-537** (Vertex AI provider) is now in progress (design phase): all code-level dependencies Done, design doc drafted in `docs/designs/clo-537-vertex-provider.md`. Live end-to-end verification is HITL (needs the maintainer's GCP project + `gcloud auth application-default login`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1/2 (CLO-531 + fixes CLO-534/535 + CLO-533).
 >
 > **CLO-497** (cross-platform releases + alias cutover) merged PR #20 (squash) 2026-06-24 → Done. It was the last open v1 slice: **the bash→Rust migration is complete**. The release pipeline (`.github/workflows/release.yml`) ships static-musl Linux + native macOS binaries on `v*` tags; cutover documented in `docs/guides/cutover-from-bash.md`. **CLO-514** (secret-scanner rule-pack + entropy engine) merged PR #18 2026-06-23 — new FR-60, hardens FR-50. All feature work Done: **CLO-514** secret-scanner rule-pack (PR #18), **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
 

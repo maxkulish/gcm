@@ -1,0 +1,161 @@
+task_id: clo-537
+task_type: development
+classification:
+  recommended: development
+  chosen: development
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius:
+      lean: dev
+      note: >-
+        6 files - new vertex.rs + edits to provider/mod.rs, gemini.rs, models.rs,
+        config.rs, status.rs; cross-module (provider + config + status) but thin/additive.
+    architecture_novelty:
+      lean: dev
+      note: >-
+        New ProviderId::Vertex + new keyless ADC/gcloud auth path (new process
+        boundary) + 2 new ProviderConfig fields; reuses Provider trait + gemini payloads.
+    prior_art:
+      lean: spec
+      note: >-
+        Strong - gemini.rs is the direct template; openai/ollama sibling providers;
+        CLO-489 provider trait + CLO-516 wizard already built.
+    requirement_clarity:
+      lean: spec
+      note: >-
+        Crystal - full acceptance criteria + scope checklist in Linear, decisions
+        D1-D4 confirmed in brainstorming, design doc already drafted.
+    scope_signal:
+      lean: spec
+      note: '~7 scope items, Medium priority, thin backend (only URL + auth differ).'
+  rationale: >-
+    Probe table split 3 spec / 2 dev. Decisive override: a detailed design doc
+    (development-path artifact) already exists as Draft, so continuing the development
+    track (review -> finalize -> plan -> implement) consumes the existing artifact
+    rather than duplicating it into a /spec. Owner confirmed development @ design.
+task_profile:
+  has_backend: true
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: true
+  skip_probe: false
+pending_human_action: >-
+  Live end-to-end verification is HITL - needs the maintainer's GCP project +
+  `gcloud auth application-default login` (deferred to acceptance/PR phase).
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related_to: [CLO-489, CLO-534, CLO-531, CLO-516]
+  branch_suggested: kmamemo/clo-537-add-vertex-ai-provider-keyless-adc-selectable-in-gcm
+  branch_actual: feat/clo-537-vertex
+  priority: Medium
+  labels: [HITL, Feature]
+workflow:
+  current_phase: plan
+  status: in_progress
+  created_at: '2026-07-08T12:07:59Z'
+  updated_at: '2026-07-08T12:50:00Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: >-
+      Brainstorming already completed - confirmed decisions D1-D4 captured in
+      design doc section 3; no separate discovery report needed.
+  design:
+    status: complete
+    design_doc: docs/designs/clo-537-vertex-provider.md
+    draft_ready: true
+    discovery_context_used: false
+    review_gemini: docs/reviews/clo-537-review-gemini.md
+    review_ollama: null  # Ollama/Codex review FAILED (stdin hang, 300s timeout); Claude code-grounded fallback used instead
+    review_claude_fallback: docs/reviews/clo-537-review-claude-fallback.md
+    review_synthesis: docs/reviews/clo-537-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - 'A1/A2/A4/N4: new §4.6 auth_method() classifier + exhaustive call-site table (env_plan, first-run run_wizard, run_provider_wizard, commented_reference) - fixes key_env_var()==None "is-Ollama" proxy'
+      - 'N1: §4.2 Vertex error mapping (401->gcloud reauth; 403->IAM/API-not-enabled; never "check <env_var>")'
+      - 'N2: §4.5 concrete status.rs - ProviderStatus project/location/auth_source fields, third render branch, PROVIDER_ORDER 5->6, is_activated rule, inferred auth-source (no gcloud call)'
+      - 'A3: §4.2 bounded ~10s timeout on gcloud shell-out'
+      - 'D1: §4.2 location/project regex validation before URL templating -> typed Config error'
+      - 'N3: §4 files list - short-circuit Vertex at top of fetch_supported_models'
+      - 'N5: §4.1/§4.5 dual alias derives (clap + serde) + second valid-names list in status.rs::selected_provider'
+      - 'N6: header annotated - referenced docs/guides/vertex-*.md are external, not in-repo; cache cold-start note'
+      - 'Added §7 implementation order (7 steps); §6 review-resolutions table'
+    flagged_suggestions: []  # no items contradicted a prior decision (ADR-001 checked); nothing required user resolution
+    finalized: true
+  plan:
+    status: pending
+  implement:
+    status: pending
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-08T12:07:59Z'
+    action: workflow_started
+    phase: init
+    details: >-
+      New workflow for CLO-537 (Add Vertex AI provider, keyless ADC). No prior
+      workflow YAML; design doc already drafted at docs/designs/clo-537-vertex-provider.md.
+  - timestamp: '2026-07-08T12:07:59Z'
+    action: task_classified
+    phase: init
+    details: >-
+      recommended=development, chosen=development, confidence=medium, method=probe.
+      Probe leaned 3 spec / 2 dev; existing drafted design doc made development the
+      pragmatic path (owner confirmed development @ design, resume at design review).
+  - timestamp: '2026-07-08T12:07:59Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      /project:sync CLO-537 --start. WIP 0/3 (validation passed, not blocked).
+      PROJECT.md: added to Active Work (Design), removed from Up Next; master task
+      table + tree + frontier narrative -> In Progress. ROADMAP.md: status ->
+      In Progress. DEPENDENCIES.md: removed from Unblocked & Ready.
+  - timestamp: '2026-07-08T12:08:15Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      /design-doc:review CLO-537. Gemini 2.5 Pro + Claude (code-grounded) =
+      APPROVE_WITH_SUGGESTIONS; Ollama/Codex reviewer FAILED (stdin hang, env issue,
+      not a design signal); lok pipeline aborted (binary/TOML template mismatch),
+      models run directly. 4 artifacts in docs/reviews/clo-537-review-*.md.
+  - timestamp: '2026-07-08T12:08:30Z'
+    action: review_applied
+    phase: design
+    details: >-
+      Applied 9 review clusters to design doc (A1/A2/A4/N4 auth-method taxonomy §4.6;
+      N1 error mapping; N2 status.rs concretization; A3 timeout; D1 validation; N3
+      models short-circuit; N5 aliases; N6 header; added §6 resolutions + §7 impl order).
+      All additive/refinement/new-risk; 0 contradicted a prior decision (ADR-001 checked);
+      0 flagged for user resolution.
+  - timestamp: '2026-07-08T12:09:30Z'
+    action: review_applied
+    phase: design
+    details: >-
+      Round-2 owner review (8 points), each validated against src/ (mod.rs, config.rs,
+      status.rs, models.rs, http.rs). All 8 valid. 4 already covered (run_wizard bias,
+      status render, select() arm, hardcoded-list cluster); 4 sharpened design:
+      (P3) cli.rs:20 is a THIRD hardcoded provider-name list the design missed;
+      (P5) models.rs - short-circuit is runtime-only, 5 match-id fns still need
+      compile-required Vertex arms (keep_chat_model has _=>true, covered);
+      (P6) 401/403 mapping - pass auth_env_var:None like Ollama, intercept Http(status)
+      in vertex.rs, no shared-code change (cleaner than my ErrorKind-arm proposal);
+      (P2) project regex relaxed for legacy domain-scoped ids, validation split by
+      URL position (strict host / permissive path); (P8) distinguish gcloud
+      install-vs-reauth via io::ErrorKind::NotFound. Design updated §4.1/§4.2/§4/§5/§6.
+  - timestamp: '2026-07-08T12:50:00Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Owner approved at design checkpoint. Design doc Status Draft -> Finalized
+      (docs/designs/clo-537-vertex-provider.md); Linear finalization comment posted
+      (3362c756). Design phase complete; advancing to plan.

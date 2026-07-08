@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-08 (synced from Linear; added CLO-537 Vertex provider)
+**Last Updated**: 2026-07-08 (CLO-537 started — design phase)
 
 ## Summary
 
@@ -65,7 +65,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
-| CLO-537 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | Backlog | CLO-489, CLO-516, CLO-531 (all Done) |
+| CLO-537 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | In Progress | CLO-489, CLO-516, CLO-531 (all Done) |
 
 ## Bug fixes (cross-cutting)
 
