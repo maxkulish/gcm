@@ -1,19 +1,20 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --complete)
+**Last Updated**: 2026-07-08 (synced from Linear; added CLO-537 Vertex provider)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | — | — | None. All tracked tasks are complete. |
+| — | — | — | None. CLO-537 (only open task) has all dependencies Done. |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
+| CLO-537 | CLO-489, CLO-516, CLO-531 (all Done) | 2026-07-07 |
 
-> No open unblocked tasks remain. CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30; all tracked gcm work (CLO-485…CLO-535) is Done.
+> One open task remains: **CLO-537** (Vertex AI provider, keyless ADC) — Backlog, no code-level blockers (design doc drafted). Live end-to-end verification is **HITL** (needs the maintainer's GCP project + `gcloud auth application-default login`). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 

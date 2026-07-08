@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-07 (synced via /project:sync CLO-533 --complete)
+**Last Updated**: 2026-07-08 (synced from Linear; added CLO-537 Vertex provider)
 
 ## Summary
 
@@ -10,6 +10,7 @@
 | Phase 2: Hardening | 1 | 1 | Complete |
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 2 | 2 | Complete |
+| Phase 5: Provider expansion | 1 | 0 | Not Started |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
 
 ## Phase 1: Foundations
@@ -57,6 +58,14 @@ New feature area: LLM-assisted git merge/rebase/cherry-pick conflict resolution,
 |------|-------|--------|--------------|
 | CLO-531 | `gcm resolve` LLM-assisted resolver (Phase 1: local markers) | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) |
 | CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | Done | CLO-531 |
+
+## Phase 5: Provider expansion
+
+New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex`) with keyless ADC auth, selectable in `gcm provider` alongside the AI Studio `Google` backend. Thin wrapper over the existing `gemini.rs` payloads (only URL + auth differ). Design doc (**Draft**): [designs/clo-537-vertex-provider.md](designs/clo-537-vertex-provider.md).
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-537 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | Backlog | CLO-489, CLO-516, CLO-531 (all Done) |
 
 ## Bug fixes (cross-cutting)
 
