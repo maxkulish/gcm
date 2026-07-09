@@ -129,7 +129,7 @@ fn empty() -> ProviderError {
     }
 }
 
-fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
+pub(super) fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
     json!({
         "systemInstruction": { "parts": [ { "text": super::RESOLVE_SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": super::resolve_user_content(ctx) } ] } ],
@@ -142,7 +142,7 @@ fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
     })
 }
 
-fn build_plan_payload(ctx: &GroupingContext) -> Value {
+pub(super) fn build_plan_payload(ctx: &GroupingContext) -> Value {
     json!({
         "systemInstruction": { "parts": [ { "text": super::GROUPING_SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": super::grouping_user_content(ctx) } ] } ],
@@ -154,7 +154,7 @@ fn build_plan_payload(ctx: &GroupingContext) -> Value {
     })
 }
 
-fn build_message_payload(user_content: &str) -> Value {
+pub(super) fn build_message_payload(user_content: &str) -> Value {
     json!({
         "systemInstruction": { "parts": [ { "text": super::SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": user_content } ] } ],
@@ -200,7 +200,7 @@ struct Part {
 /// with no content), concatenates non-thought parts, and applies the `<think>`
 /// backstop. Returns `Ok("")` for a genuinely empty STOP response (the caller
 /// maps that to `EmptyResponse`); blocks/truncation are typed errors.
-fn extract_text(raw: &str) -> Result<String, ProviderError> {
+pub(super) fn extract_text(raw: &str) -> Result<String, ProviderError> {
     let err = |kind| ProviderError {
         provider: NAME,
         kind,

@@ -16,6 +16,7 @@ mod http;
 mod models;
 pub(crate) mod ollama;
 mod openai;
+mod vertex;
 
 pub(crate) use models::{fetch_supported_models, FetchSource};
 
@@ -337,6 +338,19 @@ pub enum ProviderId {
     Openai,
     Anthropic,
     Ollama,
+    #[value(alias = "google-vertex")]
+    #[serde(alias = "google-vertex")]
+    Vertex,
+}
+
+/// How a provider authenticates - the axis that used to be inferred from
+/// `key_env_var().is_none()` (CLO-537). `KeylessEndpoint` = Ollama (local URL),
+/// `KeylessAdc` = Vertex (gcloud ADC token), `ApiKey` = every key-bearing cloud provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMethod {
+    ApiKey,
+    KeylessEndpoint,
+    KeylessAdc,
 }
 
 impl ProviderId {
@@ -350,6 +364,7 @@ impl ProviderId {
             ProviderId::Openai => Some("OPENAI_API_KEY"),
             ProviderId::Anthropic => Some("ANTHROPIC_API_KEY"),
             ProviderId::Ollama => None,
+            ProviderId::Vertex => None,
         }
     }
 
@@ -363,6 +378,7 @@ impl ProviderId {
             // Local, user-pulled model (FR-56; owner default). `:cloud` variants
             // (e.g. deepseek-v4-flash:cloud) work via --model but are NOT zero-egress.
             ProviderId::Ollama => "gemma4:e4b-mlx",
+            ProviderId::Vertex => "gemini-3.1-flash-lite",
         }
     }
 
@@ -376,6 +392,7 @@ impl ProviderId {
             ProviderId::Openai => &["GCM_OPENAI_MODEL"],
             ProviderId::Anthropic => &["GCM_ANTHROPIC_MODEL"],
             ProviderId::Ollama => &["GCM_OLLAMA_MODEL"],
+            ProviderId::Vertex => &["GCM_VERTEX_MODEL"],
         }
     }
 
@@ -394,6 +411,18 @@ impl ProviderId {
             ProviderId::Openai => "openai",
             ProviderId::Anthropic => "anthropic",
             ProviderId::Ollama => "ollama",
+            ProviderId::Vertex => "vertex",
+        }
+    }
+
+    /// How this provider authenticates. Replaces `key_env_var().is_none()` as the
+    /// "is-Ollama" proxy now that Vertex is a second keyless provider (CLO-537): call
+    /// sites branch on intent, and the exhaustive match flags the next backend added.
+    pub(crate) fn auth_method(self) -> AuthMethod {
+        match self {
+            ProviderId::Ollama => AuthMethod::KeylessEndpoint,
+            ProviderId::Vertex => AuthMethod::KeylessAdc,
+            _ => AuthMethod::ApiKey,
         }
     }
 }
@@ -422,7 +451,15 @@ pub fn select(
             }
             Box::new(ollama::Ollama::new(model))
         }
+        ProviderId::Vertex => Box::new(vertex::Vertex::new(model)),
     })
+}
+
+/// Non-blocking Vertex ADC readiness probe for the `gcm provider` wizard (CLO-537).
+/// `Ok(())` if an access token can be acquired now, else a short human reason. Never
+/// on the hot path.
+pub(crate) fn vertex_adc_probe() -> Result<(), String> {
+    vertex::probe_adc()
 }
 
 fn resolve_provider_id(cli: Option<ProviderId>) -> Result<ProviderId, ProviderError> {
@@ -451,7 +488,7 @@ pub(crate) fn pick_provider_id(
                 ProviderError::new(
                     "gcm",
                     ErrorKind::Config(format!(
-                        "unknown provider '{t}'. Set --provider/GCM_PROVIDER to one of: groq, google, openai, anthropic, ollama."
+                        "unknown provider '{t}'. Set --provider/GCM_PROVIDER to one of: groq, google, vertex, openai, anthropic, ollama."
                     )),
                 )
             })

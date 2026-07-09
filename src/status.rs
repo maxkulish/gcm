@@ -25,12 +25,13 @@ use serde::Serialize;
 use crate::cli::Cli;
 use crate::config::{self, Config};
 use crate::output::SCHEMA_VERSION;
-use crate::provider::{ollama, resolve_model_with_source, ModelSource, ProviderId};
+use crate::provider::{ollama, resolve_model_with_source, AuthMethod, ModelSource, ProviderId};
 
-/// Canonical provider order for output (matches the wizard's `cloud_then_ollama`).
-const PROVIDER_ORDER: [ProviderId; 5] = [
+/// Canonical provider order for output (matches the wizard's `all_providers`).
+const PROVIDER_ORDER: [ProviderId; 6] = [
     ProviderId::Groq,
     ProviderId::Google,
+    ProviderId::Vertex,
     ProviderId::Openai,
     ProviderId::Anthropic,
     ProviderId::Ollama,
@@ -95,6 +96,16 @@ pub struct ProviderStatus {
     /// `:cloud` / `-cloud` model); see [`ollama::is_cloud_model`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zero_egress: Option<bool>,
+    /// Vertex only (CLO-537): GCP project as `value (source)`; `None` otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Vertex only: location as `value (source)` (default `global`); `None` otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Vertex only: inferred auth source (`GCM_VERTEX_TOKEN` or `gcloud ADC`). Never a
+    /// secret, and never verified by a gcloud call (status stays no-subprocess).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_source: Option<String>,
 }
 
 /// Entry point for the `status` subcommand. Pure introspection: loads the config
@@ -158,12 +169,38 @@ fn build_report(
                 _ => (model, model_source_label(msrc)),
             };
 
-            let (key_source, endpoint, endpoint_source, zero_egress) = if id == ProviderId::Ollama {
-                let (ep, src) = ollama_endpoint(config, &env_lookup);
-                let zero = Some(!ollama::is_cloud_model(&model));
-                (None, Some(ep), Some(src), zero)
-            } else {
-                (Some(key_source(id, config, &env_lookup)), None, None, None)
+            let (
+                key_source,
+                endpoint,
+                endpoint_source,
+                zero_egress,
+                project,
+                location,
+                auth_source,
+            ) = match id.auth_method() {
+                AuthMethod::KeylessEndpoint => {
+                    let (ep, src) = ollama_endpoint(config, &env_lookup);
+                    let zero = Some(!ollama::is_cloud_model(&model));
+                    (None, Some(ep), Some(src), zero, None, None, None)
+                }
+                AuthMethod::KeylessAdc => (
+                    None,
+                    None,
+                    None,
+                    None,
+                    vertex_project(config, &env_lookup),
+                    Some(vertex_location(config, &env_lookup)),
+                    Some(vertex_auth_source(&env_lookup)),
+                ),
+                AuthMethod::ApiKey => (
+                    Some(key_source(id, config, &env_lookup)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
             };
 
             ProviderStatus {
@@ -176,6 +213,9 @@ fn build_report(
                 model,
                 model_source,
                 zero_egress,
+                project,
+                location,
+                auth_source,
             }
         })
         .collect();
@@ -245,9 +285,9 @@ fn selected_provider(
             None => (
                 ProviderId::Groq,
                 Some(format!(
-                    "unknown provider '{raw}' in GCM_PROVIDER (valid: groq, google, openai, \
-                     anthropic, ollama); it would be a fatal error on a normal run - showing \
-                     groq as the display fallback"
+                    "unknown provider '{raw}' in GCM_PROVIDER (valid: groq, google, vertex, \
+                     openai, anthropic, ollama); it would be a fatal error on a normal run - \
+                     showing groq as the display fallback"
                 )),
             ),
         };
@@ -274,9 +314,78 @@ fn is_activated(
             env_nonblank(env_lookup, "GCM_OLLAMA_BASE_URL")
                 || env_nonblank(env_lookup, "OLLAMA_HOST")
         }
+        // Vertex (keyless): activated when a project resolves from the env (a
+        // config-listed Vertex already returned true above).
+        ProviderId::Vertex => {
+            env_nonblank(env_lookup, "GCM_VERTEX_PROJECT")
+                || env_nonblank(env_lookup, "GOOGLE_CLOUD_PROJECT")
+                || env_nonblank(env_lookup, "GCP_PROJECT")
+        }
         _ => id
             .key_env_var()
             .is_some_and(|var| env_nonblank(env_lookup, var)),
+    }
+}
+
+/// Vertex GCP project as a `value (source)` display string (CLO-537): env precedence
+/// `GCM_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` > `GCP_PROJECT` > inline config;
+/// `None` when unset.
+fn vertex_project(
+    config: Option<&Config>,
+    env_lookup: &impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    for (var, label) in [
+        ("GCM_VERTEX_PROJECT", "env var GCM_VERTEX_PROJECT"),
+        ("GOOGLE_CLOUD_PROJECT", "env var GOOGLE_CLOUD_PROJECT"),
+        ("GCP_PROJECT", "env var GCP_PROJECT"),
+    ] {
+        if let Some(v) = env_value(env_lookup, var) {
+            return Some(format!("{v} ({label})"));
+        }
+    }
+    config
+        .and_then(|c| c.providers.iter().find(|p| p.id == ProviderId::Vertex))
+        .and_then(|pc| pc.project.as_deref())
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| format!("{p} (config file)"))
+}
+
+/// Vertex location as a `value (source)` display string; env precedence
+/// `GCM_VERTEX_LOCATION` > `GOOGLE_CLOUD_LOCATION` > `GCP_REGION` > inline config,
+/// else the effective default `global`.
+fn vertex_location(
+    config: Option<&Config>,
+    env_lookup: &impl Fn(&str) -> Option<String>,
+) -> String {
+    for (var, label) in [
+        ("GCM_VERTEX_LOCATION", "env var GCM_VERTEX_LOCATION"),
+        ("GOOGLE_CLOUD_LOCATION", "env var GOOGLE_CLOUD_LOCATION"),
+        ("GCP_REGION", "env var GCP_REGION"),
+    ] {
+        if let Some(v) = env_value(env_lookup, var) {
+            return format!("{v} ({label})");
+        }
+    }
+    if let Some(loc) = config
+        .and_then(|c| c.providers.iter().find(|p| p.id == ProviderId::Vertex))
+        .and_then(|pc| pc.location.as_deref())
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+    {
+        return format!("{loc} (config file)");
+    }
+    "global (default)".to_string()
+}
+
+/// Vertex auth source, inferred WITHOUT a gcloud call (status stays no-subprocess):
+/// `GCM_VERTEX_TOKEN` if that env var is set, else `gcloud ADC`. Reflects which path
+/// would be used, not that a token was actually obtained. Never a secret.
+fn vertex_auth_source(env_lookup: &impl Fn(&str) -> Option<String>) -> String {
+    if env_nonblank(env_lookup, "GCM_VERTEX_TOKEN") {
+        "GCM_VERTEX_TOKEN".to_string()
+    } else {
+        "gcloud ADC".to_string()
     }
 }
 
@@ -406,12 +515,16 @@ fn print_human(report: &StatusReport) {
         // Truthful runtime caveat. Only a cloud provider missing its key
         // necessarily errors; Ollama is key-free and falls back to the local
         // daemon, so an unconfigured Ollama selection can still run.
-        let note = match (p.activated, p.endpoint.as_deref()) {
-            (true, _) => String::new(),
-            (false, Some(ep)) => {
+        let note = match (p.activated, p.name, p.endpoint.as_deref()) {
+            (true, _, _) => String::new(),
+            // Vertex is keyless: the remediation is a project + gcloud ADC, never a key.
+            (false, ProviderId::Vertex, _) => {
+                " (not configured - set GCM_VERTEX_PROJECT and run `gcloud auth application-default login`)".to_string()
+            }
+            (false, _, Some(ep)) => {
                 format!(" (not configured - will try the local Ollama daemon at {ep})")
             }
-            (false, None) => {
+            (false, _, None) => {
                 " (NOT activated - no API key; gcm would error on a real run)".to_string()
             }
         };
@@ -479,6 +592,15 @@ fn print_provider_block(p: &ProviderStatus) {
         let src = p.endpoint_source.as_deref().unwrap_or("unknown");
         println!("    endpoint: {ep} ({src})");
     }
+    if let Some(proj) = &p.project {
+        println!("    project: {proj}");
+    }
+    if let Some(loc) = &p.location {
+        println!("    location: {loc}");
+    }
+    if let Some(auth) = &p.auth_source {
+        println!("    auth:  {auth}");
+    }
     match locality_tag(p) {
         // `model:` padded to align its value under the Ollama `endpoint:` line.
         Some(tag) => println!("    model:    {} ({}) [{tag}]", p.model, p.model_source),
@@ -507,6 +629,8 @@ mod tests {
             endpoint: endpoint.map(String::from),
             model: None,
             models: Vec::new(),
+            project: None,
+            location: None,
         }
     }
 
@@ -699,7 +823,10 @@ mod tests {
         );
         // canonical order
         let names: Vec<&str> = report.providers.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, ["groq", "google", "openai", "anthropic", "ollama"]);
+        assert_eq!(
+            names,
+            ["groq", "google", "vertex", "openai", "anthropic", "ollama"]
+        );
         // no raw secret anywhere in the serialized JSON
         let json = serde_json::to_string(&report).unwrap();
         assert!(!json.contains("sk-INLINE-SECRET"), "{json}");
@@ -718,6 +845,49 @@ mod tests {
             .find(|p| p.name == ProviderId::Openai)
             .unwrap();
         assert_eq!(openai.key_source.as_deref(), Some("env var OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn vertex_status_shows_project_location_auth_and_no_key() {
+        // Vertex reports project/location/auth-source and NO key row (N2/P4).
+        let report = build_report(
+            Some(ProviderId::Vertex),
+            None,
+            None,
+            env(&[
+                ("GCM_VERTEX_PROJECT", "my-proj"),
+                ("GCM_VERTEX_LOCATION", "us-central1"),
+            ]),
+        );
+        let v = report
+            .providers
+            .iter()
+            .find(|p| p.name == ProviderId::Vertex)
+            .unwrap();
+        assert!(v.selected);
+        assert!(v.key_source.is_none(), "no key row for Vertex: {v:?}");
+        assert!(v.project.as_deref().unwrap().contains("my-proj"), "{v:?}");
+        assert!(
+            v.location.as_deref().unwrap().contains("us-central1"),
+            "{v:?}"
+        );
+        assert_eq!(v.auth_source.as_deref(), Some("gcloud ADC"));
+
+        // GCM_VERTEX_TOKEN set -> auth source reflects the token env var; location
+        // falls back to the global default when unset.
+        let report2 = build_report(
+            Some(ProviderId::Vertex),
+            None,
+            None,
+            env(&[("GCM_VERTEX_TOKEN", "t"), ("GCM_VERTEX_PROJECT", "p")]),
+        );
+        let v2 = report2
+            .providers
+            .iter()
+            .find(|p| p.name == ProviderId::Vertex)
+            .unwrap();
+        assert_eq!(v2.auth_source.as_deref(), Some("GCM_VERTEX_TOKEN"));
+        assert!(v2.location.as_deref().unwrap().contains("global"), "{v2:?}");
     }
 
     #[test]
@@ -752,6 +922,8 @@ mod tests {
                 endpoint: None,
                 model: Some("gpt-config".to_string()),
                 models: Vec::new(),
+                project: None,
+                location: None,
             }],
         );
         let report = build_report(None, None, Some(&config), env(&[]));
@@ -774,6 +946,8 @@ mod tests {
                 endpoint: None,
                 model: Some("gpt-config".to_string()),
                 models: Vec::new(),
+                project: None,
+                location: None,
             }],
         );
         let report = build_report(
