@@ -139,7 +139,8 @@ phases:
     merged_at: '2026-07-09T07:47:00Z'  # owner squash/merge of PR #32 (main a918307)
     merge_commit: a918307
     aggregation_files_updated: true
-    hitl_remaining: 'Live generateContent 200 against maintainer GCP project via real gcloud ADC (Task 24)'
+    hitl_verified: true
+    hitl_note: 'Live ADC generateContent verified working by owner on 2026-07-09 (Task 24). All 6 acceptance criteria met; plan 97/97.'
 history:
   - timestamp: '2026-07-08T12:07:59Z'
     action: workflow_started
@@ -291,3 +292,9 @@ history:
       files + Linear synced. Only open item is the maintainer's live ADC HITL check
       (Task 24). Full cycle: discovery(skipped) -> design -> plan -> implement ->
       validation gate -> PR -> complete.
+  - timestamp: '2026-07-09T11:00:00Z'
+    action: hitl_verified
+    phase: complete
+    details: >-
+      Owner ran the live ADC end-to-end check against a real GCP project - Vertex works.
+      Final acceptance criterion met; plan 97/97 (100%). CLO-537 fully done.

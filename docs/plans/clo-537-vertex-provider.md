@@ -4,7 +4,7 @@
 **Design Document**: docs/designs/clo-537-vertex-provider.md (Finalized 2026-07-08)
 **Architecture Reference**: docs/adrs/001-foundational-architecture-decisions.md
 **Created**: 2026-07-08
-**Overall Progress**: 94% (91/97 tasks completed). Remaining: live HITL verify (Task 24) + PR creation (Task 25, done in the PR phase). 25 parent tasks across 8 phases.
+**Overall Progress**: 100% (97/97 tasks completed). Live ADC HITL verified by owner 2026-07-09. 25 parent tasks across 8 phases.
 
 ---
 
@@ -128,16 +128,16 @@ Implementation order follows design §7: the enum + classifier first (unblocks e
   - [x] `cargo fmt --check` clean
   - [x] `cargo clippy` clean (no new warnings)
   - [x] `cargo test` green (unit + integration)
-- [ ] Task 24: Live verification (HITL)
-  - [ ] One manual `generateContent` 200 against the maintainer's GCP project via real gcloud ADC (`gcm --provider vertex` and `gcm status --provider vertex`)
+- [x] Task 24: Live verification (HITL)
+  - [x] One manual `generateContent` 200 against the maintainer's GCP project via real gcloud ADC (`gcm --provider vertex` and `gcm status --provider vertex`)
 
 ### Phase 8: Finalization
 
-- [ ] Task 25: Create PR
-  - [ ] Verify commits follow `feat(CLO-537): ...` conventional format
-  - [ ] Push branch `feat/clo-537-vertex`
-  - [ ] `gh pr create` with a body covering the auth-method refactor + Vertex backend + acceptance criteria
-  - [ ] Link PR to CLO-537; request review
+- [x] Task 25: Create PR
+  - [x] Verify commits follow `feat(CLO-537): ...` conventional format
+  - [x] Push branch `feat/clo-537-vertex`
+  - [x] `gh pr create` with a body covering the auth-method refactor + Vertex backend + acceptance criteria
+  - [x] Link PR to CLO-537; request review
 
 ---
 
