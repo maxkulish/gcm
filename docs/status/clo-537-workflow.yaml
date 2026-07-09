@@ -121,7 +121,18 @@ phases:
       24 resolve_remote + 17 status + 2 vertex acceptance). fmt + clippy clean.
     plan_progress: 91/97 (94%)
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/32
+    pr_number: 32
+    branch: feat/clo-537-vertex
+    ci_passed: true
+    ci_note: >-
+      First run failed to acquire a hosted runner (GitHub infra, not code:
+      "job was not acquired by Runner of type hosted"); a re-run passed clean in ~1m25s
+      on both ubuntu-latest and macos-latest. mergeStateStatus=CLEAN.
+    reviews_addressed: 0  # no bot/human review comments posted on this repo
+    approved: false
+    pre_flight_passed: true  # fmt --check + clippy -D warnings + 422 tests, all clean
   complete:
     status: pending
 history:
@@ -227,3 +238,30 @@ history:
       Vertex status headline (LOW); 5th/6th hardcoded provider lists + keyless help
       text (LOW). Deferred: live HITL (Task 24), commit-path e2e (resolve test covers
       the path). Effective verdict PASS. Advancing to PR.
+  - timestamp: '2026-07-09T09:50:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'cargo fmt --check + cargo clippy --all-targets -- -D warnings + 422 tests all clean.'
+  - timestamp: '2026-07-09T09:52:00Z'
+    action: pushed_to_remote
+    phase: pr
+    details: 'Pushed feat/clo-537-vertex to origin (maxkulish/gcm).'
+  - timestamp: '2026-07-09T09:52:30Z'
+    action: pr_created
+    phase: pr
+    details: >-
+      PR #32 (https://github.com/maxkulish/gcm/pull/32). Health gate: mergeable=MERGEABLE,
+      mergeStateStatus=UNSTABLE (CI pending, not a conflict). CI run queued.
+  - timestamp: '2026-07-09T10:20:00Z'
+    action: ci_fix_applied
+    phase: pr
+    details: >-
+      /pr:review: no bot/human review comments posted. CI first run FAILED to acquire a
+      hosted runner (GitHub infra, not code). Re-ran via `gh run rerun --failed`; both
+      jobs passed clean (~1m25s). No code change needed.
+  - timestamp: '2026-07-09T10:22:00Z'
+    action: ci_passed
+    phase: pr
+    details: >-
+      build / test green on ubuntu-latest + macos-latest. mergeStateStatus=CLEAN,
+      mergeable=MERGEABLE. Awaiting owner squash-merge.
