@@ -55,10 +55,10 @@ linear:
   priority: Medium
   labels: [HITL, Feature]
 workflow:
-  current_phase: plan
+  current_phase: implement
   status: in_progress
   created_at: '2026-07-08T12:07:59Z'
-  updated_at: '2026-07-08T12:50:00Z'
+  updated_at: '2026-07-09T09:01:00Z'
 phases:
   discovery:
     status: skipped
@@ -91,7 +91,11 @@ phases:
     flagged_suggestions: []  # no items contradicted a prior decision (ADR-001 checked); nothing required user resolution
     finalized: true
   plan:
-    status: pending
+    status: complete
+    plan_file: docs/plans/clo-537-vertex-provider.md
+    approved: true
+    total_tasks: 97
+    parent_tasks: 25
   implement:
     status: pending
   pr:
@@ -158,4 +162,31 @@ history:
     details: >-
       Owner approved at design checkpoint. Design doc Status Draft -> Finalized
       (docs/designs/clo-537-vertex-provider.md); Linear finalization comment posted
-      (3362c756). Design phase complete; advancing to plan.
+      (3362c756). Design phase complete; advancing to plan. Committed b5996dc.
+  - timestamp: '2026-07-08T12:53:11Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      /plan:create CLO-537 (design-doc mode). docs/plans/clo-537-vertex-provider.md:
+      92 checkboxes, 25 parent tasks, 8 phases following design §7. Linear summary
+      comment posted (79ca1e51). Already on branch feat/clo-537-vertex.
+  - timestamp: '2026-07-09T09:00:00Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      Round-2 owner review of plan, validated vs src/config.rs. Two critical gaps
+      confirmed and fixed: (1) cloud_then_ollama() [config.rs:1140, ProviderId;5] is
+      the wizard/reference iteration source - not expanding it makes Vertex invisible
+      and wizard Tasks 14/15 dead code (added to Task 13, rename -> all_providers,
+      ProviderId;6); (2) provider_label() [config.rs:1162] exhaustive match -> compile
+      break, added to Task 1 compile-gate. Also: Task 5 timeout now cites the
+      publish.rs:116 mpsc+recv_timeout idiom; noted cloud_providers stays 4 (keyless
+      excluded, correct) and canonicalize_model:541 wildcard covers Vertex. Fixed a
+      plan sequencing bug: all compile-required arms (select, provider_label, 5
+      models.rs fns) must land together in Phase 1. Plan now 97 checkboxes.
+  - timestamp: '2026-07-09T09:01:00Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Owner approved plan at checkpoint (after round-2 code-validated review).
+      Advancing to implement. Plan: docs/plans/clo-537-vertex-provider.md, 97 tasks.
