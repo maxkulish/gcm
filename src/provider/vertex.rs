@@ -254,10 +254,12 @@ fn validate_location(loc: &str) -> Result<(), ProviderError> {
 /// reject characters that would break URL structure). This deliberately accepts legacy
 /// domain-scoped ids like `example.com:my-project` (which contain `.` and `:`).
 fn validate_project(project: &str) -> Result<(), ProviderError> {
+    // Reject `%` too: a percent-encoded delimiter (e.g. `%2F`) would survive
+    // templating and be decoded to `/` server-side, smuggling a path segment.
     let bad = project.is_empty()
         || project
             .chars()
-            .any(|c| c == '/' || c == '?' || c == '#' || c.is_whitespace() || c.is_control());
+            .any(|c| matches!(c, '/' | '?' | '#' | '%') || c.is_whitespace() || c.is_control());
     if bad {
         Err(config_err(format!(
             "invalid Vertex project '{project}': contains characters not allowed in a GCP project id"
@@ -431,6 +433,9 @@ mod tests {
         assert!(validate_project("a/b").is_err());
         assert!(validate_project("a b").is_err());
         assert!(validate_project("a?b").is_err());
+        // Percent-encoded delimiter must be rejected before templating.
+        assert!(validate_project("a%2Fb").is_err());
+        assert!(validate_project("a%00").is_err());
     }
 
     #[test]

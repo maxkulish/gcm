@@ -515,12 +515,16 @@ fn print_human(report: &StatusReport) {
         // Truthful runtime caveat. Only a cloud provider missing its key
         // necessarily errors; Ollama is key-free and falls back to the local
         // daemon, so an unconfigured Ollama selection can still run.
-        let note = match (p.activated, p.endpoint.as_deref()) {
-            (true, _) => String::new(),
-            (false, Some(ep)) => {
+        let note = match (p.activated, p.name, p.endpoint.as_deref()) {
+            (true, _, _) => String::new(),
+            // Vertex is keyless: the remediation is a project + gcloud ADC, never a key.
+            (false, ProviderId::Vertex, _) => {
+                " (not configured - set GCM_VERTEX_PROJECT and run `gcloud auth application-default login`)".to_string()
+            }
+            (false, _, Some(ep)) => {
                 format!(" (not configured - will try the local Ollama daemon at {ep})")
             }
-            (false, None) => {
+            (false, _, None) => {
                 " (NOT activated - no API key; gcm would error on a real run)".to_string()
             }
         };
