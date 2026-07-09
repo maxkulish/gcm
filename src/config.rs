@@ -1138,7 +1138,8 @@ pub fn non_tty_instructions() -> String {
             s.push_str(&format!("  export {var}=<your-key>\n"));
         }
     }
-    s.push_str("  export GCM_PROVIDER=groq   # or google, openai, anthropic, ollama\n\n");
+    s.push_str("  export GCM_PROVIDER=groq   # or google, vertex, openai, anthropic, ollama\n");
+    s.push_str("  # vertex is keyless: set GCM_VERTEX_PROJECT + `gcloud auth application-default login` instead of a key\n\n");
     s.push_str("Option B - write a 0600 config file (see ADR-001 Decision 4 for the path):\n\n");
     s.push_str(sample_toml_template());
     s
