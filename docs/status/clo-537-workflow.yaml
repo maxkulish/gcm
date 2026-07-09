@@ -55,10 +55,10 @@ linear:
   priority: Medium
   labels: [HITL, Feature]
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-07-08T12:07:59Z'
-  updated_at: '2026-07-09T09:45:00Z'
+  updated_at: '2026-07-09T10:30:00Z'
 phases:
   discovery:
     status: skipped
@@ -131,10 +131,15 @@ phases:
       "job was not acquired by Runner of type hosted"); a re-run passed clean in ~1m25s
       on both ubuntu-latest and macos-latest. mergeStateStatus=CLEAN.
     reviews_addressed: 0  # no bot/human review comments posted on this repo
-    approved: false
+    approved: true
+    status: complete
     pre_flight_passed: true  # fmt --check + clippy -D warnings + 422 tests, all clean
   complete:
-    status: pending
+    status: complete
+    merged_at: '2026-07-09T07:47:00Z'  # owner squash/merge of PR #32 (main a918307)
+    merge_commit: a918307
+    aggregation_files_updated: true
+    hitl_remaining: 'Live generateContent 200 against maintainer GCP project via real gcloud ADC (Task 24)'
 history:
   - timestamp: '2026-07-08T12:07:59Z'
     action: workflow_started
@@ -265,3 +270,24 @@ history:
     details: >-
       build / test green on ubuntu-latest + macos-latest. mergeStateStatus=CLEAN,
       mergeable=MERGEABLE. Awaiting owner squash-merge.
+  - timestamp: '2026-07-09T10:25:00Z'
+    action: pr_merged
+    phase: pr
+    details: >-
+      Owner merged PR #32 to main (merge commit a918307) at the green-CI head 18a9a2d.
+      Remote branch auto-deleted; a stray re-push was cleaned up.
+  - timestamp: '2026-07-09T10:30:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      /project:sync CLO-537 --complete. PROJECT.md: Active Work -> Recently Completed,
+      master table/tree/frontier -> Done. ROADMAP.md: status Done. DEPENDENCIES.md: no
+      open tasks. Linear CLO-537 -> Done + completion comment (51ed8947).
+  - timestamp: '2026-07-09T10:31:00Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      CLO-537 development workflow complete. Feature merged (PR #32), all aggregation
+      files + Linear synced. Only open item is the maintainer's live ADC HITL check
+      (Task 24). Full cycle: discovery(skipped) -> design -> plan -> implement ->
+      validation gate -> PR -> complete.
