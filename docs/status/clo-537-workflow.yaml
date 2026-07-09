@@ -55,10 +55,10 @@ linear:
   priority: Medium
   labels: [HITL, Feature]
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-07-08T12:07:59Z'
-  updated_at: '2026-07-09T09:01:00Z'
+  updated_at: '2026-07-09T09:45:00Z'
 phases:
   discovery:
     status: skipped
@@ -97,7 +97,29 @@ phases:
     total_tasks: 97
     parent_tasks: 25
   implement:
-    status: pending
+    status: complete
+    commits:
+      - 13a0e29
+      - 9095fe7
+      - 04682f6
+    last_phase_completed: 'Phases 1-7 complete (code + tests) + validation gate; live HITL (Task 24) + PR (Task 25) remain'
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-537-codex-validation.md
+    gemini_validation_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-537-gemini-validation.md
+    validation_effective_verdict: PASS
+    validation_fixes_applied:
+      - 'MEDIUM (codex): validate_project() rejects % (percent-encoded delimiter smuggling); +2 regression tests'
+      - 'LOW (codex): gcm status Selected headline special-cases keyless Vertex (GCM_VERTEX_PROJECT + gcloud ADC, not "no API key")'
+      - 'LOW (codex/gemini): help + non-TTY onboarding text now list vertex + keyless setup (cli.rs:20/:84, config.rs non_tty_instructions)'
+    validation_deferred:
+      - 'Live ADC HITL verification (Task 24) - needs maintainer GCP project'
+      - 'commit-path e2e test - resolve acceptance test already covers the identical Vertex request()/post_json/extract_text path'
+    test_summary: >-
+      422 tests pass (358 unit + 6 onboarding + 5 provider + 10 resolve_integration +
+      24 resolve_remote + 17 status + 2 vertex acceptance). fmt + clippy clean.
+    plan_progress: 91/97 (94%)
   pr:
     status: pending
   complete:
@@ -190,3 +212,18 @@ history:
     details: >-
       Owner approved plan at checkpoint (after round-2 code-validated review).
       Advancing to implement. Plan: docs/plans/clo-537-vertex-provider.md, 97 tasks.
+  - timestamp: '2026-07-09T09:40:00Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 8 code phases implemented (commit 13a0e29). vertex.rs backend + auth_method
+      refactor + config/wizard/status/models/cli. 422 tests pass, fmt + clippy clean.
+  - timestamp: '2026-07-09T09:45:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex(gpt-5.4)=FAIL, Gemini(3.1-pro)=PASS_WITH_NOTES. All actionable findings
+      fixed (commits 9095fe7, 04682f6): validate_project rejects % (MEDIUM); keyless
+      Vertex status headline (LOW); 5th/6th hardcoded provider lists + keyless help
+      text (LOW). Deferred: live HITL (Task 24), commit-path e2e (resolve test covers
+      the path). Effective verdict PASS. Advancing to PR.
