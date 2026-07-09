@@ -10,7 +10,7 @@
 | Phase 2: Hardening | 1 | 1 | Complete |
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 2 | 2 | Complete |
-| Phase 5: Provider expansion | 1 | 0 | Not Started |
+| Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
 
 ## Phase 1: Foundations
