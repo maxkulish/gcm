@@ -169,7 +169,7 @@ fn status_json_valid_both_flag_positions() {
         let json: serde_json::Value = serde_json::from_slice(&out.stdout)
             .unwrap_or_else(|e| panic!("invalid JSON for {args:?}: {e}"));
         assert_eq!(json["v"], 1);
-        assert_eq!(json["providers"].as_array().unwrap().len(), 5);
+        assert_eq!(json["providers"].as_array().unwrap().len(), 6);
     }
 }
 
@@ -316,7 +316,7 @@ fn status_malformed_config_falls_back_to_env_state() {
     assert!(out.status.success(), "malformed config is not fatal");
     let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["v"], 1);
-    assert_eq!(json["providers"].as_array().unwrap().len(), 5);
+    assert_eq!(json["providers"].as_array().unwrap().len(), 6);
     // machine-readable: the file exists but is not usable (distinguishable from absent)
     assert_eq!(json["paths"]["config_file_exists"], true);
     assert_eq!(json["paths"]["config_file_loaded"], false);

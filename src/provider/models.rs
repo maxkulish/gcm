@@ -41,6 +41,17 @@ pub fn fetch_supported_models(
 ) -> ModelFetchOutcome {
     let key = key.map(str::trim).filter(|k| !k.is_empty());
 
+    // Vertex (CLO-537): keyless ADC, no live models endpoint in the MVP (design D4),
+    // so return the static Gemini set directly. This short-circuit also keeps the
+    // exhaustive `match id` arms below unreachable for Vertex at runtime.
+    if id == ProviderId::Vertex {
+        return ModelFetchOutcome {
+            models: static_fallback_models(id),
+            source: FetchSource::Fallback,
+            warning: None,
+        };
+    }
+
     // No-key short-circuit (D7.2): a key-bearing provider with no key can't fetch,
     // so skip the network call and show the built-in list with an explicit note.
     if let Some(var) = id.key_env_var() {
@@ -117,7 +128,9 @@ fn fetch_live(
             auth: key.map(|k| ("x-api-key", k.to_string())),
             extra_headers: vec![("anthropic-version", "2023-06-01".to_string())],
         },
-        ProviderId::Google => HttpGet {
+        // Vertex is short-circuited in fetch_supported_models; this arm only
+        // satisfies exhaustiveness and never runs.
+        ProviderId::Google | ProviderId::Vertex => HttpGet {
             provider: name,
             auth_env_var: env_var,
             endpoint: format!("{base}/v1beta/models?pageSize=1000"),
@@ -160,7 +173,7 @@ fn resolved_base_url_with(
         ProviderId::Groq => (&["GCM_GROQ_BASE_URL"], "https://api.groq.com/openai/v1"),
         ProviderId::Openai => (&["GCM_OPENAI_BASE_URL"], "https://api.openai.com/v1"),
         ProviderId::Anthropic => (&["GCM_ANTHROPIC_BASE_URL"], "https://api.anthropic.com"),
-        ProviderId::Google => (
+        ProviderId::Google | ProviderId::Vertex => (
             &["GCM_GEMINI_BASE_URL", "GCM_GOOGLE_BASE_URL"],
             "https://generativelanguage.googleapis.com",
         ),
@@ -195,7 +208,7 @@ fn parse_models(id: ProviderId, body: &str) -> Vec<String> {
             })
             .unwrap_or_default(),
         // Gemini models.list: { "models": [ { "name": "models/x", "supportedGenerationMethods": [...] } ] }
-        ProviderId::Google => v
+        ProviderId::Google | ProviderId::Vertex => v
             .get("models")
             .and_then(Value::as_array)
             .map(|arr| {
@@ -269,7 +282,7 @@ fn static_fallback_models(id: ProviderId) -> Vec<String> {
         ],
         ProviderId::Openai => &["gpt-5.4-mini", "gpt-5.4", "gpt-4o-mini"],
         ProviderId::Anthropic => &["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"],
-        ProviderId::Google => &[
+        ProviderId::Google | ProviderId::Vertex => &[
             "gemini-3.1-flash-lite",
             "gemini-3.1-flash",
             "gemini-3.1-pro",
@@ -301,6 +314,7 @@ fn provider_name(id: ProviderId) -> &'static str {
         ProviderId::Openai => "OpenAI",
         ProviderId::Anthropic => "Anthropic",
         ProviderId::Ollama => "Ollama",
+        ProviderId::Vertex => "Vertex",
     }
 }
 

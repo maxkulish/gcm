@@ -23,7 +23,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::error::GcmError;
-use crate::provider::ProviderId;
+use crate::provider::{AuthMethod, ProviderId};
 
 /// On-disk config format version (mirrors `cache::CacheFile.version`). v2 (CLO-516)
 /// added the per-provider `models` enabled-set whitelist. A v1 file is accepted and
@@ -75,6 +75,15 @@ pub struct ProviderConfig {
     /// is the chosen default and is always a member when this is non-empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<String>,
+    /// Vertex only (CLO-537): the GCP project. Bridged into `GCM_VERTEX_PROJECT` by
+    /// [`apply_to_env`] when that var is unset. `None`/skip-serialize for every other
+    /// provider, so a pre-Vertex config file parses unchanged (no version bump).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Vertex only (CLO-537): the location/region (effective default `global`).
+    /// Bridged into `GCM_VERTEX_LOCATION` by [`apply_to_env`] when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 /// Conflict-resolution settings for `gcm resolve` (CLO-531).
@@ -292,11 +301,12 @@ fn commented_reference() -> String {
     s.push_str("# ── Reference: all available settings ──────────────────────────────────────\n");
     s.push_str("# Copy an entry into the section above, uncomment, and edit. A provider entry\n");
     s.push_str("# supports: model (chosen default), models (enabled set), key (cloud),\n");
-    s.push_str("# endpoint (Ollama only). Matching env vars override this file\n");
+    s.push_str("# endpoint (Ollama only), project+location (Vertex only). Matching env vars\n");
+    s.push_str("# override this file\n");
     s.push_str("# (e.g. GCM_OPENAI_MODEL=…, OPENAI_API_KEY=…). An empty/absent `models`\n");
     s.push_str("# means unrestricted; set it via `gcm provider` to restrict usage.\n");
     s.push_str("#\n");
-    for id in cloud_then_ollama() {
+    for id in all_providers() {
         let token = provider_token(id);
         let model = id.default_model();
         let model_var = id.model_env_vars()[0];
@@ -308,16 +318,26 @@ fn commented_reference() -> String {
         s.push_str(&format!(
             "# models = [\"{model}\"]   # enabled set (only these are usable); empty = any\n"
         ));
-        match id.key_env_var() {
-            Some(key_var) => {
-                s.push_str(&format!(
-                    "# key = \"…\"   # inline secret, or set {key_var}\n"
-                ));
+        match id.auth_method() {
+            AuthMethod::ApiKey => {
+                if let Some(key_var) = id.key_env_var() {
+                    s.push_str(&format!(
+                        "# key = \"…\"   # inline secret, or set {key_var}\n"
+                    ));
+                }
             }
-            None => {
+            AuthMethod::KeylessEndpoint => {
                 s.push_str(&format!(
                     "# endpoint = \"{DEFAULT_OLLAMA_ENDPOINT}\"   # or set GCM_OLLAMA_BASE_URL / OLLAMA_HOST\n"
                 ));
+            }
+            AuthMethod::KeylessAdc => {
+                s.push_str(
+                    "# project = \"my-gcp-project\"   # required; or set GCM_VERTEX_PROJECT / GOOGLE_CLOUD_PROJECT\n",
+                );
+                s.push_str(
+                    "# location = \"global\"   # or set GCM_VERTEX_LOCATION / GOOGLE_CLOUD_LOCATION\n",
+                );
             }
         }
         s.push_str("#\n");
@@ -376,20 +396,46 @@ pub fn apply_to_env(config: &Config) {
 fn env_plan(config: &Config, is_set: impl Fn(&str) -> bool) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     for pc in &config.providers {
-        match pc.id.key_env_var() {
-            Some(var) => {
-                if let Some(key) = pc.key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
-                    if !is_set(var) {
-                        out.push((var, key.to_string()));
+        match pc.id.auth_method() {
+            AuthMethod::ApiKey => {
+                if let Some(var) = pc.id.key_env_var() {
+                    if let Some(key) = pc.key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+                        if !is_set(var) {
+                            out.push((var, key.to_string()));
+                        }
                     }
                 }
             }
-            None => {
+            AuthMethod::KeylessEndpoint => {
                 // Ollama: set the base URL only when neither gcm's own var nor
                 // the Ollama-native OLLAMA_HOST is already set.
                 if let Some(ep) = pc.endpoint.as_deref().filter(|e| !e.trim().is_empty()) {
                     if !is_set("GCM_OLLAMA_BASE_URL") && !is_set("OLLAMA_HOST") {
                         out.push(("GCM_OLLAMA_BASE_URL", ep.to_string()));
+                    }
+                }
+            }
+            AuthMethod::KeylessAdc => {
+                // Vertex: bridge project/location into the gcm-namespaced vars only
+                // when unset (env still wins: flag > env > config > default).
+                if let Some(p) = pc
+                    .project
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                {
+                    if !is_set("GCM_VERTEX_PROJECT") {
+                        out.push(("GCM_VERTEX_PROJECT", p.to_string()));
+                    }
+                }
+                if let Some(l) = pc
+                    .location
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                {
+                    if !is_set("GCM_VERTEX_LOCATION") {
+                        out.push(("GCM_VERTEX_LOCATION", l.to_string()));
                     }
                 }
             }
@@ -418,7 +464,7 @@ fn env_plan(config: &Config, is_set: impl Fn(&str) -> bool) -> Vec<(&'static str
 /// `Config`. Cloud keys already exported are recorded as `key: None` (env-only);
 /// an empty key input is also env-only. Invalid menu selections re-prompt.
 pub fn run_wizard() -> Result<Config, GcmError> {
-    let all = cloud_then_ollama();
+    let all = all_providers();
     eprintln!("gcm first-run setup");
     eprintln!(
         "Pick the provider(s) you want to use. You can re-run this anytime with `gcm config`.\n"
@@ -440,8 +486,12 @@ pub fn run_wizard() -> Result<Config, GcmError> {
     let mut enabled: Vec<ProviderConfig> = Vec::new();
     for idx in selected {
         let id = all[idx];
-        match id.key_env_var() {
-            Some(var) => {
+        match id.auth_method() {
+            AuthMethod::ApiKey => {
+                // ApiKey providers always have a key env var; skip defensively if not.
+                let Some(var) = id.key_env_var() else {
+                    continue;
+                };
                 if env_nonblank(var) {
                     eprintln!(
                         "  {} key found in {var} - using the environment variable.",
@@ -458,7 +508,7 @@ pub fn run_wizard() -> Result<Config, GcmError> {
                     enabled.push(cloud_provider_config(id, false, Some(&typed)));
                 }
             }
-            None => {
+            AuthMethod::KeylessEndpoint => {
                 let endpoint = prompt_ollama_endpoint()?;
                 enabled.push(ProviderConfig {
                     id,
@@ -466,6 +516,23 @@ pub fn run_wizard() -> Result<Config, GcmError> {
                     endpoint,
                     model: None,
                     models: Vec::new(),
+                    project: None,
+                    location: None,
+                });
+            }
+            AuthMethod::KeylessAdc => {
+                // Vertex: project + location (no key, no endpoint) - fixes the bug
+                // where selecting Vertex in first-run onboarding prompted for an
+                // Ollama endpoint (CLO-537 round-2 A2/P1).
+                let (project, location) = prompt_vertex_target()?;
+                enabled.push(ProviderConfig {
+                    id,
+                    key: None,
+                    endpoint: None,
+                    model: None,
+                    models: Vec::new(),
+                    project: Some(project),
+                    location,
                 });
             }
         }
@@ -493,6 +560,47 @@ pub fn run_wizard() -> Result<Config, GcmError> {
         eprintln!("gcm: {msg}");
         GcmError::OnboardingRequired
     })
+}
+
+/// First-run prompt for the Vertex target: GCP project (required; prefilled from
+/// `GCM_VERTEX_PROJECT` / `GOOGLE_CLOUD_PROJECT`) and location (default `global`).
+/// Returns `(project, location)` where `location` is `None` at the default so the
+/// config file stays minimal. Runs a non-blocking ADC probe (warns, never blocks).
+fn prompt_vertex_target() -> Result<(String, Option<String>), GcmError> {
+    let prefill = std::env::var("GCM_VERTEX_PROJECT")
+        .ok()
+        .or_else(|| std::env::var("GOOGLE_CLOUD_PROJECT").ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let project = loop {
+        let hint = prefill
+            .as_deref()
+            .map(|p| format!(" [{p}]"))
+            .unwrap_or_default();
+        let input = wizard_read_line(&format!("  Vertex GCP project{hint}: "))?;
+        let v = input.trim();
+        if !v.is_empty() {
+            break v.to_string();
+        }
+        if let Some(p) = prefill.as_deref() {
+            break p.to_string();
+        }
+        eprintln!("  A GCP project is required for Vertex. Try again.");
+    };
+    let loc_input = wizard_read_line("  Vertex location [global]: ")?;
+    let loc = loc_input.trim();
+    let location = if loc.is_empty() || loc == "global" {
+        None
+    } else {
+        Some(loc.to_string())
+    };
+    match crate::provider::vertex_adc_probe() {
+        Ok(()) => eprintln!("  gcloud ADC ready."),
+        Err(msg) => eprintln!(
+            "  note: gcloud ADC not ready ({msg}). Set GCM_VERTEX_TOKEN or run `gcloud auth application-default login` before committing."
+        ),
+    }
+    Ok((project, location))
 }
 
 /// Prompt for the Ollama endpoint (default offered), validate it, probe the
@@ -650,6 +758,8 @@ fn cloud_provider_config(id: ProviderId, env_present: bool, typed: Option<&str>)
         endpoint: None,
         model: None,
         models: Vec::new(),
+        project: None,
+        location: None,
     }
 }
 
@@ -670,7 +780,7 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
     intro(style(" gcm-provider ").on_cyan().black()).map_err(wizard_io)?;
 
     // 1. Provider (radio list, current default pre-highlighted, type-to-filter).
-    let all = cloud_then_ollama();
+    let all = all_providers();
     let current_default = existing
         .as_ref()
         .map(|c| c.default)
@@ -698,36 +808,41 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
     let mut persist_key: Option<String> = None;
     let mut fetch_endpoint: Option<String> = None;
     let mut persist_endpoint: Option<String> = None;
-    match id.key_env_var() {
-        Some(var) => {
-            let env_key = env_value(var);
-            let cfg_key = existing_pc.and_then(|p| p.key.clone());
-            if let Some(k) = env_key {
-                // Env wins for the fetch, but never copy an env-derived secret into
-                // the file; preserve any existing inline key (a fallback for when the
-                // env var is unset) rather than erasing it.
-                fetch_key = Some(k);
-                persist_key = cfg_key;
-            } else if let Some(k) = cfg_key {
-                fetch_key = Some(k.clone());
-                persist_key = Some(k); // preserve the existing inline key
-            } else {
-                let typed = match password(format!(
-                    "{} API key (press Enter to skip)",
-                    provider_label(id)
-                ))
-                .mask('*')
-                .interact()
-                {
-                    Ok(s) => s,
-                    Err(_) => return wizard_cancelled(),
-                };
-                let (f, p) = wizard_persist_key(&typed);
-                fetch_key = f;
-                persist_key = p;
+    let mut persist_project: Option<String> = None;
+    let mut persist_location: Option<String> = None;
+    match id.auth_method() {
+        AuthMethod::ApiKey => {
+            // ApiKey providers always have a key env var; skip defensively if not.
+            if let Some(var) = id.key_env_var() {
+                let env_key = env_value(var);
+                let cfg_key = existing_pc.and_then(|p| p.key.clone());
+                if let Some(k) = env_key {
+                    // Env wins for the fetch, but never copy an env-derived secret into
+                    // the file; preserve any existing inline key (a fallback for when
+                    // the env var is unset) rather than erasing it.
+                    fetch_key = Some(k);
+                    persist_key = cfg_key;
+                } else if let Some(k) = cfg_key {
+                    fetch_key = Some(k.clone());
+                    persist_key = Some(k); // preserve the existing inline key
+                } else {
+                    let typed = match password(format!(
+                        "{} API key (press Enter to skip)",
+                        provider_label(id)
+                    ))
+                    .mask('*')
+                    .interact()
+                    {
+                        Ok(s) => s,
+                        Err(_) => return wizard_cancelled(),
+                    };
+                    let (f, p) = wizard_persist_key(&typed);
+                    fetch_key = f;
+                    persist_key = p;
+                }
             }
         }
-        None => {
+        AuthMethod::KeylessEndpoint => {
             // Ollama: resolve/prompt the endpoint before `/api/tags`. An env override
             // wins over the saved config (matching runtime precedence, review M2).
             let default_ep = ollama_wizard_default_endpoint(
@@ -746,6 +861,59 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
             fetch_endpoint = Some(ep.clone());
             if ep != DEFAULT_OLLAMA_ENDPOINT {
                 persist_endpoint = Some(ep);
+            }
+        }
+        AuthMethod::KeylessAdc => {
+            // Vertex: project (required) + location (default global); no key, no
+            // endpoint. The model list comes from the static Gemini set (the fetch
+            // below short-circuits Vertex).
+            let default_project = existing_pc
+                .and_then(|p| p.project.clone())
+                .or_else(|| env_value("GCM_VERTEX_PROJECT"))
+                .or_else(|| env_value("GOOGLE_CLOUD_PROJECT"))
+                .unwrap_or_default();
+            let mut project_input = cliclack::input("GCP project (required for Vertex)");
+            if !default_project.trim().is_empty() {
+                project_input = project_input.default_input(default_project.trim());
+            }
+            let project = match project_input
+                .validate(|s: &String| {
+                    if s.trim().is_empty() {
+                        Err("a GCP project is required".to_string())
+                    } else {
+                        Ok(())
+                    }
+                })
+                .interact::<String>()
+            {
+                Ok(s) => s.trim().to_string(),
+                Err(_) => return wizard_cancelled(),
+            };
+            let default_location = existing_pc
+                .and_then(|p| p.location.clone())
+                .unwrap_or_else(|| "global".to_string());
+            let location = match cliclack::input("Vertex location")
+                .default_input(&default_location)
+                .interact::<String>()
+            {
+                Ok(s) => s.trim().to_string(),
+                Err(_) => return wizard_cancelled(),
+            };
+            persist_project = Some(project);
+            // Keep the file minimal: omit location at the default `global`.
+            persist_location = if location.is_empty() || location == "global" {
+                None
+            } else {
+                Some(location)
+            };
+            // Non-blocking ADC probe (warns; never blocks a keyless setup).
+            let sp = spinner();
+            sp.start("Checking gcloud ADC...");
+            match crate::provider::vertex_adc_probe() {
+                Ok(()) => sp.stop("gcloud ADC ready"),
+                Err(msg) => sp.stop(format!(
+                    "ADC not ready: {msg} (set GCM_VERTEX_TOKEN or run `gcloud auth application-default login`)"
+                )),
             }
         }
     }
@@ -826,8 +994,12 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
     };
 
     // 6. Build (pure, AC-4 invariants), merge (preserving other providers), persist.
-    let updated = build_provider_config(id, persist_key, persist_endpoint, default_model, selected)
-        .map_err(GcmError::Git)?;
+    let mut updated =
+        build_provider_config(id, persist_key, persist_endpoint, default_model, selected)
+            .map_err(GcmError::Git)?;
+    // Vertex carries project/location instead of a key/endpoint (None for others).
+    updated.project = persist_project;
+    updated.location = persist_location;
     let merged = merge_provider_config(existing.as_ref(), updated, true);
     save(&merged).map_err(|e| GcmError::Git(format!("could not save configuration: {e}")))?;
     let where_ = config_path()
@@ -934,6 +1106,8 @@ fn build_provider_config(
         endpoint,
         model: Some(default_model),
         models,
+        project: None,
+        location: None,
     })
 }
 
@@ -1137,10 +1311,15 @@ fn validate_endpoint_url(raw: &str) -> Result<String, String> {
 // ── small shared helpers ────────────────────────────────────────────────────
 
 /// The five v1 providers, cloud first then Ollama (the wizard's menu order).
-fn cloud_then_ollama() -> [ProviderId; 5] {
+/// Every selectable provider, in wizard/reference display order (CLO-537 renamed this
+/// from `cloud_then_ollama` and added Vertex; the old name implied a key-bearing/Ollama
+/// dichotomy that no longer holds). This is the single source of truth iterated by the
+/// reference template and both wizards - a provider absent here is invisible in the UI.
+fn all_providers() -> [ProviderId; 6] {
     [
         ProviderId::Groq,
         ProviderId::Google,
+        ProviderId::Vertex,
         ProviderId::Openai,
         ProviderId::Anthropic,
         ProviderId::Ollama,
@@ -1165,6 +1344,7 @@ fn provider_label(id: ProviderId) -> &'static str {
         ProviderId::Openai => "OpenAI",
         ProviderId::Anthropic => "Anthropic",
         ProviderId::Ollama => "Ollama (local, no key)",
+        ProviderId::Vertex => "Google (Vertex AI)",
     }
 }
 
@@ -1303,6 +1483,8 @@ mod tests {
             endpoint: endpoint.map(String::from),
             model: None,
             models: Vec::new(),
+            project: None,
+            location: None,
         }
     }
 
@@ -1314,6 +1496,8 @@ mod tests {
             endpoint: None,
             model: Some(model.to_string()),
             models: Vec::new(),
+            project: None,
+            location: None,
         }
     }
 
@@ -1325,6 +1509,8 @@ mod tests {
             endpoint: None,
             model: default.map(String::from),
             models: models.iter().map(|s| s.to_string()).collect(),
+            project: None,
+            location: None,
         }
     }
 
@@ -1551,6 +1737,59 @@ mod tests {
         // Google's primary model var is GCM_GEMINI_MODEL (not the GOOGLE alias).
         let plan = env_plan(&cfg, |_| false);
         assert!(plan.contains(&("GCM_GEMINI_MODEL", "gemini-x".to_string())));
+    }
+
+    #[test]
+    fn env_plan_bridges_vertex_project_and_location() {
+        let cfg = Config {
+            conflict: ConflictConfig::default(),
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Vertex,
+            providers: vec![ProviderConfig {
+                id: ProviderId::Vertex,
+                key: None,
+                endpoint: None,
+                model: None,
+                models: Vec::new(),
+                project: Some("my-proj".to_string()),
+                location: Some("us-central1".to_string()),
+            }],
+        };
+        // Nothing set -> both project and location bridge to the gcm-namespaced vars.
+        let plan = env_plan(&cfg, |_| false);
+        assert!(plan.contains(&("GCM_VERTEX_PROJECT", "my-proj".to_string())));
+        assert!(plan.contains(&("GCM_VERTEX_LOCATION", "us-central1".to_string())));
+        // A pre-set env var wins and is never overwritten (flag > env > config).
+        let plan2 = env_plan(&cfg, |v| v == "GCM_VERTEX_PROJECT");
+        assert!(!plan2.iter().any(|(k, _)| *k == "GCM_VERTEX_PROJECT"));
+        assert!(plan2.contains(&("GCM_VERTEX_LOCATION", "us-central1".to_string())));
+    }
+
+    #[test]
+    fn vertex_project_location_round_trip_and_skip_when_none() {
+        // With values -> serialized and read back unchanged.
+        let with = ProviderConfig {
+            id: ProviderId::Vertex,
+            key: None,
+            endpoint: None,
+            model: None,
+            models: Vec::new(),
+            project: Some("p".to_string()),
+            location: Some("us-west1".to_string()),
+        };
+        let text = toml::to_string_pretty(&with).unwrap();
+        assert!(text.contains("project = \"p\""), "{text}");
+        assert!(text.contains("location = \"us-west1\""), "{text}");
+        assert_eq!(toml::from_str::<ProviderConfig>(&text).unwrap(), with);
+        // None -> both keys skip-serialize (a pre-Vertex file needs no version bump).
+        let without = pc(ProviderId::Openai, None, None);
+        let text2 = toml::to_string_pretty(&without).unwrap();
+        assert!(!text2.contains("project"), "{text2}");
+        assert!(!text2.contains("location"), "{text2}");
+        // A pre-Vertex file (no project/location keys) still parses.
+        let parsed: ProviderConfig = toml::from_str("id = \"openai\"\n").unwrap();
+        assert_eq!(parsed.project, None);
+        assert_eq!(parsed.location, None);
     }
 
     #[test]

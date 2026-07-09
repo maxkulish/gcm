@@ -17,7 +17,7 @@ MACHINE MODE: use --json to emit a stable JSON envelope on stdout (status: plan/
 committed/fallback/error). Combine with --plan-only for a non-destructive preview, or\n\
 --yes (alias --no-input) for unattended commits. All diagnostics go to stderr.\n\
 \n\
-PROVIDER: select with --provider (groq, google, openai, anthropic, ollama) or GCM_PROVIDER\n\
+PROVIDER: select with --provider (groq, google, vertex, openai, anthropic, ollama) or GCM_PROVIDER\n\
 (precedence flag > env > default groq); override the model with --model or the per-provider\n\
 env (GCM_GROQ_MODEL / GCM_GEMINI_MODEL / GCM_OPENAI_MODEL / GCM_ANTHROPIC_MODEL /\n\
 GCM_OLLAMA_MODEL). Keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY.\n\
