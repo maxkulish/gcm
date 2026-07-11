@@ -1,20 +1,20 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-10 (CLO-545 started — no blockers; spec phase)
+**Last Updated**: 2026-07-11 (CLO-545 merged — PR #34; CLO-547 ready)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | — | — | None. CLO-545 (active) has no blockers. |
+| — | — | — | None. CLO-547 (ready) has no blockers. |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| — | CLO-545 started (self-contained, no blockers) | — |
+| CLO-547 | split from CLO-545 review (self-contained, no blockers) | 2026-07-11 |
 
-> **CLO-545** (OpenAI GPT-5.6 model refresh) is active with no blockers — a self-contained edit to the existing OpenAI backend (relates to CLO-489 which introduced it). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (**HITL**, needs the GCP project + `gcloud auth application-default login`). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
+> **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 

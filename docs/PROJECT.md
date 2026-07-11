@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-10 (CLO-545 started — spec phase; OpenAI GPT-5.6 model refresh)
+**Last Updated**: 2026-07-11 (CLO-545 merged — PR #34; OpenAI GPT-5.6, terra default)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -41,7 +41,7 @@
 | [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | CLO-531 (related) | — |
 | [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | Done | CLO-531 | thin fetch→core wrapper over the Phase-1 engine |
 | [CLO-537](https://linear.app/cloud-ai/issue/CLO-537) | S14 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | HITL/Feature | Medium | Done | CLO-489, CLO-516, CLO-531 (all Done) | new: `ProviderId::Vertex` over gemini.rs payloads; PR #32 |
-| [CLO-545](https://linear.app/cloud-ai/issue/CLO-545) | Maint | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | AFK/Improvement | Medium | In Progress | — | provider maintenance; no new FR; spun off CLO-547 |
+| [CLO-545](https://linear.app/cloud-ai/issue/CLO-545) | Maint | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | AFK/Improvement | Medium | Done | — | provider maintenance; no new FR; spun off CLO-547 |
 | [CLO-547](https://linear.app/cloud-ai/issue/CLO-547) | Maint | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | AFK/Improvement | Medium | Backlog | — | provider-wide discovery hygiene; split from CLO-545 review |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes. **CLO-537** (Vertex AI provider, S14) is the first open post-`resolve` slice — provider expansion, no new FR.
@@ -80,13 +80,13 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 **Two parallel fronts after the tracer (CLO-486):** the workflow chain (CLO-487 → CLO-491 → CLO-492) and the provider chain (CLO-489 → CLO-494/CLO-495).
 
-**Live frontier:** **CLO-545** (OpenAI GPT-5.6 model refresh — new default `gpt-5.6-terra`, `gpt-5.6-luna` selectable, drop legacy `gpt-5.4*`/`gpt-4o-mini`, replace the o-series branch with a uniform GPT-5.6 payload + a validate-to-GPT-5.6-family gate) is the sole active task, in the spec phase (owner review round 3). Discovery-layer hardening split to **CLO-547**. All prior tracked gcm work is complete: `gcm resolve` Phase 1 (CLO-531, PR #25) + fixes (CLO-534/535) + Phase 2 (CLO-533, PR #30) shipped. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (HITL).
+**Live frontier:** **CLO-545** (OpenAI GPT-5.6 model refresh — default `gpt-5.6-terra`, `gpt-5.6-luna` selectable, uniform GPT-5.6 payload, validate-to-family gate) merged in PR #34 (2026-07-11); the only remaining step is the owner's live API smokes (AC7, need `OPENAI_API_KEY`). **CLO-547** (provider-wide discovery hardening, split from the CLO-545 review) is the sole open backlog item. All prior tracked gcm work is complete: `gcm resolve` Phase 1 (CLO-531, PR #25) + fixes (CLO-534/535) + Phase 2 (CLO-533, PR #30) shipped. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (HITL).
 
 ## Active Work (WIP Limit: 3)
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-545](https://linear.app/cloud-ai/issue/CLO-545) | Migrate OpenAI provider to GPT-5.6 (terra default) | In Progress | Spec | — |
+| — | None active | — | — | — |
 
 ## Up Next (Ready - no open blockers)
 
@@ -108,6 +108,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default) | 2026-07-11 | Maintenance (spec task, `/task:orchestrate`). Default `gpt-5.6-terra` (mini→terra per OpenAI's tier mapping; `gpt-5.4-mini` is mini-tier and gcm uses one model for grouping/messages/resolve), `gpt-5.6-luna` selectable, via a single `openai::SUPPORTED_MODELS` source (used by `default_model`, the wizard fallback list, and the gate). Uniform **branch-free** GPT-5.6 payload across all three builders: `developer` role (reasoning models reject `system`) + `reasoning_effort:"none"` (omitting it defaults to `medium`) + `temperature`; deleted `is_reasoning_model`/`system_role`/`apply_model_params*`. **Design A validation gate** in `provider::select` (the single construction point for both commit and `gcm resolve`): a non-`{terra,luna}` OpenAI model is rejected with an actionable `ErrorKind::Config` → **breaking change** (a legacy saved model errors until `gcm provider`). Swept legacy strings from `src/` + README; per-builder + accept/reject tests; single legacy-rejection fixture. 2 owner spec-review rounds (reversed round-1 luna→terra and no-branch→validate on OpenAI-guide evidence). Codex/Gemini pre-PR gate PASS_WITH_NOTES (findings fixed). 359 unit + all integration; fmt+clippy clean; real-binary e2e confirmed the gate. Discovery hardening split to **CLO-547**. **AC7 live API smokes remain owner-run (need `OPENAI_API_KEY`).** PR #34 (squash) merged. |
 | CLO-537 | Add Vertex AI provider (keyless ADC) | 2026-07-09 | Feature (HITL). New `ProviderId::Vertex` (alias `google-vertex`), keyless ADC auth (gcloud token, `GCM_VERTEX_TOKEN` escape hatch) - a thin backend over the identical Gemini `generateContent` payloads (reuses `gemini.rs` builders + extractor via `pub(super)`; only URL + Bearer auth differ; inherits the CLO-534 resolve-schema fix). Retired the `key_env_var()==None` "is-Ollama" proxy for an explicit `auth_method()` classifier across `env_plan`/`commented_reference`/both wizards. `ProviderConfig.project/location` (skip-serialize, no version bump); `cloud_then_ollama`→`all_providers`; `gcm status` project/location/auth-source rows (keyless-aware, no gcloud call); `models.rs` short-circuit to the static Gemini set. Bounded gcloud timeout; project/location validation (rejects URL-structural chars incl. `%`). Dev task (`/task:orchestrate`): design (AI + 2 owner code-validated rounds) + plan (owner round-2 caught 2 real gaps) + Codex/Gemini validation gate (all findings fixed). 422 tests; fmt+clippy clean. PR #32 merged. Live ADC verify remains HITL. |
 | CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | 2026-07-07 | Feature (HITL). Adds `gcm resolve --pr/--mr` remote orchestration over the Phase-1 resolver: host detection for GitHub/GitLab, isolated scratch clone, deterministic resolution branch, clean-merge noop, partial escalation reporting, opt-in `--remote-push`/`--remote-comment`, and integration tests with fake `gh`/`glab`. PR #30 merged. |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | 2026-07-07 | Bug (Low). When `gcm resolve` wrote a resolved hunk back and the provider's resolution text lacked a trailing newline, the first line after the conflict block was joined onto the last resolved line (cosmetic mis-format, e.g. a closing brace pulled up). Guarded the splice against a missing trailing newline. PR #29 merged. |

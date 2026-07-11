@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-10 (CLO-545 started — OpenAI GPT-5.6 model refresh, spec phase)
+**Last Updated**: 2026-07-11 (CLO-545 merged — PR #34; OpenAI GPT-5.6, terra default)
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | Phase 4: `gcm resolve` (conflict resolution) | 2 | 2 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
-| Maintenance (cross-cutting) | 2 | 0 | In Progress |
+| Maintenance (cross-cutting) | 2 | 1 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -82,5 +82,5 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
-| CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | In Progress | CLO-489 (related) |
+| CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | Done | CLO-489 (related) |
 | CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | Backlog | CLO-516 (related), split from CLO-545 |

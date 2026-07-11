@@ -48,10 +48,10 @@ spinoff_tasks:
       Owner spec-review points 3/4 + discovery refactor are provider-wide and pre-existing; split out to keep CLO-545
       focused on the OpenAI catalog + payload policy. Owner chose "split to follow-up".
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-07-10T12:54:30.000Z'
-  updated_at: '2026-07-11T09:40:00.000Z'
+  updated_at: '2026-07-11T09:45:00.000Z'
 phases:
   discovery:
     status: skipped
@@ -128,9 +128,25 @@ phases:
       ac7_live_smokes: 'PENDING - owner-run (needs OPENAI_API_KEY): grouping, message, resolve pinned to gpt-5.6-terra'
     assumptions_revalidated: true
   pr:
-    status: pending
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/34
+    pr_number: 34
+    ci_passed: true
+    mergeable: true
+    pre_flight_passed: true
+    bot_review_wait_completed: true
+    reviews_addressed: true
+    merged_at: '2026-07-11T09:11:55Z'
+    merge_commit: a4cba4e535a9c97f84e81b0f7da8190fbdd26538
+    approved: true
   complete:
-    status: pending
+    status: complete
+    merged_at: '2026-07-11T09:11:55Z'
+    merge_commit: a4cba4e535a9c97f84e81b0f7da8190fbdd26538
+    aggregation_files_updated: true
+    owner_followup:
+      - 'AC7 live API smokes (grouping/message/resolve pinned to gpt-5.6-terra) - owner-run, need OPENAI_API_KEY. Watch for temperature HTTP 400 -> spec §3/BS4 drops temperature.'
+      - 'CLO-547 - provider-wide discovery hardening, in backlog (ready).'
 history:
   - timestamp: '2026-07-10T12:54:30.000Z'
     action: workflow_started
@@ -259,3 +275,31 @@ history:
     action: phase_transition
     phase: implement
     details: Transitioned from implement to pr
+  - timestamp: '2026-07-11T09:42:00.000Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'cargo fmt --check, clippy -- -D warnings, cargo test (7 targets) all green before PR.'
+  - timestamp: '2026-07-11T09:43:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #34 opened. Health gate MERGEABLE (no conflict).'
+  - timestamp: '2026-07-11T09:50:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: 'CI green on ubuntu-latest + macos-latest. No bot reviewers configured (0 reviews on last 5 PRs), so no review wait.'
+  - timestamp: '2026-07-11T09:12:00.000Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #34 squash-merged by maxkulish. Merge commit a4cba4e535a9c97f84e81b0f7da8190fbdd26538.'
+  - timestamp: '2026-07-11T09:46:00.000Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      /project:sync CLO-545 --complete: PROJECT.md → Recently Completed + master Done + Active Work empty; ROADMAP →
+      Done, Maintenance 2/1; DEPENDENCIES → CLO-547 ready. Linear CLO-545 → Done with completion comment.
+  - timestamp: '2026-07-11T09:47:00.000Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-545 fully completed. PR #34 merged. Owner follow-up tracked: AC7 live API smokes (need OPENAI_API_KEY;
+      temperature-400 contingency per §3/BS4) and CLO-547 (discovery hardening, backlog).
