@@ -1,0 +1,261 @@
+task_id: clo-545
+task_type: specification
+task_title: Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to the GPT-5.6 family
+task_url: https://linear.app/cloud-ai/issue/CLO-545/migrate-openai-provider-to-gpt-56-terra-default-luna-selectable
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:
+      lean: spec
+      note: Contained to src/provider/* (mod.rs, models.rs, openai.rs) + minor comment/test edits in cli.rs, diff.rs, config.rs; one real module, ~6 files
+    architecture_novelty:
+      lean: spec
+      note: No new dependency, data model, interface, or process boundary; swaps string constants + deletes one branch, stays within ADR-001
+    prior_art:
+      lean: spec
+      note: The existing OpenAI backend is the direct template - pure edit, not greenfield
+    requirement_clarity:
+      lean: spec
+      note: Acceptance criteria fully derivable; owner decisions made (terra default after review round 2, remove o-series)
+    scope_signal:
+      lean: spec
+      note: S/M - swap constants, delete a code path, update tests/docs
+  rationale: Contained, well-specified edit to one existing provider backend with a clear template and no architecture decisions; lean spec->implement->PR cycle fits.
+task_profile:
+  has_backend: true
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: null
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related: [CLO-547]
+  branch_suggested: kmamemo/clo-545-migrate-openai-provider-to-gpt-56-models-luna-default-remove
+  priority: Medium
+  branch_actual: null
+spinoff_tasks:
+  - id: CLO-547
+    title: 'Harden gcm provider model discovery: capability filtering + no-inject-after-live + transport tests'
+    reason: >-
+      Owner spec-review points 3/4 + discovery refactor are provider-wide and pre-existing; split out to keep CLO-545
+      focused on the OpenAI catalog + payload policy. Owner chose "split to follow-up".
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-07-10T12:54:30.000Z'
+  updated_at: '2026-07-11T09:40:00.000Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: Specification task - using /spec instead of full design doc
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-10-clo-545-openai-gpt-5.6-models.md
+    approved: true
+    approved_at: '2026-07-11T08:45:00.000Z'
+    owner_verdict: approve
+    owner_review_rounds: 2
+    design_decisions:
+      default_model: gpt-5.6-terra
+      non_5_6_handling: 'Design A: validate to {gpt-5.6-terra, gpt-5.6-luna} in provider::select; reject others (breaking change, no auto-migration)'
+    review_gemini: docs/reviews/clo-545-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-545-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-545-spec-review-synthesis.md
+    review_verdict: approve_with_suggestions
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - Fixed eval Row 1 command to cargo test provider_defaults_and_tokens (was default_model, matched no test)
+      - Added strict-equality fallback assertion requirement (static_fallback_models(Openai) exact list; terra-first after round 2)
+      - Added keep_chat_model_excludes_non_text_for_openai_groq to ST1 + a dedicated eval row (retarget legacy good-model samples)
+      - Added AC8 (all legacy-string unit-test assertions updated) and strengthened AC4 to call out ~15+ config.rs fixtures + models.rs/openai.rs sample ids
+      - Added AC9 + README migration note (o-series overrides no longer special-cased; pre-GPT-5.6 whitelist rejects new default until gcm provider/--reconfigure)
+      - Mandated deleting apply_model_params/apply_model_params_resolve and inlining temperature into the three builders (Gemini inline-and-delete on the main path)
+      - Named the temperature-rejection contingency guard is_temperature_rejecting_model (Ollama) - reserved for escalate only
+      - Added cache-key invalidation edge case (openai:gpt-5.4-mini plans become a benign cache miss)
+      - Gave AC7/Test 7 measurable pass criteria (exit 0, JSON parses, no single-commit fallback log line) + a Rollback note in §3
+      - Reworded strict json_schema support from assumed to verified-by-smoke-test
+    flagged_suggestions: []
+    review_disagreement_resolution: >-
+      Escalate-path "disagreement" (Gemini delete-and-inline vs Ollama named guard) resolved as complementary, not
+      contradictory: inline-and-delete on the main non-reasoning path; the named is_temperature_rejecting_model guard is
+      reserved for the temperature-rejection contingency only. No prior decision contradicted; nothing needs a user conflict prompt.
+  implement:
+    status: complete
+    branch: feat/clo-545-openai-gpt-5.6
+    commits:
+      - d99d2c7   # docs: spec + workflow + aggregation sync
+      - 6a78345   # feat: implementation (ST1-ST5)
+      - dfb2768   # docs: implementation-complete workflow record
+      - 742ea03   # fix: pre-PR validation findings (single legacy fixture, whitespace)
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-545-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-545-gemini-validation.md
+    gemini_verdict: PASS
+    validation_synthesis_report: docs/reviews/clo-545-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    validation_fix_iteration_count: 1
+    validation_fixes_applied:
+      - 'AC5/AC8: retargeted openai.rs validate_model test to non-legacy ids; mod.rs select test is the sole legacy fixture'
+      - 'Stripped trailing whitespace in clo-545-spec-review-gemini.md (git diff --check clean)'
+      - 'Corrected stale luna-default / fallback-order wording in workflow YAML'
+    subtasks_complete:
+      - 'ST1: default terra + fallback [terra,luna] + shared SUPPORTED_MODELS const + tests'
+      - 'ST2: uniform GPT-5.6 payload in 3 builders (tests-first, per builder); deleted is_reasoning_model/system_role/apply_model_params*'
+      - 'ST3: validate-to-family gate in provider::select (commit + resolve) + accept/reject tests'
+      - 'ST4: swept legacy strings from cli.rs/diff.rs/config.rs; retargeted fixtures to terra/luna'
+      - 'ST5: README terra default + reasoning note + breaking-change migration note'
+    verification:
+      unit_integration_tests: '359 unit + all integration pass; fmt + clippy clean'
+      ac5_sweep: 'production src/ zero-match; 5 hits are the intentional #[cfg(test)] rejection guards (openai validate_model + mod.rs select)'
+      binary_e2e: 'real binary: gpt-5.4-mini + o3-mini rejected with actionable error; gpt-5.6-terra passes gate to missing-key. Both flows share the select gate.'
+      ac7_live_smokes: 'PENDING - owner-run (needs OPENAI_API_KEY): grouping, message, resolve pinned to gpt-5.6-terra'
+    assumptions_revalidated: true
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-10T12:54:30.000Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-545
+  - timestamp: '2026-07-10T12:54:30.000Z'
+    action: task_classified
+    phase: init
+    details: >-
+      Classified as specification (confidence high, 5/5 signals aligned via probe). All evidence rows lean spec:
+      contained to src/provider/*, no architecture novelty, existing OpenAI backend is the template, ACs derivable,
+      S/M scope. Owner confirmed specification over the recommendation menu.
+  - timestamp: '2026-07-10T12:55:00.000Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-545 --start; WIP limit OK (0/3 active), no
+      blockers. Added to Active Work + master table; new "Maintenance (cross-cutting)" ROADMAP section. Linear status
+      moved Backlog -> Todo.
+  - timestamp: '2026-07-10T12:55:00.000Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to spec
+  - timestamp: '2026-07-10T13:00:00.000Z'
+    action: spec_review_complete
+    phase: spec
+    details: >-
+      lok spec-review: Gemini APPROVE_WITH_SUGGESTIONS + Ollama/Codex (glm-5:cloud) APPROVE_WITH_SUGGESTIONS; Claude
+      fallback correctly skipped. Consensus APPROVE_WITH_SUGGESTIONS. Agreement: keep_chat_model test missing from
+      decomp/eval, test-assertion refactor scope understated, existing-user whitelist transition undocumented, config.rs
+      blast radius (~15+) underestimated. One disagreement (escalate-path shape) resolved as complementary.
+  - timestamp: '2026-07-10T15:05:00.000Z'
+    action: spec_review_applied
+    phase: spec
+    details: >-
+      Applied 10 additive/refinement suggestions from the AI review (eval Row 1 test-name fix, strict fallback assertion,
+      keep_chat_model in ST1+eval, AC8 test-assertion sweep, AC9 + README migration note, delete apply_model_params +
+      inline temperature, cache-key edge case, measurable AC7 + rollback note, json_schema verified-not-assumed).
+  - timestamp: '2026-07-10T15:30:00.000Z'
+    action: spec_owner_review_round_1
+    phase: spec
+    details: >-
+      Owner implementation-level review; validated 6 points against code, ALL confirmed. Blocker: GPT-5.6 is a reasoning
+      family (OpenAI guide: omitted reasoning_effort defaults to medium) so the draft's system+temperature/no-reasoning
+      policy was wrong. High: existing users keep saved gpt-5.4-mini (apply_to_env bridge config.rs:447; gcm provider
+      always saves model+models 1103; --reconfigure preserves via preserve_existing_models 712) so AC9 lockout/
+      --reconfigure-recovery was wrong. High/Medium (3,4): /v1/models capability gap + static-inject-after-live are
+      provider-wide/pre-existing. Medium (5): smoke not isolated (cache reuse main.rs:451; fallback exits 0;
+      build_message_payload only via --all). Medium (6): strip_think reads only message.content (mod.rs:614) so it is not
+      the reasoning safety net.
+  - timestamp: '2026-07-10T15:32:00.000Z'
+    action: followup_task_created
+    phase: spec
+    details: >-
+      CLO-547 filed for provider-wide discovery hardening (points 3/4 + injectable-fetch/TcpListener transport tests).
+      Owner chose "split to follow-up"; CLO-545 stays scope S, OpenAI-only.
+  - timestamp: '2026-07-10T15:35:00.000Z'
+    action: spec_revised
+    phase: spec
+    details: >-
+      Revised spec round 1: AC3/ST2 → single uniform GPT-5.6 payload policy (developer role + reasoning_effort:none +
+      temperature, no is_reasoning_model branch); AC9 → default changes for unconfigured users only, switch via gcm
+      provider not --reconfigure; AC7 → two isolated smokes (fresh cache, pinned --provider, grouping + --all --dry-run
+      message path); reframed strip_think as defensive-only. Points 3/4/refactor deferred to CLO-547. Spec at checkpoint
+      (round 2).
+  - timestamp: '2026-07-11T08:10:00.000Z'
+    action: spec_owner_review_round_2
+    phase: spec
+    details: >-
+      Owner NEEDS_REVISION; validated 4 blockers + 5 blind spots against code, ALL confirmed. B1 AC4⊥AC9 self-contradiction.
+      B2 uniform policy hits non-5.6 models - select (mod.rs:433) validates nothing; OpenAI upgrade guide: "isolate
+      GPT-5.6-only fields, don't apply globally". B3 AC7 pinned provider not model (saved model/env wins). B4 smoke omits
+      the resolve builder (build_resolve_payload uses ctx.temperature, resolve/mod.rs:111 → select). BS1 mini→terra,
+      nano→luna: current gpt-5.4-mini is mini so like-for-like is TERRA not luna; gcm uses one model for grouping/msg/
+      resolve. BS2 gpt-5.4-mini is itself a reasoning model (default none); "unaffected" too strong. BS3 sweep deletes the
+      AC9 regression fixture. BS4 temperature-drop also disables --conflict-temperature (not one line). BS5 per-builder
+      tests. Confirmed both flows construct via provider::select (main.rs:397 + resolve/mod.rs:111).
+  - timestamp: '2026-07-11T08:15:00.000Z'
+    action: owner_decisions_round_2
+    phase: spec
+    details: >-
+      D1 = Design A (validate OpenAI models to {gpt-5.6-terra, gpt-5.6-luna} in provider::select; reject others with
+      actionable ErrorKind::Config; branch-free builders; breaking change for legacy saved models → gcm provider).
+      D2 = default gpt-5.6-terra (mini→terra like-for-like per OpenAI guide; reverses round-1 luna). Luna stays selectable.
+  - timestamp: '2026-07-11T08:30:00.000Z'
+    action: spec_revised
+    phase: spec
+    details: >-
+      Revised spec round 2. Default → gpt-5.6-terra; fallback [terra, luna] via shared openai::SUPPORTED_MODELS.
+      Added AC4 validation gate in provider::select (covers commit + resolve) + accept/reject tests. AC5 sweep scoped to
+      production code (exempt README note + one legacy-rejection fixture). AC7 → 3 isolated smokes with pinned
+      --model=gpt-5.6-terra (grouping/message/resolve). AC8 keeps one annotated legacy-rejection fixture. AC9 rewritten
+      as an honest breaking-change note. BS4 temperature contingency promoted to a full 3-builder/3-test/README change.
+      BS5 per-builder payload tests. New ST3 (validation gate); ST count 4→5. Linear title/description updated to terra.
+      Spec at checkpoint (round 3).
+  - timestamp: '2026-07-11T08:45:00.000Z'
+    action: spec_approved
+    phase: spec
+    details: >-
+      Owner approved round-3 spec (Design A + terra default). Ships the breaking change as specified (no auto-migration -
+      owner declined the softening option). Spec exit fields complete. Transitioning spec → implement.
+  - timestamp: '2026-07-11T08:45:30.000Z'
+    action: phase_transition
+    phase: spec
+    details: Transitioned from spec to implement
+  - timestamp: '2026-07-11T09:15:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      ST1-ST5 landed in commit 6a78345 on feat/clo-545-openai-gpt-5.6. Default gpt-5.6-terra via shared
+      openai::SUPPORTED_MODELS; uniform branch-free GPT-5.6 payload (developer + reasoning_effort:none + temperature)
+      across plan/message/resolve builders; validate-to-family gate in provider::select covering commit + resolve;
+      legacy strings swept from src/ + README; per-builder + accept/reject tests. 359 unit + all integration tests pass;
+      fmt + clippy clean. Binary e2e confirmed: gpt-5.4-mini/o3-mini rejected with actionable error, gpt-5.6-terra passes
+      the gate. AC7 live API smokes remain owner-run (need OPENAI_API_KEY).
+  - timestamp: '2026-07-11T09:35:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      lok pre-pr-validation: Gemini PASS (359/359 tests, fmt+clippy clean), Codex FAIL (3 findings, over-weighted per
+      synthesis - test-fixture hygiene, production code clean). Synthesis PASS_WITH_NOTES / PROCEED_WITH_FIXES. One fix
+      iteration applied in 742ea03: (1) AC5/AC8 single-legacy-fixture (retarget openai.rs test to non-legacy ids; mod.rs
+      select test is the sole legacy fixture), (2) trailing-whitespace strip (git diff --check clean), (3) stale YAML
+      wording corrected. Re-ran fmt/clippy/test green.
+  - timestamp: '2026-07-11T09:40:00.000Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr

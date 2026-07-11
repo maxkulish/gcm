@@ -1,20 +1,20 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-09 (CLO-537 merged — PR #32; no open tasks)
+**Last Updated**: 2026-07-10 (CLO-545 started — no blockers; spec phase)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | — | — | None. No open tasks. |
+| — | — | — | None. CLO-545 (active) has no blockers. |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| — | None waiting — no open tasks | — |
+| — | CLO-545 started (self-contained, no blockers) | — |
 
-> No open tasks. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (**HITL**, needs the GCP project + `gcloud auth application-default login`). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
+> **CLO-545** (OpenAI GPT-5.6 model refresh) is active with no blockers — a self-contained edit to the existing OpenAI backend (relates to CLO-489 which introduced it). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (**HITL**, needs the GCP project + `gcloud auth application-default login`). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 

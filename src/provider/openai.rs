@@ -1,9 +1,13 @@
-//! OpenAI backend (CLO-489). OpenAI-compatible chat-completions with strict
-//! `json_schema` Structured Outputs (ADR-001 Decision 7). Default model
-//! `gpt-5.4-mini` - non-reasoning, so zero chain-of-thought to suppress.
-//! Reasoning-family (`o1`/`o3`/`o4`) `--model` overrides get a dedicated payload
-//! path (round-2 review pt 1): no `temperature`, no `system` role,
-//! `reasoning_effort` set - else the o-series API 400s.
+//! OpenAI backend (CLO-489, CLO-545). OpenAI-compatible chat-completions with strict
+//! `json_schema` Structured Outputs (ADR-001 Decision 7). gcm supports only the
+//! GPT-5.6 family (`gpt-5.6-terra` default, `gpt-5.6-luna`; see [`SUPPORTED_MODELS`]),
+//! enforced by the validation gate in `provider::select`. Because the model class is
+//! fixed, every request uses one uniform payload with no model-family branching: the
+//! `developer` role (GPT-5.6 reasoning models reject `system`), `reasoning_effort:
+//! "none"` (omitting it defaults to `medium` - erasing the cost/latency advantage),
+//! and a low `temperature`. Reasoning tokens are billed separately and never reach
+//! `message.content`, so the shared `strip_think` backstop is defensive only, not the
+//! reasoning control.
 
 use serde_json::{json, Value};
 
@@ -15,6 +19,13 @@ use crate::plan::Plan;
 const NAME: &str = "OpenAI";
 const API_KEY_ENV: &str = "OPENAI_API_KEY";
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+
+/// The OpenAI models gcm supports (CLO-545). gcm sends a uniform GPT-5.6 payload
+/// (`developer` role + `reasoning_effort: "none"` + `temperature`), so only the
+/// GPT-5.6 family is valid: `default_model`, the wizard fallback list, and the
+/// `provider::select` validation gate all derive from this single source. `[0]` is
+/// the default (`terra`, the mini-tier like-for-like per OpenAI's tier mapping).
+pub(super) const SUPPORTED_MODELS: [&str; 2] = ["gpt-5.6-terra", "gpt-5.6-luna"];
 
 pub struct OpenAi {
     model: String,
@@ -108,56 +119,45 @@ impl Provider for OpenAi {
     }
 
     fn diff_budget(&self) -> DiffBudget {
-        // Conservative total; gpt-5.4-mini's 400k-token window has ample room.
+        // Conservative total; GPT-5.6's 1.05M-token window has ample room.
         DiffBudget::resolve(256_000, DiffBudget::STANDARD_PER_FILE)
     }
 }
 
-/// Whether `model` is an OpenAI reasoning family (`o1`/`o3`/`o4`-style): an `o`
-/// followed by a digit. Distinguishes `o3-mini` from `gpt-4o-mini` (starts `g`).
-fn is_reasoning_model(model: &str) -> bool {
-    let mut chars = model.trim().chars();
-    matches!(chars.next(), Some('o')) && matches!(chars.next(), Some(c) if c.is_ascii_digit())
-}
-
-/// System role for this model: reasoning models reject the `system` role, so use
-/// `developer`; non-reasoning models use `system` (round-2 review pt 1).
-fn system_role(model: &str) -> &'static str {
-    if is_reasoning_model(model) {
-        "developer"
+/// Validate that `model` is a supported GPT-5.6 model (CLO-545, Design A). gcm sends a
+/// uniform GPT-5.6 payload (`developer` role + `reasoning_effort: "none"`), so a
+/// non-5.6 OpenAI model (e.g. a non-reasoning `gpt-4.1`, which rejects
+/// `reasoning_effort`) would produce a broken request. Reject it at construction with
+/// an actionable error rather than let it 400 downstream. Called from
+/// [`super::select`], so it guards both the commit and the resolve flows.
+pub(super) fn validate_model(model: &str) -> Result<(), ProviderError> {
+    if SUPPORTED_MODELS.contains(&model) {
+        Ok(())
     } else {
-        "system"
+        Err(ProviderError {
+            provider: NAME,
+            kind: ErrorKind::Config(format!(
+                "OpenAI model '{model}' is not supported; gcm supports {}. \
+                 Run `gcm provider` to re-select a model.",
+                SUPPORTED_MODELS.join(" or ")
+            )),
+        })
     }
 }
 
-/// Add model-family params: `temperature` for non-reasoning models (o-series
-/// 400s on a non-default temperature); `reasoning_effort` for reasoning models.
-fn apply_model_params(payload: &mut Value, model: &str) {
-    let obj = payload.as_object_mut().expect("payload is a JSON object");
-    if is_reasoning_model(model) {
-        obj.insert("reasoning_effort".into(), json!("low"));
-    } else {
-        obj.insert("temperature".into(), json!(0.2));
-    }
-}
-
-/// Add model-family params for resolve payloads, using ctx.temperature.
-fn apply_model_params_resolve(payload: &mut Value, model: &str, temperature: f64) {
-    let obj = payload.as_object_mut().expect("payload is a JSON object");
-    if is_reasoning_model(model) {
-        obj.insert("reasoning_effort".into(), json!("low"));
-    } else {
-        obj.insert("temperature".into(), json!(temperature));
-    }
-}
-
+/// The uniform GPT-5.6 message header + reasoning params shared by every builder
+/// (CLO-545): the `developer` role (reasoning models reject `system`) and
+/// `reasoning_effort: "none"` (omitting it defaults to `medium`). `temperature` is
+/// set by each builder (0.2 for plan/message, `ctx.temperature` for resolve).
 fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
-    let mut payload = json!({
+    json!({
         "model": model,
         "messages": [
-            { "role": system_role(model), "content": super::RESOLVE_SYSTEM_PROMPT },
+            { "role": "developer", "content": super::RESOLVE_SYSTEM_PROMPT },
             { "role": "user", "content": super::resolve_user_content(ctx) },
         ],
+        "reasoning_effort": "none",
+        "temperature": ctx.temperature,
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -166,18 +166,18 @@ fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
                 "schema": super::resolve_schema(),
             }
         }
-    });
-    apply_model_params_resolve(&mut payload, model, ctx.temperature);
-    payload
+    })
 }
 
 fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
-    let mut payload = json!({
+    json!({
         "model": model,
         "messages": [
-            { "role": system_role(model), "content": super::GROUPING_SYSTEM_PROMPT },
+            { "role": "developer", "content": super::GROUPING_SYSTEM_PROMPT },
             { "role": "user", "content": super::grouping_user_content(ctx) },
         ],
+        "reasoning_effort": "none",
+        "temperature": 0.2,
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -186,21 +186,19 @@ fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
                 "schema": crate::plan::schema(),
             }
         }
-    });
-    apply_model_params(&mut payload, model);
-    payload
+    })
 }
 
 fn build_message_payload(model: &str, user_content: &str) -> Value {
-    let mut payload = json!({
+    json!({
         "model": model,
         "messages": [
-            { "role": system_role(model), "content": super::SYSTEM_PROMPT },
+            { "role": "developer", "content": super::SYSTEM_PROMPT },
             { "role": "user", "content": user_content },
         ],
-    });
-    apply_model_params(&mut payload, model);
-    payload
+        "reasoning_effort": "none",
+        "temperature": 0.2,
+    })
 }
 
 #[cfg(test)]
@@ -216,9 +214,28 @@ mod tests {
         }
     }
 
+    fn resolve_ctx(temperature: f64) -> super::super::ResolveContext {
+        super::super::ResolveContext {
+            temperature,
+            ..Default::default()
+        }
+    }
+
+    // The uniform GPT-5.6 payload policy (CLO-545): every builder emits the
+    // `developer` role + `reasoning_effort:"none"` (omitting it defaults to `medium`)
+    // + `temperature`, with no model-family branching. Exact-shape per builder (BS5).
+
     #[test]
-    fn plan_payload_is_strict_json_schema() {
-        let p = build_plan_payload(&ctx(), "gpt-4o-mini-2024-07-18");
+    fn plan_payload_uniform_gpt_5_6_policy() {
+        let p = build_plan_payload(&ctx(), "gpt-5.6-terra");
+        assert_eq!(p["model"], json!("gpt-5.6-terra"));
+        assert_eq!(p["messages"][0]["role"], json!("developer"));
+        assert_eq!(
+            p["messages"][0]["content"],
+            json!(super::super::GROUPING_SYSTEM_PROMPT)
+        );
+        assert_eq!(p["reasoning_effort"], json!("none"));
+        assert_eq!(p["temperature"], json!(0.2));
         let rf = &p["response_format"];
         assert_eq!(rf["type"], json!("json_schema"));
         assert_eq!(rf["json_schema"]["strict"], json!(true));
@@ -226,49 +243,59 @@ mod tests {
     }
 
     #[test]
-    fn gpt_4o_mini_uses_temperature_and_system_role_no_reasoning() {
-        let p = build_plan_payload(&ctx(), "gpt-4o-mini-2024-07-18");
+    fn message_payload_uniform_gpt_5_6_policy() {
+        let p = build_message_payload("gpt-5.6-terra", "some diff");
+        assert_eq!(p["messages"][0]["role"], json!("developer"));
+        assert_eq!(
+            p["messages"][0]["content"],
+            json!(super::super::SYSTEM_PROMPT)
+        );
+        assert_eq!(p["messages"][1]["role"], json!("user"));
+        assert_eq!(p["reasoning_effort"], json!("none"));
         assert_eq!(p["temperature"], json!(0.2));
-        assert!(p.get("reasoning_effort").is_none());
-        assert_eq!(p["messages"][0]["role"], json!("system"));
+        assert!(p.get("response_format").is_none());
     }
 
     #[test]
-    fn o_series_omits_temperature_uses_developer_role_and_reasoning_effort() {
-        // round-2 review pt 1: o-series 400s on temperature + system role.
-        for model in ["o1", "o1-mini", "o3-mini", "o4-mini"] {
-            let p = build_plan_payload(&ctx(), model);
-            assert!(p.get("temperature").is_none(), "{model}: no temperature");
-            assert_eq!(
-                p["reasoning_effort"],
-                json!("low"),
-                "{model}: reasoning_effort"
-            );
-            assert_eq!(
-                p["messages"][0]["role"],
-                json!("developer"),
-                "{model}: developer role"
-            );
-        }
-    }
-
-    #[test]
-    fn reasoning_model_detection() {
-        assert!(is_reasoning_model("o1"));
-        assert!(is_reasoning_model("o3-mini"));
-        assert!(is_reasoning_model("o4-mini-2025"));
-        assert!(!is_reasoning_model("gpt-4o-mini"));
-        assert!(!is_reasoning_model("gpt-4.1"));
-        // The default model must take the non-reasoning payload path (system role
-        // + temperature); `gpt-5.4-mini` starts with `g`, so it is not detected
-        // as an o-series reasoning model.
-        assert!(!is_reasoning_model("gpt-5.4-mini"));
-        assert!(!is_reasoning_model("openai/gpt-oss-120b"));
+    fn resolve_payload_uses_ctx_temperature_and_developer_role() {
+        let p = build_resolve_payload(&resolve_ctx(0.5), "gpt-5.6-luna");
+        assert_eq!(p["model"], json!("gpt-5.6-luna"));
+        assert_eq!(p["messages"][0]["role"], json!("developer"));
+        assert_eq!(
+            p["messages"][0]["content"],
+            json!(super::super::RESOLVE_SYSTEM_PROMPT)
+        );
+        assert_eq!(p["reasoning_effort"], json!("none"));
+        assert_eq!(p["temperature"], json!(0.5));
+        assert_eq!(p["response_format"]["json_schema"]["strict"], json!(true));
+        assert_eq!(
+            p["response_format"]["json_schema"]["name"],
+            json!("conflict_resolutions")
+        );
     }
 
     #[test]
     fn cache_model_id_is_provider_qualified() {
-        let o = OpenAi::new("gpt-4o-mini-2024-07-18".to_string());
-        assert_eq!(o.cache_model_id(), "openai:gpt-4o-mini-2024-07-18");
+        let o = OpenAi::new("gpt-5.6-terra".to_string());
+        assert_eq!(o.cache_model_id(), "openai:gpt-5.6-terra");
+    }
+
+    #[test]
+    fn validate_model_accepts_supported_rejects_others() {
+        // Design A (CLO-545): only the GPT-5.6 family is valid for OpenAI.
+        assert!(validate_model("gpt-5.6-terra").is_ok());
+        assert!(validate_model("gpt-5.6-luna").is_ok());
+        // Any other model is rejected with an actionable Config error naming the
+        // model and pointing at `gcm provider`. Uses non-legacy invalid ids so this
+        // helper test carries no swept strings; the `mod.rs` `select`-gate test is the
+        // sole legacy-string fixture (the AC9 regression scenario, AC5/AC8 exemption).
+        let err = validate_model("gpt-5.6-sol").unwrap_err();
+        assert!(matches!(err.kind, ErrorKind::Config(_)));
+        let msg = err.to_string();
+        assert!(msg.contains("gpt-5.6-sol"), "names the model: {msg}");
+        assert!(msg.contains("gcm provider"), "points to recovery: {msg}");
+        for bad in ["gpt-5.6-sol", "gpt-5.5", "gpt-4.1", "unsupported-model"] {
+            assert!(validate_model(bad).is_err(), "{bad} must be rejected");
+        }
     }
 }

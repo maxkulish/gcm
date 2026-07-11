@@ -280,7 +280,7 @@ fn static_fallback_models(id: ProviderId) -> Vec<String> {
             "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
         ],
-        ProviderId::Openai => &["gpt-5.4-mini", "gpt-5.4", "gpt-4o-mini"],
+        ProviderId::Openai => &super::openai::SUPPORTED_MODELS,
         ProviderId::Anthropic => &["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"],
         ProviderId::Google | ProviderId::Vertex => &[
             "gemini-3.1-flash-lite",
@@ -324,11 +324,11 @@ mod tests {
 
     #[test]
     fn parse_openai_compatible_data_ids() {
-        let body = r#"{"object":"list","data":[{"id":"gpt-5.4-mini"},{"id":"whisper-1"},{"id":"text-embedding-3-small"}]}"#;
+        let body = r#"{"object":"list","data":[{"id":"gpt-5.6-terra"},{"id":"whisper-1"},{"id":"text-embedding-3-small"}]}"#;
         let ids = parse_models(ProviderId::Openai, body);
         assert_eq!(
             ids,
-            vec!["gpt-5.4-mini", "whisper-1", "text-embedding-3-small"]
+            vec!["gpt-5.6-terra", "whisper-1", "text-embedding-3-small"]
         );
     }
 
@@ -371,8 +371,8 @@ mod tests {
             assert!(!keep_chat_model(ProviderId::Openai, bad), "{bad} excluded");
         }
         for good in [
-            "gpt-5.4-mini",
-            "gpt-4o",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
             "openai/gpt-oss-120b",
             "llama-3.3-70b-versatile",
         ] {
@@ -404,6 +404,11 @@ mod tests {
         assert_eq!(
             static_fallback_models(ProviderId::Ollama),
             vec![ProviderId::Ollama.default_model().to_string()]
+        );
+        // OpenAI fallback is exactly its supported GPT-5.6 set, default (terra) first (CLO-545).
+        assert_eq!(
+            static_fallback_models(ProviderId::Openai),
+            vec!["gpt-5.6-terra", "gpt-5.6-luna"]
         );
     }
 

@@ -1811,7 +1811,7 @@ mod tests {
         assert!(text.contains("# model ="), "{text}");
         assert!(text.contains("# endpoint ="), "{text}");
         assert!(
-            text.contains("gpt-5.4-mini"),
+            text.contains("gpt-5.6-terra"),
             "openai default in reference: {text}"
         );
         assert!(
@@ -1827,11 +1827,11 @@ mod tests {
             conflict: ConflictConfig::default(),
             version: CONFIG_FORMAT_VERSION,
             default: ProviderId::Openai,
-            providers: vec![pcm(ProviderId::Openai, "gpt-5.4-mini")],
+            providers: vec![pcm(ProviderId::Openai, "gpt-5.6-terra")],
         };
         let text = toml::to_string_pretty(&cfg).unwrap();
         let back = parse_config(&text).unwrap();
-        assert_eq!(back.providers[0].model.as_deref(), Some("gpt-5.4-mini"));
+        assert_eq!(back.providers[0].model.as_deref(), Some("gpt-5.6-terra"));
     }
 
     #[test]
@@ -2095,13 +2095,16 @@ mod tests {
             default: ProviderId::Openai,
             providers: vec![pcw(
                 ProviderId::Openai,
-                Some("gpt-5.4-mini"),
-                &["gpt-5.4-mini", "gpt-5.4"],
+                Some("gpt-5.6-terra"),
+                &["gpt-5.6-terra", "gpt-5.6-luna"],
             )],
         };
         let text = render_config(&cfg).unwrap();
         let back = parse_config(&text).unwrap();
-        assert_eq!(back.providers[0].models, vec!["gpt-5.4-mini", "gpt-5.4"]);
+        assert_eq!(
+            back.providers[0].models,
+            vec!["gpt-5.6-terra", "gpt-5.6-luna"]
+        );
         assert_eq!(back.version, CONFIG_FORMAT_VERSION);
     }
 
@@ -2141,14 +2144,14 @@ mod tests {
             default: ProviderId::Openai,
             providers: vec![pcw(
                 ProviderId::Openai,
-                Some("gpt-5.4-mini"),
-                &["gpt-5.4-mini", "gpt-5.4"],
+                Some("gpt-5.6-terra"),
+                &["gpt-5.6-terra", "gpt-5.6-luna"],
             )],
         };
-        assert!(model_is_enabled(&cfg, ProviderId::Openai, "gpt-5.4-mini").is_ok());
+        assert!(model_is_enabled(&cfg, ProviderId::Openai, "gpt-5.6-terra").is_ok());
         let err = model_is_enabled(&cfg, ProviderId::Openai, "dall-e-3").unwrap_err();
         assert!(err.contains("dall-e-3"), "names offender: {err}");
-        assert!(err.contains("gpt-5.4-mini"), "lists set: {err}");
+        assert!(err.contains("gpt-5.6-terra"), "lists set: {err}");
         assert!(err.contains("gcm provider"), "actionable: {err}");
     }
 
@@ -2268,20 +2271,20 @@ mod tests {
             default: ProviderId::Openai,
             providers: vec![pcw(
                 ProviderId::Openai,
-                Some("gpt-5.4-mini"),
-                &["gpt-5.4-mini", "gpt-5.4"],
+                Some("gpt-5.6-terra"),
+                &["gpt-5.6-terra", "gpt-5.6-luna"],
             )],
         };
         preserve_existing_models(&mut enabled, Some(&prev));
         let openai = enabled.iter().find(|p| p.id == ProviderId::Openai).unwrap();
         assert_eq!(
             openai.models,
-            vec!["gpt-5.4-mini", "gpt-5.4"],
+            vec!["gpt-5.6-terra", "gpt-5.6-luna"],
             "whitelist preserved"
         );
         assert_eq!(
             openai.model.as_deref(),
-            Some("gpt-5.4-mini"),
+            Some("gpt-5.6-terra"),
             "default preserved"
         );
         // groq had no prior entry -> unchanged (empty)

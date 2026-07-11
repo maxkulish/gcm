@@ -373,7 +373,7 @@ impl ProviderId {
         match self {
             ProviderId::Groq => "openai/gpt-oss-120b",
             ProviderId::Google => "gemini-3.1-flash-lite",
-            ProviderId::Openai => "gpt-5.4-mini",
+            ProviderId::Openai => openai::SUPPORTED_MODELS[0],
             ProviderId::Anthropic => "claude-haiku-4-5",
             // Local, user-pulled model (FR-56; owner default). `:cloud` variants
             // (e.g. deepseek-v4-flash:cloud) work via --model but are NOT zero-egress.
@@ -439,7 +439,13 @@ pub fn select(
     Ok(match id {
         ProviderId::Groq => Box::new(groq::Groq::new(model)),
         ProviderId::Google => Box::new(gemini::Gemini::new(model)),
-        ProviderId::Openai => Box::new(openai::OpenAi::new(model)),
+        ProviderId::Openai => {
+            // Design A (CLO-545): gcm sends a GPT-5.6-only payload, so reject any
+            // non-GPT-5.6 OpenAI model here - the single construction point for both
+            // the commit path and `gcm resolve` - rather than 400 downstream.
+            openai::validate_model(&model)?;
+            Box::new(openai::OpenAi::new(model))
+        }
         ProviderId::Anthropic => Box::new(anthropic::Anthropic::new(model)),
         ProviderId::Ollama => {
             // Privacy defense-in-depth (FR-56/FR-48): a cloud-tagged model is proxied
@@ -803,7 +809,7 @@ mod tests {
     fn provider_defaults_and_tokens() {
         assert_eq!(ProviderId::Groq.default_model(), "openai/gpt-oss-120b");
         assert_eq!(ProviderId::Google.default_model(), "gemini-3.1-flash-lite");
-        assert_eq!(ProviderId::Openai.default_model(), "gpt-5.4-mini");
+        assert_eq!(ProviderId::Openai.default_model(), "gpt-5.6-terra");
         assert_eq!(ProviderId::Anthropic.default_model(), "claude-haiku-4-5");
         assert_eq!(ProviderId::Ollama.default_model(), "gemma4:e4b-mlx");
         assert_eq!(ProviderId::Ollama.model_env_vars(), &["GCM_OLLAMA_MODEL"]);
@@ -816,6 +822,25 @@ mod tests {
             ProviderId::Anthropic.model_env_vars(),
             &["GCM_ANTHROPIC_MODEL"]
         );
+    }
+
+    #[test]
+    fn select_openai_validates_gpt_5_6_family() {
+        // Design A (CLO-545): the OpenAI gate lives in `select`, so it guards both the
+        // commit path and `gcm resolve` (both construct via `select`). Passing cli
+        // provider + model bypasses env, keeping this hermetic; `select` reads no key.
+        // This is the sole intentional legacy-string fixture in `src/` (the AC9
+        // breaking-change regression scenario; the AC5/AC8 sweep exemption).
+        assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-terra")).is_ok());
+        assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-luna")).is_ok());
+        // `Box<dyn Provider>` is not `Debug`, so match rather than `unwrap_err`.
+        match select(Some(ProviderId::Openai), Some("gpt-5.4-mini")) {
+            Err(e) => {
+                assert_eq!(e.provider, "OpenAI");
+                assert!(matches!(e.kind, ErrorKind::Config(_)));
+            }
+            Ok(_) => panic!("gpt-5.4-mini must be rejected by the GPT-5.6 gate"),
+        }
     }
 
     #[test]
