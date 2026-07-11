@@ -48,10 +48,10 @@ spinoff_tasks:
       Owner spec-review points 3/4 + discovery refactor are provider-wide and pre-existing; split out to keep CLO-545
       focused on the OpenAI catalog + payload policy. Owner chose "split to follow-up".
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-07-10T12:54:30.000Z'
-  updated_at: '2026-07-11T08:45:00.000Z'
+  updated_at: '2026-07-11T09:40:00.000Z'
 phases:
   discovery:
     status: skipped
@@ -96,11 +96,25 @@ phases:
       contradictory: inline-and-delete on the main non-reasoning path; the named is_temperature_rejecting_model guard is
       reserved for the temperature-rejection contingency only. No prior decision contradicted; nothing needs a user conflict prompt.
   implement:
-    status: in_progress
+    status: complete
     branch: feat/clo-545-openai-gpt-5.6
     commits:
       - d99d2c7   # docs: spec + workflow + aggregation sync
       - 6a78345   # feat: implementation (ST1-ST5)
+      - dfb2768   # docs: implementation-complete workflow record
+      - 742ea03   # fix: pre-PR validation findings (single legacy fixture, whitespace)
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-545-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-545-gemini-validation.md
+    gemini_verdict: PASS
+    validation_synthesis_report: docs/reviews/clo-545-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    validation_fix_iteration_count: 1
+    validation_fixes_applied:
+      - 'AC5/AC8: retargeted openai.rs validate_model test to non-legacy ids; mod.rs select test is the sole legacy fixture'
+      - 'Stripped trailing whitespace in clo-545-spec-review-gemini.md (git diff --check clean)'
+      - 'Corrected stale luna-default / fallback-order wording in workflow YAML'
     subtasks_complete:
       - 'ST1: default terra + fallback [terra,luna] + shared SUPPORTED_MODELS const + tests'
       - 'ST2: uniform GPT-5.6 payload in 3 builders (tests-first, per builder); deleted is_reasoning_model/system_role/apply_model_params*'
@@ -232,3 +246,16 @@ history:
       legacy strings swept from src/ + README; per-builder + accept/reject tests. 359 unit + all integration tests pass;
       fmt + clippy clean. Binary e2e confirmed: gpt-5.4-mini/o3-mini rejected with actionable error, gpt-5.6-terra passes
       the gate. AC7 live API smokes remain owner-run (need OPENAI_API_KEY).
+  - timestamp: '2026-07-11T09:35:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      lok pre-pr-validation: Gemini PASS (359/359 tests, fmt+clippy clean), Codex FAIL (3 findings, over-weighted per
+      synthesis - test-fixture hygiene, production code clean). Synthesis PASS_WITH_NOTES / PROCEED_WITH_FIXES. One fix
+      iteration applied in 742ea03: (1) AC5/AC8 single-legacy-fixture (retarget openai.rs test to non-legacy ids; mod.rs
+      select test is the sole legacy fixture), (2) trailing-whitespace strip (git diff --check clean), (3) stale YAML
+      wording corrected. Re-ran fmt/clippy/test green.
+  - timestamp: '2026-07-11T09:40:00.000Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
