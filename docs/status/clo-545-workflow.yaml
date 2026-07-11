@@ -96,7 +96,23 @@ phases:
       contradictory: inline-and-delete on the main non-reasoning path; the named is_temperature_rejecting_model guard is
       reserved for the temperature-rejection contingency only. No prior decision contradicted; nothing needs a user conflict prompt.
   implement:
-    status: pending
+    status: in_progress
+    branch: feat/clo-545-openai-gpt-5.6
+    commits:
+      - d99d2c7   # docs: spec + workflow + aggregation sync
+      - 6a78345   # feat: implementation (ST1-ST5)
+    subtasks_complete:
+      - 'ST1: default terra + fallback [terra,luna] + shared SUPPORTED_MODELS const + tests'
+      - 'ST2: uniform GPT-5.6 payload in 3 builders (tests-first, per builder); deleted is_reasoning_model/system_role/apply_model_params*'
+      - 'ST3: validate-to-family gate in provider::select (commit + resolve) + accept/reject tests'
+      - 'ST4: swept legacy strings from cli.rs/diff.rs/config.rs; retargeted fixtures to terra/luna'
+      - 'ST5: README terra default + reasoning note + breaking-change migration note'
+    verification:
+      unit_integration_tests: '359 unit + all integration pass; fmt + clippy clean'
+      ac5_sweep: 'production src/ zero-match; 5 hits are the intentional #[cfg(test)] rejection guards (openai validate_model + mod.rs select)'
+      binary_e2e: 'real binary: gpt-5.4-mini + o3-mini rejected with actionable error; gpt-5.6-terra passes gate to missing-key. Both flows share the select gate.'
+      ac7_live_smokes: 'PENDING - owner-run (needs OPENAI_API_KEY): grouping, message, resolve pinned to gpt-5.6-terra'
+    assumptions_revalidated: true
   pr:
     status: pending
   complete:
@@ -206,3 +222,13 @@ history:
     action: phase_transition
     phase: spec
     details: Transitioned from spec to implement
+  - timestamp: '2026-07-11T09:15:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      ST1-ST5 landed in commit 6a78345 on feat/clo-545-openai-gpt-5.6. Default gpt-5.6-terra via shared
+      openai::SUPPORTED_MODELS; uniform branch-free GPT-5.6 payload (developer + reasoning_effort:none + temperature)
+      across plan/message/resolve builders; validate-to-family gate in provider::select covering commit + resolve;
+      legacy strings swept from src/ + README; per-builder + accept/reject tests. 359 unit + all integration tests pass;
+      fmt + clippy clean. Binary e2e confirmed: gpt-5.4-mini/o3-mini rejected with actionable error, gpt-5.6-terra passes
+      the gate. AC7 live API smokes remain owner-run (need OPENAI_API_KEY).
