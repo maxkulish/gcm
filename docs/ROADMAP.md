@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-09 (CLO-537 merged — PR #32; live ADC verify is HITL)
+**Last Updated**: 2026-07-10 (CLO-545 started — OpenAI GPT-5.6 model refresh, spec phase)
 
 ## Summary
 
@@ -12,6 +12,7 @@
 | Phase 4: `gcm resolve` (conflict resolution) | 2 | 2 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
+| Maintenance (cross-cutting) | 2 | 0 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -74,3 +75,12 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | CLO-517 | Fix Ollama cloud model commit-plan parse failure (single-commit fallback) | Done | CLO-495 (related) |
 | CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini (unsupported `additionalProperties`) | Done | CLO-531 |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
+
+## Maintenance (cross-cutting)
+
+Provider-catalog upkeep: keep the shipped model IDs current as providers publish and deprecate models.
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | In Progress | CLO-489 (related) |
+| CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | Backlog | CLO-516 (related), split from CLO-545 |

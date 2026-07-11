@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-09 (CLO-537 merged — PR #32; live ADC verify is HITL)
+**Last Updated**: 2026-07-10 (CLO-545 started — spec phase; OpenAI GPT-5.6 model refresh)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -41,6 +41,8 @@
 | [CLO-535](https://linear.app/cloud-ai/issue/CLO-535) | Bugfix | Fix `gcm resolve` splice: resolution missing a trailing newline joins the following line | Bug | Low | Done | CLO-531 (related) | — |
 | [CLO-533](https://linear.app/cloud-ai/issue/CLO-533) | R2 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | HITL/Feature | Low | Done | CLO-531 | thin fetch→core wrapper over the Phase-1 engine |
 | [CLO-537](https://linear.app/cloud-ai/issue/CLO-537) | S14 | Add Vertex AI provider (keyless ADC) selectable in `gcm provider` | HITL/Feature | Medium | Done | CLO-489, CLO-516, CLO-531 (all Done) | new: `ProviderId::Vertex` over gemini.rs payloads; PR #32 |
+| [CLO-545](https://linear.app/cloud-ai/issue/CLO-545) | Maint | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | AFK/Improvement | Medium | In Progress | — | provider maintenance; no new FR; spun off CLO-547 |
+| [CLO-547](https://linear.app/cloud-ai/issue/CLO-547) | Maint | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | AFK/Improvement | Medium | Backlog | — | provider-wide discovery hygiene; split from CLO-545 review |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes. **CLO-537** (Vertex AI provider, S14) is the first open post-`resolve` slice — provider expansion, no new FR.
 
@@ -78,19 +80,19 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 **Two parallel fronts after the tracer (CLO-486):** the workflow chain (CLO-487 → CLO-491 → CLO-492) and the provider chain (CLO-489 → CLO-494/CLO-495).
 
-**Live frontier:** all tracked gcm work is complete. `gcm resolve` Phase 1 (CLO-531, PR #25) + fixes (CLO-534/535) + Phase 2 (CLO-533, PR #30) shipped. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (HITL).
+**Live frontier:** **CLO-545** (OpenAI GPT-5.6 model refresh — new default `gpt-5.6-terra`, `gpt-5.6-luna` selectable, drop legacy `gpt-5.4*`/`gpt-4o-mini`, replace the o-series branch with a uniform GPT-5.6 payload + a validate-to-GPT-5.6-family gate) is the sole active task, in the spec phase (owner review round 3). Discovery-layer hardening split to **CLO-547**. All prior tracked gcm work is complete: `gcm resolve` Phase 1 (CLO-531, PR #25) + fixes (CLO-534/535) + Phase 2 (CLO-533, PR #30) shipped. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (HITL).
 
 ## Active Work (WIP Limit: 3)
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-545](https://linear.app/cloud-ai/issue/CLO-545) | Migrate OpenAI provider to GPT-5.6 (terra default) | In Progress | Spec | — |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
-| — | — | None open | — | — |
+| 1 | [CLO-547](https://linear.app/cloud-ai/issue/CLO-547) | Harden `gcm provider` model discovery (capability filter, no-inject-after-live, transport tests) | — (relates CLO-545/516) | — |
 
 > All tracked gcm work is complete. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09); the only remaining step is the maintainer's live ADC end-to-end check (HITL, needs the GCP project + `gcloud auth application-default login`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1/2 (CLO-531 + fixes CLO-534/535 + CLO-533).
 >
