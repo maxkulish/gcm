@@ -33,7 +33,7 @@ const PER_FILE_BYTES: usize = 8192;
 
 /// Per-provider diff budget (CLO-489, FR-13a): the coarse total-body safeguard
 /// and the per-tracked-file truncation cap. Each provider declares its own (a
-/// smaller-context model like `gpt-4o-mini` gets a tighter total); env overrides
+/// smaller-context provider gets a tighter total); env overrides
 /// `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` apply across providers.
 pub struct DiffBudget {
     /// Coarse final safeguard on the whole assembled body. Applied on **every**

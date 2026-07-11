@@ -163,7 +163,7 @@ gcm --json --plan-only           # JSON plan preview; non-destructive
 gcm --json --yes                 # unattended JSON commit
 gcm --yes                        # auto-confirm (non-interactive / CI / agents); alias --no-input
 gcm --provider=google            # use Gemini (also: --provider=openai, --provider=anthropic); default is groq
-gcm --provider=openai --model=gpt-5.4-mini   # override the model for a provider
+gcm --provider=openai --model=gpt-5.6-terra  # override the model (OpenAI: gpt-5.6-terra or gpt-5.6-luna)
 gcm --provider=anthropic         # use Anthropic (forced tool-use for structured output)
 gcm --provider=ollama            # local, zero-egress (no key); needs a running Ollama daemon
 gcm config                       # run the interactive provider setup wizard and exit
@@ -262,13 +262,22 @@ Override the model with `--model` or the per-provider env var.
 |----------|--------------|---------|---------------|-----------|-------------------|
 | Groq (default) | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `GCM_GROQ_MODEL` | strict `json_schema` |
 | Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
-| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.4-mini` | `GCM_OPENAI_MODEL` | strict `json_schema` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.6-terra` | `GCM_OPENAI_MODEL` | strict `json_schema` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` | `GCM_ANTHROPIC_MODEL` | forced tool-use (`input_schema`) |
 | Ollama (local) | `ollama` | none | `gemma4:e4b-mlx` | `GCM_OLLAMA_MODEL` | native `format` (model-dependent) |
 
 Reasoning models emit no chain-of-thought into the plan or message (per-provider
-suppression + a `<think>` backstop). OpenAI reasoning models (`o1`/`o3`-style) are
-supported as `--model` overrides; the default `gpt-5.4-mini` is non-reasoning.
+suppression + a `<think>` backstop). For OpenAI, gcm supports only the GPT-5.6 family -
+`gpt-5.6-terra` (default, mini-tier) and `gpt-5.6-luna` (nano-tier, cheaper). Both are
+reasoning models, so gcm sends `reasoning_effort: "none"` to keep commit generation
+fast and cheap.
+
+> **OpenAI GPT-5.6 migration (breaking):** gcm now accepts only `gpt-5.6-terra` /
+> `gpt-5.6-luna` for OpenAI. Any other `--model` - including the former default
+> `gpt-5.4-mini` and the `o1`/`o3`/`o4` reasoning overrides - is rejected with an
+> actionable error. If a saved config pins a legacy OpenAI model, run `gcm provider`
+> to re-select; `gcm config` / `--reconfigure` preserve the old value and do **not**
+> migrate it.
 
 **Ollama (local, zero-egress):** needs a running daemon and a pulled model; no API key.
 The endpoint is `http://localhost:11434` by default - override with `OLLAMA_HOST` (e.g.
