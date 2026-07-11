@@ -829,6 +829,8 @@ mod tests {
         // Design A (CLO-545): the OpenAI gate lives in `select`, so it guards both the
         // commit path and `gcm resolve` (both construct via `select`). Passing cli
         // provider + model bypasses env, keeping this hermetic; `select` reads no key.
+        // This is the sole intentional legacy-string fixture in `src/` (the AC9
+        // breaking-change regression scenario; the AC5/AC8 sweep exemption).
         assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-terra")).is_ok());
         assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-luna")).is_ok());
         // `Box<dyn Provider>` is not `Debug`, so match rather than `unwrap_err`.

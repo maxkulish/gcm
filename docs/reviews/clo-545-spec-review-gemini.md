@@ -10,7 +10,7 @@
 The problem statement is clear, complete, and accurate. It perfectly matches the Linear task description (CLO-545), precisely identifies all touched components (mod.rs, models.rs, openai.rs, cli.rs, diff.rs, config.rs, and README.md), and correctly details the target models (`gpt-5.6-luna` default, `gpt-5.6-terra` fallback).
 
 ## 2. Acceptance Criteria Review
-**Strong**: 
+**Strong**:
 * Criteria **AC1–AC3** are highly specific, verifiable, and map directly to compile-time or unit-test assertions.
 * **AC4** provides an exact, reproducible `rg` search pattern to prevent string leakage.
 * **AC5** pinpoints the exact line ranges in `README.md` to update.
@@ -20,24 +20,24 @@ The problem statement is clear, complete, and accurate. It perfectly matches the
 * **Transition Validation Caveat**: A user with an existing `gcm.toml` (v2 configuration) will have `providers.openai.models` whitelisted to the legacy models (`gpt-5.4-mini`, `gpt-4o-mini`, etc.). Upon upgrade, the CLI will resolve the default model to `gpt-5.6-luna` but immediately crash with a validation error because `gpt-5.6-luna` is not in their stale config whitelist. There is no criterion specifying how to smooth this transition or warn the user.
 
 ## 3. Constraints Check
-**Aligned**: 
+**Aligned**:
 * Removing the o-series reasoning-override path aligns with the owner's goal to streamline OpenAI integration.
 * Preserving the numeric `diff_budget` limits (256,000 bytes / standard per-file) while updating only the comment matches local performance limits.
 * Pinned scope for the regex sweep (`src/` + `README.md`) successfully protects historical logs and design documentation under `docs/` from unnecessary churn.
 
-**Concerns**: 
+**Concerns**:
 * No concerns found. The constraints are rigorous and respectful of the existing codebase architecture.
 
 ## 4. Decomposition Quality
-**Well-scoped**: 
+**Well-scoped**:
 * **ST1–ST4** are independent, highly focused sub-tasks that can easily be completed in under 2 hours each.
 * Dependencies are correctly identified, isolating docs and full gating (ST4) to run last.
 
-**Issues**: 
+**Issues**:
 * None. The decomposition is solid.
 
 ## 5. Evaluation Coverage
-**Covered**: 
+**Covered**:
 * The evaluation table covers all functional and non-functional acceptance criteria with concrete verification steps.
 
 **Gaps**:
@@ -46,10 +46,10 @@ The problem statement is clear, complete, and accurate. It perfectly matches the
 * **Missing `keep_chat_model` Verification**: The evaluation table does not explicitly mention running or updating `keep_chat_model_excludes_non_text_for_openai_groq`, which contains assertions on legacy strings (`gpt-5.4-mini`, `gpt-4o`) that will fail AC4.
 
 ## 6. Codebase Alignment
-**Violations**: 
+**Violations**:
 * None. The spec honors the synchronous `Provider` trait contract, the `ProviderError` / `ErrorKind` enum taxonomy, and the standard configuration format.
 
-**Alignment**: 
+**Alignment**:
 * Deleting `is_reasoning_model` and `system_role` to inline plain-chat behavior (`"system"` role and `temperature`) reduces code complexity and matches the design pattern of other non-reasoning providers.
 
 ## 7. Blind Spots

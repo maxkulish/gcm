@@ -19,7 +19,7 @@ classification:
       note: The existing OpenAI backend is the direct template - pure edit, not greenfield
     requirement_clarity:
       lean: spec
-      note: Acceptance criteria fully derivable; owner decisions already made (luna default, remove o-series)
+      note: Acceptance criteria fully derivable; owner decisions made (terra default after review round 2, remove o-series)
     scope_signal:
       lean: spec
       note: S/M - swap constants, delete a code path, update tests/docs
@@ -81,7 +81,7 @@ phases:
     review_applied: true
     applied_suggestions:
       - Fixed eval Row 1 command to cargo test provider_defaults_and_tokens (was default_model, matched no test)
-      - Added strict-equality fallback assertion requirement (static_fallback_models(Openai) == vec!["gpt-5.6-luna","gpt-5.6-terra"])
+      - Added strict-equality fallback assertion requirement (static_fallback_models(Openai) exact list; terra-first after round 2)
       - Added keep_chat_model_excludes_non_text_for_openai_groq to ST1 + a dedicated eval row (retarget legacy good-model samples)
       - Added AC8 (all legacy-string unit-test assertions updated) and strengthened AC4 to call out ~15+ config.rs fixtures + models.rs/openai.rs sample ids
       - Added AC9 + README migration note (o-series overrides no longer special-cased; pre-GPT-5.6 whitelist rejects new default until gcm provider/--reconfigure)

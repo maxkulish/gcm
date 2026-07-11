@@ -285,16 +285,16 @@ mod tests {
         // Design A (CLO-545): only the GPT-5.6 family is valid for OpenAI.
         assert!(validate_model("gpt-5.6-terra").is_ok());
         assert!(validate_model("gpt-5.6-luna").is_ok());
-        // A legacy saved model / non-5.6 override is rejected with an actionable
-        // Config error naming the model and pointing at `gcm provider`. This is the
-        // AC9 breaking-change regression guard; its legacy strings (and the `select`
-        // gate test in mod.rs) are the intentional exemptions from the AC5 sweep.
-        let err = validate_model("gpt-5.4-mini").unwrap_err();
+        // Any other model is rejected with an actionable Config error naming the
+        // model and pointing at `gcm provider`. Uses non-legacy invalid ids so this
+        // helper test carries no swept strings; the `mod.rs` `select`-gate test is the
+        // sole legacy-string fixture (the AC9 regression scenario, AC5/AC8 exemption).
+        let err = validate_model("gpt-5.6-sol").unwrap_err();
         assert!(matches!(err.kind, ErrorKind::Config(_)));
         let msg = err.to_string();
-        assert!(msg.contains("gpt-5.4-mini"), "names the model: {msg}");
+        assert!(msg.contains("gpt-5.6-sol"), "names the model: {msg}");
         assert!(msg.contains("gcm provider"), "points to recovery: {msg}");
-        for bad in ["gpt-4.1", "gpt-4o", "o3-mini", "gpt-5.6-sol"] {
+        for bad in ["gpt-5.6-sol", "gpt-5.5", "gpt-4.1", "unsupported-model"] {
             assert!(validate_model(bad).is_err(), "{bad} must be rejected");
         }
     }
