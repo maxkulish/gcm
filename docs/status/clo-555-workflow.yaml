@@ -46,10 +46,10 @@ linear:
   branch_actual: null
 design_source: docs/hotfix/2026-07-12-resolve-stage-and-finish.md
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-07-12T20:55:00.000Z'
-  updated_at: '2026-07-12T21:50:00.000Z'
+  updated_at: '2026-07-13T01:40:00.000Z'
 phases:
   discovery:
     status: skipped
@@ -98,7 +98,7 @@ phases:
       Ollama's concurrent-edit finding); (2) ST4 sizing - split applied as a pure decomposition refinement,
       contradicts no prior decision.
   implement:
-    status: in_progress
+    status: complete
     branch: feat/clo-555-resolve-transaction
     plan_source: docs/specs/2026-07-12-clo-555-resolve-ownership-transaction.md (spec decomposition ST1-ST8)
     commits:
@@ -213,3 +213,17 @@ history:
       acceptance.sh 254 PASS / 0 FAIL / 1 SKIP incl. new PTY AC-R1/R2 (rejection restores bytes, EOF rejects)
       and the CLO-545 model-gate staleness fix. Two bonus bugs found and fixed (ConflictConfig defaults;
       zdiff3 destroying hand-resolutions). Deviations D1-D3 recorded in the spec as-built notes.
+  - timestamp: '2026-07-13T01:35:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Validation gate: Gemini PASS (no findings, all 12 ACs confirmed); Codex FAIL with 5 findings, ALL
+      validated as real against the code (CRITICAL provider-abort vs owner decision 1 - overstated on
+      data-loss but valid on contract; HIGH precondition ordering; HIGH edit-validation abort; HIGH remote
+      comment-failure Partial downgrade; MEDIUM remote engine staging). One fix iteration (1db180e) resolved
+      all five + updated 2 tests to the AC5 contract + added 2 new tests. Post-fix: 378 unit + 76
+      integration green, clippy/fmt clean, acceptance 254/0/1. Synthesis: PASS_WITH_FIXES_APPLIED.
+  - timestamp: '2026-07-13T01:40:00.000Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
