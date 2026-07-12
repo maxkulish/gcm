@@ -673,3 +673,478 @@ id = "ollama"
     let after = fs::read_to_string(repo.join("f.txt")).unwrap();
     assert_eq!(after, "clean and corrected resolution\n");
 }
+
+// ---------------------------------------------------------------------------
+// CLO-555 ownership transaction: stage, finish, escalation, --no-finish.
+// Interactive paths (rejection restore, EOF at a prompt) need a real TTY and
+// live in scripts/acceptance.sh (expect-driven), mirroring the AC-2 pattern;
+// the snapshot/guard byte-level logic is unit-tested in src/resolve/mod.rs.
+// ---------------------------------------------------------------------------
+
+const OLLAMA_CONFIG: &str = r#"version = 2
+default = "ollama"
+
+[[providers]]
+id = "ollama"
+"#;
+
+/// Probe whether `git commit -S` works here (mirrors scripts/acceptance.sh
+/// `probe_signing`). CI runners have no signing key; those tests skip there.
+fn signing_available() -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    git_init(dir.path());
+    run_git(
+        dir.path(),
+        &["commit", "-S", "--allow-empty", "-q", "-m", "probe"],
+    )
+    .status
+    .success()
+}
+
+fn merge_head_present(repo: &Path) -> bool {
+    run_git(repo, &["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])
+        .status
+        .success()
+}
+
+fn unmerged_paths(repo: &Path) -> String {
+    git_str(repo, &["ls-files", "-u"])
+}
+
+fn staged_paths(repo: &Path) -> String {
+    git_str(repo, &["diff", "--cached", "--name-only"])
+}
+
+#[test]
+fn transaction_yes_merge_finishes_signed() {
+    if !signing_available() {
+        eprintln!("skipping transaction_yes_merge_finishes_signed: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+
+    let (url, server) = mock_ollama_server(&mock_resolve_response("resolved\n"));
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Single JSON envelope with the transaction fields.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "resolved", "{stdout}");
+    assert_eq!(json["staged"][0], "f.txt", "{stdout}");
+    assert_eq!(json["finish"]["result"], "completed", "{stdout}");
+    assert_eq!(json["finish"]["op"], "merge", "{stdout}");
+    assert!(
+        json["finish"]["commit"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
+        "{stdout}"
+    );
+
+    // Zero manual steps left: index clean, merge concluded by a signed
+    // two-parent commit.
+    assert!(!merge_head_present(repo), "MERGE_HEAD cleared");
+    assert_eq!(unmerged_paths(repo), "", "no unmerged entries");
+    assert!(
+        run_git(repo, &["rev-parse", "--verify", "HEAD^2"])
+            .status
+            .success(),
+        "HEAD is a 2-parent merge commit"
+    );
+    let raw = git_str(repo, &["cat-file", "commit", "HEAD"]);
+    assert!(raw.contains("gpgsig"), "merge commit is signed: {raw}");
+    assert_eq!(
+        fs::read_to_string(repo.join("f.txt")).unwrap(),
+        "resolved\n"
+    );
+}
+
+#[test]
+fn marker_free_unmerged_file_is_staged_without_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+    // The user already resolved the file by hand before running gcm.
+    fs::write(repo.join("f.txt"), "hand-resolved before gcm\n").unwrap();
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // No provider call happens (no markers to resolve), so the base URL is a
+    // dead address on purpose.
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", "http://127.0.0.1:1")],
+        &[
+            "resolve",
+            "--json",
+            "--yes",
+            "--no-finish",
+            "--provider",
+            "ollama",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "resolved", "{stdout}");
+    assert_eq!(json["files"][0]["action"], "accepted", "{stdout}");
+    assert_eq!(json["staged"][0], "f.txt", "{stdout}");
+    assert!(
+        staged_paths(repo).lines().any(|l| l == "f.txt"),
+        "hand-resolved file staged in the apply phase"
+    );
+    assert_eq!(
+        unmerged_paths(repo),
+        "",
+        "unmerged entry cleared by staging"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join("f.txt")).unwrap(),
+        "hand-resolved before gcm\n",
+        "content untouched"
+    );
+}
+
+#[test]
+fn escalation_stages_confirmed_progress_without_finishing() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    // Binary + text conflict: the text file resolves, the binary escalates.
+    fs::write(repo.join(".gitattributes"), "*.bin binary\n").unwrap();
+    fs::write(repo.join("img.bin"), b"\x89PNG\r\n\x1a\nBASE").unwrap();
+    fs::write(repo.join("f.txt"), "base\n").unwrap();
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "base"]);
+    let base = git_str(repo, &["branch", "--show-current"]);
+    git(repo, &["switch", "-q", "-c", "feature"]);
+    fs::write(repo.join("f.txt"), "feature\n").unwrap();
+    fs::write(repo.join("img.bin"), b"\x89PNG\r\n\x1a\nCHANGED").unwrap();
+    git(repo, &["commit", "-qam", "feature"]);
+    git(repo, &["switch", "-q", &base]);
+    fs::write(repo.join("f.txt"), "mainline\n").unwrap();
+    fs::write(repo.join("img.bin"), b"\x89PNG\r\n\x1a\nMAINLINE").unwrap();
+    git(repo, &["commit", "-qam", "mainline"]);
+    let _ = run_git(repo, &["merge", "feature"]);
+
+    let (url, server) = mock_ollama_server(&mock_resolve_response("resolved\n"));
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // No --no-finish: the escalation itself must prevent the finish, on any
+    // machine (nothing signing-dependent runs).
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "partial", "{stdout}");
+    assert_eq!(
+        json["staged"][0], "f.txt",
+        "confirmed work staged: {stdout}"
+    );
+    assert_eq!(json["finish"]["result"], "skipped", "{stdout}");
+    assert!(
+        staged_paths(repo).lines().any(|l| l == "f.txt"),
+        "resolved file staged"
+    );
+    assert!(
+        unmerged_paths(repo).contains("img.bin"),
+        "escalated binary stays unmerged"
+    );
+    assert!(merge_head_present(repo), "merge left in progress");
+}
+
+#[test]
+fn no_finish_reports_skipped_with_op() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+
+    let (url, server) = mock_ollama_server(&mock_resolve_response("resolved\n"));
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &[
+            "resolve",
+            "--json",
+            "--yes",
+            "--no-finish",
+            "--provider",
+            "ollama",
+        ],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "resolved", "{stdout}");
+    assert_eq!(json["finish"]["result"], "skipped", "{stdout}");
+    assert_eq!(json["finish"]["op"], "merge", "{stdout}");
+    assert!(merge_head_present(repo), "merge deliberately left open");
+}
+
+#[test]
+fn finish_hook_failure_keeps_staged_and_exits_nonzero() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+    // Rejecting pre-commit hook: fires before signing, so this runs on
+    // unsigned machines and CI alike.
+    let hooks = repo.join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("pre-commit");
+    fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let (url, server) = mock_ollama_server(&mock_resolve_response("resolved\n"));
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(!out.status.success(), "finish failure must exit non-zero");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("could not finish the merge"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("git merge --continue"),
+        "manual command named: {stderr}"
+    );
+    assert!(
+        staged_paths(repo).lines().any(|l| l == "f.txt"),
+        "staged resolution kept"
+    );
+    assert!(merge_head_present(repo), "MERGE_HEAD preserved for retry");
+}
+
+#[test]
+fn cherry_pick_transaction_completes() {
+    if !signing_available() {
+        eprintln!("skipping cherry_pick_transaction_completes: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    fs::write(repo.join("f.txt"), "base\n").unwrap();
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "base"]);
+    let base = git_str(repo, &["branch", "--show-current"]);
+    git(repo, &["switch", "-q", "-c", "feature"]);
+    fs::write(repo.join("f.txt"), "feature\n").unwrap();
+    git(repo, &["commit", "-qam", "feature"]);
+    git(repo, &["switch", "-q", &base]);
+    fs::write(repo.join("f.txt"), "mainline\n").unwrap();
+    git(repo, &["commit", "-qam", "mainline"]);
+    let _ = run_git(repo, &["cherry-pick", "feature"]);
+
+    let (url, server) = mock_ollama_server(&mock_resolve_response("resolved\n"));
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("cherry-pick completed"),
+        "headline: {stdout}"
+    );
+    assert!(
+        !run_git(
+            repo,
+            &["rev-parse", "--verify", "--quiet", "CHERRY_PICK_HEAD"]
+        )
+        .status
+        .success(),
+        "CHERRY_PICK_HEAD cleared"
+    );
+    assert_eq!(unmerged_paths(repo), "");
+}
+
+#[test]
+fn rebase_stops_on_next_conflict_reports_rerun() {
+    if !signing_available() {
+        eprintln!("skipping rebase_stops_on_next_conflict: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    fs::write(repo.join("f.txt"), "base\n").unwrap();
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "base"]);
+    let base = git_str(repo, &["branch", "--show-current"]);
+    git(repo, &["switch", "-q", "-c", "feature"]);
+    fs::write(repo.join("f.txt"), "f1\n").unwrap();
+    git(repo, &["commit", "-qam", "c1"]);
+    fs::write(repo.join("f.txt"), "f2\n").unwrap();
+    git(repo, &["commit", "-qam", "c2"]);
+    git(repo, &["switch", "-q", &base]);
+    fs::write(repo.join("f.txt"), "moved\n").unwrap();
+    git(repo, &["commit", "-qam", "move main"]);
+    git(repo, &["switch", "-q", "feature"]);
+    let _ = run_git(repo, &["rebase", &base]); // stops on c1
+
+    let (url, server) = mock_ollama_server(&mock_resolve_response("r1\n"));
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // One provider call resolves the c1 stop; the finish continues the rebase,
+    // which halts again applying c2. That ends this run (CLO-554 owns looping).
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("stopped on the next conflicted commit"),
+        "headline: {stdout}"
+    );
+    assert!(
+        run_git(repo, &["rev-parse", "--verify", "--quiet", "REBASE_HEAD"])
+            .status
+            .success(),
+        "rebase still in progress at the next stop"
+    );
+    assert!(
+        !unmerged_paths(repo).is_empty(),
+        "next commit's conflict present"
+    );
+}
+
+#[test]
+fn mergiraf_resolution_is_a_proposal_and_gets_staged() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+
+    // Fake mergiraf on PATH: fully "resolves" the file structurally.
+    let bin = dir.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let fake = bin.join("mergiraf");
+    fs::write(
+        &fake,
+        "#!/bin/sh\n[ \"$1\" = solve ] || exit 1\nprintf 'mergiraf resolved\\n' > \"$4\"\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // No provider call: mergiraf resolves everything, and its output flows
+    // through the same confirm (auto-accepted by --yes) + stage pipeline.
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[
+            ("GCM_OLLAMA_BASE_URL", "http://127.0.0.1:1"),
+            ("PATH", &path_env),
+        ],
+        &[
+            "resolve",
+            "--json",
+            "--yes",
+            "--no-finish",
+            "--provider",
+            "ollama",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "resolved", "{stdout}");
+    assert_eq!(json["files"][0]["action"], "accepted", "{stdout}");
+    assert_eq!(json["staged"][0], "f.txt", "{stdout}");
+    assert_eq!(
+        fs::read_to_string(repo.join("f.txt")).unwrap(),
+        "mergiraf resolved\n"
+    );
+    assert!(staged_paths(repo).lines().any(|l| l == "f.txt"));
+}
