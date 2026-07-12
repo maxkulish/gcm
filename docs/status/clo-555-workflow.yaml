@@ -141,7 +141,12 @@ phases:
       - 'Remote comment failure no longer downgrades a committed run to Partial'
       - 'Engine staging + staged report field are Local-only (AC8)'
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/35
+    pr_number: 35
+    ci_passed: false
+    mergeable: true
+    pre_flight_passed: true
   complete:
     status: pending
 history:
@@ -227,3 +232,11 @@ history:
     action: phase_transition
     phase: implement
     details: Transitioned from implement to pr
+  - timestamp: '2026-07-13T01:48:00.000Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'cargo fmt --check, clippy -D warnings, cargo test (454 tests across 7 targets) all green; branch pushed.'
+  - timestamp: '2026-07-13T01:52:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #35 opened (27 files, +3147/-287). Health gate MERGEABLE; CI queued (run 29212320030).'
