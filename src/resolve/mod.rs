@@ -26,7 +26,7 @@ use crate::git::FinishOutcome;
 use classify::{classify, HunkResolution};
 use markers::{has_conflict_markers, parse, ConflictFile};
 use report::{FileAction, FileReport, FinishReport, FinishResult, ResolveReport, ResolveStatus};
-use validate::{validate, ValidationError};
+use validate::validate;
 
 /// Byte-exact snapshot of the unmerged working-tree files, captured before the
 /// first mutation (the zdiff3 re-checkout). A user rejection restores these
@@ -203,6 +203,18 @@ pub fn run_resolve_in_repo(
         }
     }
 
+    // Every failure-prone precondition runs BEFORE the first working-tree
+    // mutation, so an early exit (missing key, non-TTY, bad privacy config)
+    // leaves the user's files exactly as it found them.
+    let provider = crate::provider::select(args.provider, args.model.as_deref())
+        .map_err(GcmError::Provider)?;
+    let privacy = Privacy::load(repo, args.secret_scan)?;
+
+    // Non-interactive guard: if we would need to prompt but can't, error early.
+    if crate::ui::needs_terminal_but_absent(args.yes, args.dry_run) {
+        return Err(GcmError::NonInteractive);
+    }
+
     // Snapshot the pre-run bytes of every unmerged file, then re-checkout the
     // still-conflicted ones with zdiff3 markers so every file has a parseable
     // base/ours/theirs. The snapshot makes the zdiff3/mergiraf mutations
@@ -219,15 +231,6 @@ pub fn run_resolve_in_repo(
         if !paths.is_empty() {
             repo.checkout_conflict_zdiff3(&paths)?;
         }
-    }
-
-    let provider = crate::provider::select(args.provider, args.model.as_deref())
-        .map_err(GcmError::Provider)?;
-    let privacy = Privacy::load(repo, args.secret_scan)?;
-
-    // Non-interactive guard: if we would need to prompt but can't, error early.
-    if crate::ui::needs_terminal_but_absent(args.yes, args.dry_run) {
-        return Err(GcmError::NonInteractive);
     }
 
     // Phase A - propose: build one proposal per file. All provider calls,
@@ -325,14 +328,22 @@ pub fn run_resolve_in_repo(
             crate::ui::FileDecision::Accept => decisions[i] = Some(FileAction::Accepted),
             crate::ui::FileDecision::Edit => {
                 let edited = crate::ui::edit_in_editor(&text)?;
-                validate(&edited, conflict.validate_cmd.as_deref(), repo, &path).map_err(|e| {
-                    GcmError::ResolutionEscalated {
-                        path: path.clone(),
-                        reason: format!("edited content failed validation: {e:?}"),
+                match validate(&edited, conflict.validate_cmd.as_deref(), repo, &path) {
+                    Ok(()) => {
+                        texts[i] = Some(edited);
+                        decisions[i] = Some(FileAction::Edited);
                     }
-                })?;
-                texts[i] = Some(edited);
-                decisions[i] = Some(FileAction::Edited);
+                    Err(e) => {
+                        // Escalate, never abort (AC5): earlier confirmations
+                        // stay valid, this file keeps its markers, and the
+                        // run reports Partial.
+                        eprintln!(
+                            "gcm resolve: {path}: edited content failed validation ({e:?}); escalating this file"
+                        );
+                        texts[i] = None;
+                        decisions[i] = Some(FileAction::Escalated);
+                    }
+                }
             }
             crate::ui::FileDecision::Skip => {
                 decisions[i] = Some(FileAction::Rejected);
@@ -368,17 +379,24 @@ pub fn run_resolve_in_repo(
 
     // Phase C - apply: write every confirmed resolution, then stage all
     // resolved paths in one pass keyed by final action - LLM-resolved,
-    // edited, mergiraf-resolved, and already-marker-free files alike.
+    // edited, mergiraf-resolved, and already-marker-free files alike. In
+    // Remote mode the engine stays write-only: the wrapper owns staging and
+    // the commit in its scratch repo (AC8).
     let mut files = Vec::with_capacity(proposals.len());
     let mut staged: Vec<String> = Vec::new();
     for (i, p) in proposals.iter().enumerate() {
         let action = match &p.kind {
             ProposalKind::Resolved { .. } => {
                 let action = decisions[i].expect("every resolved proposal was decided");
-                let text = texts[i].as_ref().expect("resolved text present");
-                repo.write_file(&p.path, text)?;
-                staged.push(p.path.clone());
-                action
+                if action == FileAction::Escalated {
+                    // Edited content failed validation: markers kept.
+                    action
+                } else {
+                    let text = texts[i].as_ref().expect("resolved text present");
+                    repo.write_file(&p.path, text)?;
+                    staged.push(p.path.clone());
+                    action
+                }
             }
             ProposalKind::AlreadyResolved => {
                 staged.push(p.path.clone());
@@ -389,13 +407,15 @@ pub fn run_resolve_in_repo(
         };
         files.push(file_report(p, action));
     }
-    if !staged.is_empty() {
+    if mode == ResolveMode::Local && !staged.is_empty() {
         let refs: Vec<&str> = staged.iter().map(String::as_str).collect();
         repo.stage_paths(&refs)?;
     }
 
     let mut report = report_for(files);
-    report.staged = staged;
+    if mode == ResolveMode::Local {
+        report.staged = staged;
+    }
 
     // Finish (local only): with every file confirmed and nothing escalated,
     // complete the operation with a signed commit/continue. Escalations and
@@ -719,11 +739,22 @@ fn propose_file(
         let mut hunk_offset = 0;
         for batch in batches {
             let num_hunks = batch.hunks.len();
-            let mut batch_results = provider.resolve_hunks(&batch)?;
-            for r in &mut batch_results {
-                r.hunk_index += hunk_offset;
+            match provider.resolve_hunks(&batch) {
+                Ok(mut batch_results) => {
+                    for r in &mut batch_results {
+                        r.hunk_index += hunk_offset;
+                    }
+                    llm_results.append(&mut batch_results);
+                }
+                Err(e) => {
+                    // A provider failure is a tool escalation, not a run
+                    // abort (owner decision 1): the file keeps its markers,
+                    // other files proceed, and the run reports Partial. The
+                    // actionable provider error still reaches the user here.
+                    eprintln!("gcm resolve: {path}: provider error - {e}; escalating this file");
+                    break;
+                }
             }
-            llm_results.append(&mut batch_results);
             hunk_offset += num_hunks;
         }
 
@@ -767,48 +798,44 @@ fn propose_file(
         });
     }
 
-    // Validation gate.
-    let validated_text =
-        match validate(&resolved_text, conflict.validate_cmd.as_deref(), repo, path) {
-            Ok(()) => resolved_text,
-            Err(ValidationError::ConflictMarkers) => {
-                // One bounded retry: ask the provider to fix its own output.
-                attempt_validation_retry(
-                    provider,
-                    &file,
-                    &resolutions,
-                    &content,
-                    conflict.temperature,
-                    repo,
-                    path,
-                )?
-            }
-            Err(ValidationError::ValidateCmdFailed { .. }) => {
-                // One bounded retry: ask the provider to fix its own output.
-                match attempt_validation_retry(
-                    provider,
-                    &file,
-                    &resolutions,
-                    &content,
-                    conflict.temperature,
-                    repo,
-                    path,
-                ) {
-                    Ok(retried) => retried,
-                    Err(_) => {
-                        escalated_count += llm_count;
-                        return Ok(FileProposal {
-                            path: path.to_string(),
-                            hunks_total: total,
-                            hunks_auto: auto_count,
-                            hunks_llm: 0,
-                            hunks_escalated: escalated_count,
-                            kind: ProposalKind::EscalatedHunks,
-                        });
-                    }
+    // Validation gate. One bounded retry asks the provider to fix its own
+    // output; a retry that still fails escalates the file (AC5) - marker
+    // retention or a failing validate_cmd is a tool limit, never a run abort.
+    let validated_text = match validate(
+        &resolved_text,
+        conflict.validate_cmd.as_deref(),
+        repo,
+        path,
+    ) {
+        Ok(()) => resolved_text,
+        Err(first_failure) => {
+            match attempt_validation_retry(
+                provider,
+                &file,
+                &resolutions,
+                &content,
+                conflict.temperature,
+                repo,
+                path,
+            ) {
+                Ok(retried) => retried,
+                Err(retry_err) => {
+                    eprintln!(
+                            "gcm resolve: {path}: validation failed ({first_failure:?}), retry failed ({retry_err}); escalating this file"
+                        );
+                    escalated_count += llm_count;
+                    return Ok(FileProposal {
+                        path: path.to_string(),
+                        hunks_total: total,
+                        hunks_auto: auto_count,
+                        hunks_llm: 0,
+                        hunks_escalated: escalated_count,
+                        kind: ProposalKind::EscalatedHunks,
+                    });
                 }
             }
-        };
+        }
+    };
 
     if args.dry_run && !args.json {
         eprintln!("gcm resolve: {path} would be resolved ({auto_count} auto, {llm_count} LLM)");

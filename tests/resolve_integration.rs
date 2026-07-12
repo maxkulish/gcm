@@ -622,16 +622,25 @@ id = "ollama"
         repo,
         cfg_dir.path(),
         &[("GCM_OLLAMA_BASE_URL", &url)],
-        &["resolve", "--yes", "--provider", "ollama"],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
     );
     server.join().unwrap();
-    assert!(!out.status.success());
+    // CLO-555 / AC5: a retry that still fails ESCALATES the file (Partial,
+    // markers kept, exit 0) instead of aborting the run.
     let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "partial", "{stdout}");
+    assert_eq!(json["files"][0]["action"], "escalated", "{stdout}");
+    assert!(stderr.contains("escalating this file"), "stderr: {stderr}");
     assert!(
-        stderr.contains("ResolutionEscalated")
-            || stderr.contains("retry still produced conflict markers"),
-        "stderr: {stderr}"
+        fs::read_to_string(repo.join("f.txt"))
+            .unwrap()
+            .contains("<<<<<<<"),
+        "escalated file keeps its markers"
     );
+    assert!(merge_head_present(repo), "merge left in progress");
 }
 
 #[test]
@@ -672,6 +681,75 @@ id = "ollama"
     );
     let after = fs::read_to_string(repo.join("f.txt")).unwrap();
     assert_eq!(after, "clean and corrected resolution\n");
+}
+
+#[test]
+fn provider_error_escalates_file_and_reports_partial() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // Unreachable provider: the file escalates (owner decision 1), the run
+    // reports Partial and exits 0, and the actionable error reaches stderr.
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", "http://127.0.0.1:1")],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "stderr: {stderr}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(json["status"], "partial", "{stdout}");
+    assert_eq!(json["files"][0]["action"], "escalated", "{stdout}");
+    assert!(
+        stderr.contains("escalating this file"),
+        "escalation explained: {stderr}"
+    );
+    assert!(
+        stderr.contains("Ollama"),
+        "actionable provider error surfaced: {stderr}"
+    );
+    assert!(merge_head_present(repo), "merge left in progress");
+    assert!(
+        fs::read_to_string(repo.join("f.txt"))
+            .unwrap()
+            .contains("<<<<<<<"),
+        "escalated file keeps its markers"
+    );
+}
+
+#[test]
+fn early_failure_before_any_mutation_leaves_tree_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+    let before = fs::read(repo.join("f.txt")).unwrap();
+
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // No --yes on a closed stdin -> NonInteractive. The guard must fire
+    // BEFORE the snapshot/zdiff3 re-checkout, so the merge-style markers are
+    // byte-identical afterwards (no zdiff3 rewrite, no base section).
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", "http://127.0.0.1:1")],
+        &["resolve", "--provider", "ollama"],
+    );
+    assert!(!out.status.success(), "NonInteractive is still an error");
+    assert_eq!(
+        fs::read(repo.join("f.txt")).unwrap(),
+        before,
+        "early exit must not rewrite conflicted files"
+    );
 }
 
 // ---------------------------------------------------------------------------

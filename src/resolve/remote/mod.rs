@@ -129,7 +129,6 @@ pub fn run_resolve_remote_opt(
     // as warnings but do not abort the resolution (EC7).
     let mut pushed = false;
     let mut commented = false;
-    let mut comment_warning: Option<String> = None;
 
     if args.remote_push() {
         if committable {
@@ -144,8 +143,11 @@ pub fn run_resolve_remote_opt(
         match publish::post_comment(&scratch.repo, &remote_ref, &report) {
             Ok(()) => commented = true,
             Err(e) => {
-                // EC7: surface but do not abort.
-                comment_warning = Some(e.to_string());
+                // EC7: surface but do not abort. Reported via this warning and
+                // `commented: false` - never by downgrading the status:
+                // `Partial` means "unresolved conflicts, not committed"
+                // (CLO-555 commit gate), and a committed-and-maybe-pushed
+                // resolution must stay Resolved despite publish hiccups.
                 eprintln!("gcm resolve: warning: comment failed: {e}");
             }
         }
@@ -170,12 +172,6 @@ pub fn run_resolve_remote_opt(
         commented,
         scratch_path: Some(scratch_path_str),
     });
-
-    // If comment failed, downgrade status to Partial so the user knows not
-    // everything succeeded. (The resolution itself is still committed.)
-    if comment_warning.is_some() && report.status == ResolveStatus::Resolved {
-        report.status = ResolveStatus::Partial;
-    }
 
     Ok(report)
 }
