@@ -408,7 +408,7 @@ if command -v expect >/dev/null 2>&1 && [ "$SIGNING_OK" -eq 1 ]; then
     set timeout 20
     spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN)"
     expect {
-      -re {\[Y/n/e} { send "n\r" }
+      -re {\[y/N/e} { send "n\r" }
       timeout { exit 3 }
     }
     expect eof
@@ -641,7 +641,7 @@ if command -v expect >/dev/null 2>&1; then
     set timeout 20
     spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN)"
     expect {
-      -re {\[Y/n/e} { send "n\r" }
+      -re {\[y/N/e} { send "n\r" }
       timeout { exit 3 }
     }
     expect eof
@@ -990,7 +990,7 @@ if [ "$SIGNING_OK" -eq 1 ] && command -v expect >/dev/null 2>&1; then
     set timeout 20
     spawn -noecho sh -c "cd $env(GCM_DIR) && GROQ_API_KEY=$env(GROQ_API_KEY) GCM_GROQ_BASE_URL=$env(GCM_GROQ_BASE_URL) $env(GCM_BIN)"
     expect {
-      -re {\[Y/n/e} { send "n\r" }
+      -re {\[y/N/e} { send "n\r" }
       timeout { exit 3 }
     }
     expect eof
@@ -1313,9 +1313,11 @@ grep -q 'GOOG=g-test' "$HEADERS" && ok "gemini sends x-goog-api-key" || bad "gem
 rm -rf "$d"
 
 note "AC-489-model: --model overrides the model id sent to the provider (FR-14)"
+# CLO-545 gates OpenAI models to the GPT-5.6 family, so the override must be a
+# supported non-default id (luna) rather than an arbitrary string.
 d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
-( cd "$d" && OPENAI_API_KEY=dummy GCM_OPENAI_BASE_URL="$MOCK_URL" "$BIN" --provider=openai --model=custom-model-xyz --all --dry-run >/tmp/gcm-out 2>&1 )
-grep -q 'custom-model-xyz' "$CAPTURE" && ok "the overridden model id is in the request" || bad "--model not applied"
+( cd "$d" && OPENAI_API_KEY=dummy GCM_OPENAI_BASE_URL="$MOCK_URL" "$BIN" --provider=openai --model=gpt-5.6-luna --all --dry-run >/tmp/gcm-out 2>&1 )
+grep -q 'gpt-5.6-luna' "$CAPTURE" && ok "the overridden model id is in the request" || bad "--model not applied"
 rm -rf "$d"
 
 note "AC-489-safety: Gemini safety block -> actionable non-retryable error (pt3)"
@@ -1487,6 +1489,79 @@ if command -v expect >/dev/null 2>&1; then
   : > "$PLAN_FILE"; rm -rf "$d" "$onb_cfg"
 else
   skip "AC-ONB3 needs expect (PTY-driven wizard)"
+fi
+
+# --- CLO-555 resolve ownership transaction (interactive, PTY) ---------------
+# The rejection/EOF paths need a real TTY (the non-TTY guard blocks piped
+# stdin), so they live here rather than in cargo tests; byte-level restore
+# logic is unit-tested in src/resolve/mod.rs.
+
+new_conflict_repo() {
+  d="$(new_repo)"
+  ( cd "$d" &&
+    printf 'base\n' > f.txt && git add -A && git -c commit.gpgsign=false commit -qm base &&
+    git checkout -q -b feature && printf 'feature\n' > f.txt && git -c commit.gpgsign=false commit -qam feature &&
+    git checkout -q - && printf 'mainline\n' > f.txt && git -c commit.gpgsign=false commit -qam mainline &&
+    git merge feature >/dev/null 2>&1 || true ) >/dev/null 2>&1
+  echo "$d"
+}
+
+note "AC-R1 (CLO-555): resolve rejection restores pre-run bytes, exit 0"
+if command -v expect >/dev/null 2>&1; then
+  d="$(new_conflict_repo)"
+  # A manual note added to the conflicted file before the run: the zdiff3
+  # re-checkout rewrites the file, and rejection must bring back these exact
+  # bytes.
+  printf '# my manual half-finished note\n' >> "$d/f.txt"
+  cp "$d/f.txt" /tmp/gcm-r1-before
+  printf '%s' '{"resolutions":[{"hunk_index":0,"replacement":"llm resolved"}]}' > "$PLAN_FILE"
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 30
+    spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN) resolve"
+    expect {
+      -re {\[y/N/e} { send "n\r" }
+      timeout { exit 3 }
+    }
+    expect eof
+    catch wait result
+    exit [lindex $result 3]
+  ' >/tmp/gcm-r1 2>&1; rc=$?
+  [ $rc -eq 0 ] && ok "rejection -> exit 0" || bad "rejection exit (rc=$rc; $(tail -2 /tmp/gcm-r1))"
+  cmp -s /tmp/gcm-r1-before "$d/f.txt" && ok "pre-run bytes restored exactly (manual note intact)" || bad "restore not byte-exact: $(diff /tmp/gcm-r1-before "$d/f.txt" | head -3)"
+  [ -n "$(git -C "$d" ls-files -u)" ] && ok "index still unmerged after abort" || bad "index changed on abort"
+  git -C "$d" rev-parse -q --verify MERGE_HEAD >/dev/null && ok "MERGE_HEAD intact" || bad "MERGE_HEAD lost on abort"
+  grep -q "Aborted - working tree restored" /tmp/gcm-r1 && ok "abort headline printed" || bad "abort headline missing"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-R1 needs expect (PTY rejection; parser EOF/No paths are unit-tested)"
+fi
+
+note "AC-R2 (CLO-555): EOF (Ctrl-D) at the prompt rejects, never accepts"
+if command -v expect >/dev/null 2>&1; then
+  d="$(new_conflict_repo)"
+  cp "$d/f.txt" /tmp/gcm-r2-before
+  git -C "$d" ls-files -s > /tmp/gcm-r2-index-before
+  printf '%s' '{"resolutions":[{"hunk_index":0,"replacement":"llm resolved"}]}' > "$PLAN_FILE"
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 30
+    spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN) resolve"
+    expect {
+      -re {\[y/N/e} { send "\x04" }
+      timeout { exit 3 }
+    }
+    expect eof
+    catch wait result
+    exit [lindex $result 3]
+  ' >/tmp/gcm-r2 2>&1; rc=$?
+  [ $rc -eq 0 ] && ok "EOF -> exit 0 (rejected)" || bad "EOF exit (rc=$rc; $(tail -2 /tmp/gcm-r2))"
+  cmp -s /tmp/gcm-r2-before "$d/f.txt" && ok "EOF restored pre-run bytes" || bad "EOF changed the file"
+  # The index (incl. unmerged stage entries) must be exactly as the merge
+  # left it - a bare `diff --cached` is always non-empty mid-merge.
+  git -C "$d" ls-files -s > /tmp/gcm-r2-index-after
+  cmp -s /tmp/gcm-r2-index-before /tmp/gcm-r2-index-after && ok "index untouched on EOF" || bad "EOF changed the index"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-R2 needs expect (EOF handling is unit-tested at the parser level)"
 fi
 
 stop_mock
