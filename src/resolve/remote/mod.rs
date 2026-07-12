@@ -78,7 +78,7 @@ pub fn run_resolve_remote_opt(
     // (AC13: cleanup on error/abort). On success, we call `into_path()` to
     // preserve the scratch and report its path (AC7: print scratch path).
     let report = match merge_result {
-        Ok(()) => run_resolve_in_repo(&scratch.repo, args, true),
+        Ok(()) => run_resolve_in_repo(&scratch.repo, args, crate::resolve::ResolveMode::Remote),
         Err(e) => {
             // If merge failed because of conflicts, the engine will find unmerged
             // files and resolve them. Any other failure is propagated (TempDir
@@ -87,7 +87,7 @@ pub fn run_resolve_remote_opt(
             if unmerged.is_empty() {
                 return Err(e);
             }
-            run_resolve_in_repo(&scratch.repo, args, true)
+            run_resolve_in_repo(&scratch.repo, args, crate::resolve::ResolveMode::Remote)
         }
     };
 

@@ -41,21 +41,24 @@ pub struct FinishReport {
     /// Short sha of the finishing commit (present only on `completed`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
+    /// The operation that was (or would be) finished: merge / rebase /
+    /// cherry-pick. Absent when no operation ref exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub op: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-#[allow(dead_code)]
 pub enum FinishResult {
     /// The operation was completed by a signed commit / continue.
     Completed,
     /// A rebase/cherry-pick continued and stopped on its next conflicted
     /// commit (re-run `gcm resolve`).
     StoppedOnConflict,
-    /// The finishing command failed; staged state is kept.
-    Failed,
     /// The finish was not attempted (`--no-finish`, escalations present, or
-    /// no operation ref to finish).
+    /// no operation ref to finish). A finish that ran and FAILED is not a
+    /// report value: it surfaces as the `FinishFailed` error envelope with a
+    /// non-zero exit, staged state kept.
     Skipped,
 }
 
@@ -177,6 +180,7 @@ mod tests {
             finish: Some(FinishReport {
                 result: FinishResult::StoppedOnConflict,
                 commit: None,
+                op: Some("rebase".to_string()),
             }),
             restored: true,
             remote: None,

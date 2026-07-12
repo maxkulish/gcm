@@ -199,7 +199,7 @@ fn resolve_via_vertex_hits_mock_generatecontent_with_bearer_and_resolves() {
             ("GCM_VERTEX_BASE_URL", &url),
             ("GCM_VERTEX_TOKEN", "fake-adc-token"),
         ],
-        &["resolve", "--yes", "--provider", "vertex"],
+        &["resolve", "--yes", "--no-finish", "--provider", "vertex"],
     );
     let request = server.join().unwrap();
 

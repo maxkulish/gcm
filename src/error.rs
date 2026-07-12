@@ -58,7 +58,6 @@ pub enum GcmError {
     /// `git <op> --continue`) failed - a rejecting hook, a signing failure.
     /// The staged resolutions are **kept** so the user can fix and continue,
     /// mirroring [`GcmError::CommitFailed`] semantics (CLO-555).
-    #[allow(dead_code)]
     FinishFailed {
         op: String,
         detail: String,

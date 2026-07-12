@@ -135,6 +135,11 @@ pub enum Commands {
         #[arg(long)]
         no_mergiraf: bool,
 
+        /// Apply and stage confirmed resolutions but skip the finishing
+        /// commit/continue (debugging escape hatch).
+        #[arg(long)]
+        no_finish: bool,
+
         /// GitHub pull request to resolve, as a full URL or numeric id.
         #[arg(long, group = "remote")]
         pr: Option<String>,
@@ -171,6 +176,17 @@ impl Cli {
             &self.command,
             Some(Commands::Resolve {
                 remote_comment: true,
+                ..
+            })
+        )
+    }
+
+    /// True if --no-finish was passed on a resolve.
+    pub fn no_finish(&self) -> bool {
+        matches!(
+            &self.command,
+            Some(Commands::Resolve {
+                no_finish: true,
                 ..
             })
         )

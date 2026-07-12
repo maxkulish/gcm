@@ -383,11 +383,13 @@ id = "ollama"
 "#,
     );
 
+    // --no-finish: this test targets resolution + write-back, not the signed
+    // finishing commit (which needs a signing key the CI runners lack).
     let out = run_gcm(
         repo,
         cfg_dir.path(),
         &[("GCM_OLLAMA_BASE_URL", &url)],
-        &["resolve", "--yes", "--provider", "ollama"],
+        &["resolve", "--yes", "--no-finish", "--provider", "ollama"],
     );
     server.join().unwrap();
     assert!(
@@ -397,6 +399,9 @@ id = "ollama"
     );
     let content = fs::read_to_string(repo.join("f.txt")).unwrap();
     assert_eq!(content, "resolved\n");
+    // The transaction stages what it applied; the merge is left for the user.
+    let staged = git_str(repo, &["diff", "--cached", "--name-only"]);
+    assert!(staged.lines().any(|l| l == "f.txt"), "staged: {staged}");
 }
 
 #[test]
@@ -652,11 +657,12 @@ id = "ollama"
 "#,
     );
 
+    // --no-finish: retry behavior is the target, not the signed finish.
     let out = run_gcm(
         repo,
         cfg_dir.path(),
         &[("GCM_OLLAMA_BASE_URL", &url)],
-        &["resolve", "--yes", "--provider", "ollama"],
+        &["resolve", "--yes", "--no-finish", "--provider", "ollama"],
     );
     server.join().unwrap();
     assert!(

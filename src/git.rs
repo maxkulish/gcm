@@ -15,7 +15,6 @@ pub struct Repo {
 /// (operation refs and unmerged entries re-read after the subprocess exits),
 /// never by parsing git's output text.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum FinishOutcome {
     /// The operation finished: no conflict state remains, no unmerged entries.
     /// Carries the new short HEAD sha for the report.
@@ -280,7 +279,6 @@ impl Repo {
     /// stderr are inherited (the `commit_signed` pattern) so pinentry and hook
     /// output reach the user's terminal, while stdout is captured and re-logged
     /// to stderr to keep machine output clean.
-    #[allow(dead_code)]
     pub fn finish_conflict_op(&self) -> Result<FinishOutcome, GcmError> {
         // Dispatch order matters: a stopped rebase or cherry-pick can carry
         // auxiliary merge state, so MERGE_HEAD alone must not route to

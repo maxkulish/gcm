@@ -22,9 +22,10 @@ use crate::output;
 use crate::privacy::{Privacy, SecretScanMode};
 use crate::provider::{ConflictHunk, Provider, Resolution, ResolveContext};
 
+use crate::git::FinishOutcome;
 use classify::{classify, HunkResolution};
 use markers::{has_conflict_markers, parse, ConflictFile};
-use report::{FileAction, FileReport, ResolveReport, ResolveStatus};
+use report::{FileAction, FileReport, FinishReport, FinishResult, ResolveReport, ResolveStatus};
 use validate::{validate, ValidationError};
 
 /// Byte-exact snapshot of the unmerged working-tree files, captured before the
@@ -113,10 +114,20 @@ enum ProposalKind {
     Skipped,
 }
 
+/// Execution context for the resolution engine. The engine stages and
+/// finishes only in `Local` mode; in `Remote` mode the wrapper stays the sole
+/// committer of the scratch repo, and a clean merge (no unmerged files) is a
+/// successful noop rather than a user error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolveMode {
+    Local,
+    Remote,
+}
+
 /// Entry point for `gcm resolve`.
 pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
     let repo = Repo::discover()?.ok_or(GcmError::NotARepo)?;
-    let report = run_resolve_in_repo(&repo, args, false)?;
+    let report = run_resolve_in_repo(&repo, args, ResolveMode::Local)?;
     if args.json {
         report::emit(&report);
     } else {
@@ -130,19 +141,15 @@ pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
 /// Local callers discover the repo first; remote callers build a scratch repo
 /// and pass it in. Returns a `ResolveReport` rather than printing it, so the
 /// caller decides how to present the result and can attach remote metadata.
-///
-/// `allow_no_conflict_state` should be `false` for the local path (a plain
-/// `gcm resolve` with no merge in progress is a user error) and `true` for the
-/// remote path (a clean merge in the scratch repo is a successful noop).
 pub fn run_resolve_in_repo(
     repo: &Repo,
     args: &Cli,
-    allow_no_conflict_state: bool,
+    mode: ResolveMode,
 ) -> Result<ResolveReport, GcmError> {
     let has_state = repo.has_conflict_state();
     let unmerged = repo.unmerged_files()?;
 
-    if allow_no_conflict_state {
+    if mode == ResolveMode::Remote {
         // Remote path: a clean merge (no unmerged files) is a success regardless
         // of whether MERGE_HEAD is set — `git merge --no-ff --no-commit` sets
         // MERGE_HEAD even when the merge produces no conflicts.
@@ -353,6 +360,53 @@ pub fn run_resolve_in_repo(
 
     let mut report = report_for(files);
     report.staged = staged;
+
+    // Finish (local only): with every file confirmed and nothing escalated,
+    // complete the operation with a signed commit/continue. Escalations and
+    // --no-finish stop after staging; the remote wrapper owns its own commit.
+    if mode == ResolveMode::Local {
+        let op_name = if repo.is_rebasing() {
+            Some("rebase")
+        } else if repo.is_cherry_picking() {
+            Some("cherry-pick")
+        } else if repo.is_merging() {
+            Some("merge")
+        } else {
+            None
+        };
+        if report.status != ResolveStatus::Resolved || args.no_finish() {
+            report.finish = Some(FinishReport {
+                result: FinishResult::Skipped,
+                commit: None,
+                op: op_name.map(str::to_string),
+            });
+        } else {
+            report.finish = Some(match repo.finish_conflict_op()? {
+                FinishOutcome::Completed { head_sha } => FinishReport {
+                    result: FinishResult::Completed,
+                    commit: Some(head_sha),
+                    op: op_name.map(str::to_string),
+                },
+                FinishOutcome::StoppedOnNextConflict => FinishReport {
+                    result: FinishResult::StoppedOnConflict,
+                    commit: None,
+                    op: op_name.map(str::to_string),
+                },
+                FinishOutcome::NothingToFinish => FinishReport {
+                    result: FinishResult::Skipped,
+                    commit: None,
+                    op: None,
+                },
+                FinishOutcome::Failed { op } => {
+                    return Err(GcmError::FinishFailed {
+                        op: op.to_string(),
+                        detail: "the finishing command failed (see output above)".to_string(),
+                    });
+                }
+            });
+        }
+    }
+
     Ok(report)
 }
 
@@ -404,6 +458,7 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
         conflict_auto_policy,
         conflict_sensitive_paths,
         no_mergiraf,
+        no_finish: _,
         pr: _,
         mr: _,
         remote_push: _,
@@ -912,8 +967,33 @@ fn glob_match(pattern: &str, path: &str) -> bool {
 }
 
 fn print_human_report(report: &ResolveReport) {
+    let finish = report.finish.as_ref();
     match &report.status {
-        ResolveStatus::Resolved => println!("All conflicts resolved."),
+        ResolveStatus::Resolved => match finish {
+            Some(f) if f.result == FinishResult::Completed => {
+                let sha = f.commit.as_deref().unwrap_or("HEAD");
+                match f.op.as_deref() {
+                    Some("merge") => println!("All conflicts resolved - merge committed ({sha})."),
+                    Some(op) => println!("All conflicts resolved - {op} completed ({sha})."),
+                    None => println!("All conflicts resolved - committed ({sha})."),
+                }
+            }
+            Some(f) if f.result == FinishResult::StoppedOnConflict => {
+                let op = f.op.as_deref().unwrap_or("rebase");
+                println!(
+                    "All conflicts resolved here - the {op} continued and stopped on the next conflicted commit. Run 'gcm resolve' again."
+                );
+            }
+            Some(f) if f.result == FinishResult::Skipped => match f.op.as_deref() {
+                Some(op) => println!(
+                    "All conflicts resolved and staged. Run 'git {op} --continue' to finish."
+                ),
+                None => println!(
+                    "All conflicts resolved and staged (no merge, rebase, or cherry-pick in progress to finish)."
+                ),
+            },
+            _ => println!("All conflicts resolved."),
+        },
         ResolveStatus::Partial => {
             println!("Some files resolved; others were skipped or escalated.");
         }
@@ -926,6 +1006,26 @@ fn print_human_report(report: &ResolveReport) {
             "  {}: {} total, {} auto, {} LLM, {} escalated ({:?})",
             f.path, f.hunks_total, f.hunks_auto, f.hunks_llm, f.hunks_escalated, f.action
         );
+    }
+    // Escalation trailer (local runs only - `finish` is set only there): name
+    // what remains and the exact way out.
+    if report.status == ResolveStatus::Partial && finish.is_some() {
+        let remaining: Vec<&str> = report
+            .files
+            .iter()
+            .filter(|f| matches!(f.action, FileAction::Escalated | FileAction::Skipped))
+            .map(|f| f.path.as_str())
+            .collect();
+        if !remaining.is_empty() {
+            println!("Still conflicted: {}", remaining.join(", "));
+            let cmd = finish
+                .and_then(|f| f.op.as_deref())
+                .map(|op| format!("git {op} --continue"))
+                .unwrap_or_else(|| "git merge/rebase/cherry-pick --continue".to_string());
+            println!(
+                "Re-run 'gcm resolve' (or resolve by hand and 'git add'), then finish with {cmd}."
+            );
+        }
     }
 }
 
