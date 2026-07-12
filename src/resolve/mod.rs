@@ -183,19 +183,43 @@ pub fn run_resolve_in_repo(
 
     let conflict = resolve_conflict_config(args);
 
-    // Snapshot the pre-run bytes of every unmerged file, then re-checkout with
-    // zdiff3 markers so every file has a parseable base/ours/theirs. The
-    // snapshot makes the zdiff3/mergiraf mutations reversible when the user
-    // rejects the transaction. Dry-run never mutates, so it snapshots nothing.
+    let binary = repo.binary_unmerged_files()?;
+    let binary_set: HashSet<String> = binary.into_iter().collect();
+
+    // Files that are already marker-free BEFORE any mutation were resolved by
+    // hand before this run. They are excluded from the zdiff3 re-checkout,
+    // which would regenerate their markers from the index and destroy the
+    // manual resolution; the apply phase stages them as-is. Binary files
+    // never qualify - their working copy is not a hand-resolution.
+    let mut marker_free: HashSet<String> = HashSet::new();
+    for path in &unmerged {
+        if binary_set.contains(path) {
+            continue;
+        }
+        let bytes = repo.read_file_bytes(path)?;
+        let content = String::from_utf8_lossy(&bytes);
+        if parse(path.clone(), &content).hunks.is_empty() {
+            marker_free.insert(path.clone());
+        }
+    }
+
+    // Snapshot the pre-run bytes of every unmerged file, then re-checkout the
+    // still-conflicted ones with zdiff3 markers so every file has a parseable
+    // base/ours/theirs. The snapshot makes the zdiff3/mergiraf mutations
+    // reversible when the user rejects the transaction. Dry-run never
+    // mutates, so it snapshots nothing.
     let mut snapshot = None;
     if !args.dry_run {
         snapshot = Some(WorkingTreeSnapshot::capture(repo, &unmerged)?);
-        let paths: Vec<&str> = unmerged.iter().map(String::as_str).collect();
-        repo.checkout_conflict_zdiff3(&paths)?;
+        let paths: Vec<&str> = unmerged
+            .iter()
+            .filter(|p| !marker_free.contains(*p))
+            .map(String::as_str)
+            .collect();
+        if !paths.is_empty() {
+            repo.checkout_conflict_zdiff3(&paths)?;
+        }
     }
-
-    let binary = repo.binary_unmerged_files()?;
-    let binary_set: HashSet<String> = binary.into_iter().collect();
 
     let provider = crate::provider::select(args.provider, args.model.as_deref())
         .map_err(GcmError::Provider)?;
@@ -226,6 +250,18 @@ pub fn run_resolve_in_repo(
                 hunks_llm: 0,
                 hunks_escalated: 0,
                 kind: ProposalKind::Skipped,
+            });
+            continue;
+        }
+
+        if marker_free.contains(path) {
+            proposals.push(FileProposal {
+                path: path.clone(),
+                hunks_total: 0,
+                hunks_auto: 0,
+                hunks_llm: 0,
+                hunks_escalated: 0,
+                kind: ProposalKind::AlreadyResolved,
             });
             continue;
         }
