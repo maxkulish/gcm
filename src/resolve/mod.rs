@@ -12,7 +12,7 @@ pub use remote::run_resolve_remote_opt;
 pub mod report;
 pub mod validate;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::cli::{Cli, Commands};
 use crate::config::{AutoPolicy, ConflictConfig};
@@ -26,6 +26,63 @@ use classify::{classify, HunkResolution};
 use markers::{has_conflict_markers, parse, ConflictFile};
 use report::{FileAction, FileReport, ResolveReport, ResolveStatus};
 use validate::{validate, ValidationError};
+
+/// Byte-exact snapshot of the unmerged working-tree files, captured before the
+/// first mutation (the zdiff3 re-checkout). A user rejection restores these
+/// bytes so the repository leaves the run exactly as it entered it - including
+/// any manual partial resolution the user had made before running gcm.
+#[allow(dead_code)]
+struct WorkingTreeSnapshot {
+    /// path -> pre-run bytes, in capture order.
+    original: Vec<(String, Vec<u8>)>,
+    /// path -> the bytes gcm last wrote (zdiff3/mergiraf output), recorded
+    /// after the propose phase. The restore guard compares against these so a
+    /// concurrent external edit is never overwritten.
+    written: HashMap<String, Vec<u8>>,
+}
+
+#[allow(dead_code)]
+impl WorkingTreeSnapshot {
+    fn capture(repo: &Repo, paths: &[String]) -> Result<Self, GcmError> {
+        let mut original = Vec::with_capacity(paths.len());
+        for p in paths {
+            original.push((p.clone(), repo.read_file_bytes(p)?));
+        }
+        Ok(Self {
+            original,
+            written: HashMap::new(),
+        })
+    }
+
+    /// Record the current on-disk bytes as gcm's own writes. Called once the
+    /// propose phase has finished mutating files.
+    fn record_written(&mut self, repo: &Repo) -> Result<(), GcmError> {
+        for (p, _) in &self.original {
+            self.written.insert(p.clone(), repo.read_file_bytes(p)?);
+        }
+        Ok(())
+    }
+
+    /// Restore every snapshotted file's pre-run bytes. A file whose current
+    /// content is not what gcm last wrote (edited or deleted in another
+    /// terminal mid-run) is skipped with a warning rather than clobbered.
+    fn restore(&self, repo: &Repo) -> Result<(), GcmError> {
+        for (p, bytes) in &self.original {
+            if let Some(expected) = self.written.get(p) {
+                let untouched =
+                    matches!(repo.read_file_bytes(p), Ok(current) if &current == expected);
+                if !untouched {
+                    eprintln!(
+                        "gcm resolve: warning: {p} was modified outside gcm during the run - leaving it as-is"
+                    );
+                    continue;
+                }
+            }
+            repo.write_file_bytes(p, bytes)?;
+        }
+        Ok(())
+    }
+}
 
 /// Internal result of resolving one file.
 #[derive(Debug, Clone)]
@@ -769,6 +826,68 @@ fn print_human_report(report: &ResolveReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_restore_is_byte_exact() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repo::at_root(dir.path().to_path_buf());
+        let crlf =
+            b"line 1\r\n<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> f\r\nline 2\r\n";
+        let no_newline = b"partial manual resolution without trailing newline";
+        std::fs::write(dir.path().join("a.txt"), crlf).unwrap();
+        std::fs::write(dir.path().join("b.txt"), no_newline).unwrap();
+
+        let mut snap =
+            WorkingTreeSnapshot::capture(&repo, &["a.txt".to_string(), "b.txt".to_string()])
+                .unwrap();
+        repo.write_file("a.txt", "zdiff3 rewritten\n").unwrap();
+        repo.write_file("b.txt", "mergiraf rewritten\n").unwrap();
+        snap.record_written(&repo).unwrap();
+
+        snap.restore(&repo).unwrap();
+        assert_eq!(repo.read_file_bytes("a.txt").unwrap(), crlf.to_vec());
+        assert_eq!(repo.read_file_bytes("b.txt").unwrap(), no_newline.to_vec());
+    }
+
+    #[test]
+    fn snapshot_restore_skips_externally_modified_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repo::at_root(dir.path().to_path_buf());
+        std::fs::write(dir.path().join("a.txt"), b"original a").unwrap();
+        std::fs::write(dir.path().join("b.txt"), b"original b").unwrap();
+
+        let mut snap =
+            WorkingTreeSnapshot::capture(&repo, &["a.txt".to_string(), "b.txt".to_string()])
+                .unwrap();
+        repo.write_file("a.txt", "gcm wrote a").unwrap();
+        repo.write_file("b.txt", "gcm wrote b").unwrap();
+        snap.record_written(&repo).unwrap();
+
+        // Another terminal edits a.txt mid-run: the guard must not clobber it.
+        repo.write_file("a.txt", "external edit").unwrap();
+
+        snap.restore(&repo).unwrap();
+        assert_eq!(repo.read_file_bytes("a.txt").unwrap(), b"external edit");
+        assert_eq!(repo.read_file_bytes("b.txt").unwrap(), b"original b");
+    }
+
+    #[test]
+    fn snapshot_restore_skips_externally_deleted_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repo::at_root(dir.path().to_path_buf());
+        std::fs::write(dir.path().join("a.txt"), b"original a").unwrap();
+
+        let mut snap = WorkingTreeSnapshot::capture(&repo, &["a.txt".to_string()]).unwrap();
+        repo.write_file("a.txt", "gcm wrote a").unwrap();
+        snap.record_written(&repo).unwrap();
+        std::fs::remove_file(dir.path().join("a.txt")).unwrap();
+
+        snap.restore(&repo).unwrap();
+        assert!(
+            !dir.path().join("a.txt").exists(),
+            "externally deleted file must stay deleted"
+        );
+    }
 
     #[test]
     fn glob_match_basic() {

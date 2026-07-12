@@ -355,6 +355,22 @@ impl Repo {
             .map_err(|e| GcmError::Git(format!("could not write {}: {e}", full.display())))
     }
 
+    /// Read a file's raw bytes from the working tree. Byte-exact counterpart of
+    /// [`Self::read_file`] for snapshot/restore, where UTF-8 lossiness or
+    /// line-ending normalization would corrupt the restored file.
+    pub fn read_file_bytes(&self, path: &str) -> Result<Vec<u8>, GcmError> {
+        let full = self.root.join(path);
+        std::fs::read(&full)
+            .map_err(|e| GcmError::Git(format!("could not read {}: {e}", full.display())))
+    }
+
+    /// Write raw bytes to a working-tree file (byte-exact restore IO).
+    pub fn write_file_bytes(&self, path: &str, bytes: &[u8]) -> Result<(), GcmError> {
+        let full = self.root.join(path);
+        std::fs::write(&full, bytes)
+            .map_err(|e| GcmError::Git(format!("could not write {}: {e}", full.display())))
+    }
+
     /// Detect binary conflicted files from the combined unmerged diff. Binary
     /// files appear as `Binary files differ` under their `diff --cc <path>`
     /// header; text conflicts show hunk content instead. Returns the set of
@@ -832,6 +848,18 @@ mod tests {
 
         let unmerged = repo.unmerged_files().unwrap();
         assert_eq!(unmerged, vec!["file with spaces.txt"]);
+    }
+
+    #[test]
+    fn file_bytes_round_trip_is_byte_exact() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        // Non-UTF8 bytes: the String-based read_file would reject or mangle these.
+        let bytes: Vec<u8> = vec![0xff, 0x00, b'\r', b'\n', 0xfe, b'x'];
+        std::fs::write(root.join("bin.dat"), &bytes).unwrap();
+        assert_eq!(repo.read_file_bytes("bin.dat").unwrap(), bytes);
+        repo.write_file_bytes("bin.dat", &bytes).unwrap();
+        assert_eq!(std::fs::read(root.join("bin.dat")).unwrap(), bytes);
     }
 
     #[test]
