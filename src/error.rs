@@ -54,14 +54,27 @@ pub enum GcmError {
         cli: String,
         install_hint: String,
     },
+    /// The post-resolution finish step (`git commit -S --no-edit` /
+    /// `git <op> --continue`) failed - a rejecting hook, a signing failure.
+    /// The staged resolutions are **kept** so the user can fix and continue,
+    /// mirroring [`GcmError::CommitFailed`] semantics (CLO-555).
+    #[allow(dead_code)]
+    FinishFailed {
+        op: String,
+        detail: String,
+    },
 }
 
 impl GcmError {
     /// Whether this error means the staged group should be **left in place**.
-    /// Only a commit-step failure ([`GcmError::CommitFailed`]) leaves the group
-    /// staged (FR-58); every other error restores the pre-run index (FR-47).
+    /// A commit-step failure ([`GcmError::CommitFailed`], FR-58) and a resolve
+    /// finish failure ([`GcmError::FinishFailed`]) leave staged state intact;
+    /// every other error restores the pre-run index (FR-47).
     pub fn leaves_staged(&self) -> bool {
-        matches!(self, GcmError::CommitFailed(_))
+        matches!(
+            self,
+            GcmError::CommitFailed(_) | GcmError::FinishFailed { .. }
+        )
     }
 }
 
@@ -121,6 +134,10 @@ impl fmt::Display for GcmError {
             GcmError::RemoteCliMissing { cli, install_hint } => write!(
                 f,
                 "missing host CLI '{cli}': {install_hint}."
+            ),
+            GcmError::FinishFailed { op, detail } => write!(
+                f,
+                "could not finish the {op}: {detail}. Staged resolutions are kept - fix the issue and run `git {op} --continue`."
             ),
         }
     }

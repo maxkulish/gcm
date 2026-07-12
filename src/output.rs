@@ -200,6 +200,7 @@ fn gcm_error_code(err: &GcmError) -> String {
         GcmError::ResolutionEscalated { .. } => "ResolutionEscalated".to_string(),
         GcmError::RemoteHost { .. } => "RemoteHost".to_string(),
         GcmError::RemoteCliMissing { .. } => "RemoteCliMissing".to_string(),
+        GcmError::FinishFailed { .. } => "FinishFailed".to_string(),
     }
 }
 
