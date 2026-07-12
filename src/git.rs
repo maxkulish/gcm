@@ -523,6 +523,22 @@ impl Repo {
                 stdin_bytes.push(0);
             }
         }
+        self.stage_pathspecs(stdin_bytes)
+    }
+
+    /// Stage exact paths (resolve apply phase). Same literal, NUL-delimited
+    /// pathspec mechanism as [`Self::stage_group`], so a filename containing a
+    /// glob metacharacter can never pull in siblings.
+    pub fn stage_paths(&self, paths: &[&str]) -> Result<(), GcmError> {
+        let mut stdin_bytes: Vec<u8> = Vec::new();
+        for p in paths {
+            stdin_bytes.extend_from_slice(p.as_bytes());
+            stdin_bytes.push(0);
+        }
+        self.stage_pathspecs(stdin_bytes)
+    }
+
+    fn stage_pathspecs(&self, stdin_bytes: Vec<u8>) -> Result<(), GcmError> {
         let mut child = self
             .git(&["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"])
             .env("GIT_LITERAL_PATHSPECS", "1")

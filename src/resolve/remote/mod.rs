@@ -194,6 +194,9 @@ fn dry_run_report(remote_ref: &RemoteRef) -> ResolveReport {
         v: crate::output::SCHEMA_VERSION,
         status: ResolveStatus::Noop,
         files: vec![],
+        staged: vec![],
+        finish: None,
+        restored: false,
         remote: Some(RemoteReport {
             host: remote_ref.host,
             number: remote_ref.number,

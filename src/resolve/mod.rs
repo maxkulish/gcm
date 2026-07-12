@@ -31,7 +31,6 @@ use validate::{validate, ValidationError};
 /// first mutation (the zdiff3 re-checkout). A user rejection restores these
 /// bytes so the repository leaves the run exactly as it entered it - including
 /// any manual partial resolution the user had made before running gcm.
-#[allow(dead_code)]
 struct WorkingTreeSnapshot {
     /// path -> pre-run bytes, in capture order.
     original: Vec<(String, Vec<u8>)>,
@@ -41,7 +40,6 @@ struct WorkingTreeSnapshot {
     written: HashMap<String, Vec<u8>>,
 }
 
-#[allow(dead_code)]
 impl WorkingTreeSnapshot {
     fn capture(repo: &Repo, paths: &[String]) -> Result<Self, GcmError> {
         let mut original = Vec::with_capacity(paths.len());
@@ -84,15 +82,35 @@ impl WorkingTreeSnapshot {
     }
 }
 
-/// Internal result of resolving one file.
-#[derive(Debug, Clone)]
-struct FileResolution {
+/// What the propose phase produced for one unmerged file. Beyond the zdiff3
+/// and mergiraf mutations (covered by the snapshot), building these performs
+/// no working-tree write, no staging, and no prompting - the confirm and
+/// apply phases own those.
+struct FileProposal {
     path: String,
     hunks_total: usize,
     hunks_auto: usize,
     hunks_llm: usize,
     hunks_escalated: usize,
-    action: FileAction,
+    kind: ProposalKind,
+}
+
+enum ProposalKind {
+    /// Resolved text awaiting the user's confirmation.
+    Resolved { text: String },
+    /// Already marker-free on disk (resolved manually before the run): staged
+    /// as-is in the apply phase without a prompt - the content is the user's
+    /// own work, there is nothing to accept or restore.
+    AlreadyResolved,
+    /// Hunk-level tool escalation (provider gaps or a failed validation
+    /// retry): left conflicted with its markers in place. Reported as
+    /// `dry_run` in dry-run mode, matching the pre-transaction report.
+    EscalatedHunks,
+    /// Whole-file escalation decided before any hunk work (binary file or
+    /// sensitive path). Reported as `escalated` even in dry-run mode.
+    EscalatedFile,
+    /// Excluded by `.gcmignore`/`gcmignore`.
+    Skipped,
 }
 
 /// Entry point for `gcm resolve`.
@@ -133,6 +151,9 @@ pub fn run_resolve_in_repo(
                 v: output::SCHEMA_VERSION,
                 status: ResolveStatus::Noop,
                 files: vec![],
+                staged: vec![],
+                finish: None,
+                restored: false,
                 remote: None,
             });
         }
@@ -155,9 +176,13 @@ pub fn run_resolve_in_repo(
 
     let conflict = resolve_conflict_config(args);
 
-    // Re-checkout with zdiff3 markers so every file has a parseable base/ours/theirs.
-    // Skip in dry-run mode to avoid mutating the working tree.
+    // Snapshot the pre-run bytes of every unmerged file, then re-checkout with
+    // zdiff3 markers so every file has a parseable base/ours/theirs. The
+    // snapshot makes the zdiff3/mergiraf mutations reversible when the user
+    // rejects the transaction. Dry-run never mutates, so it snapshots nothing.
+    let mut snapshot = None;
     if !args.dry_run {
+        snapshot = Some(WorkingTreeSnapshot::capture(repo, &unmerged)?);
         let paths: Vec<&str> = unmerged.iter().map(String::as_str).collect();
         repo.checkout_conflict_zdiff3(&paths)?;
     }
@@ -174,9 +199,10 @@ pub fn run_resolve_in_repo(
         return Err(GcmError::NonInteractive);
     }
 
-    let mut resolutions = Vec::new();
-    let mut any_skipped_or_escalated = false;
-
+    // Phase A - propose: build one proposal per file. All provider calls,
+    // validation retries, and mergiraf runs happen here; nothing is confirmed,
+    // written back, or staged yet.
+    let mut proposals = Vec::new();
     for path in &unmerged {
         let changed = ChangedFile {
             x: b'U',
@@ -186,19 +212,18 @@ pub fn run_resolve_in_repo(
         };
         if privacy.filter_changed(&[changed]).is_empty() {
             eprintln!("gcm resolve: skipping {path} (excluded by .gcmignore/gcmignore)");
-            resolutions.push(FileResolution {
+            proposals.push(FileProposal {
                 path: path.clone(),
                 hunks_total: 0,
                 hunks_auto: 0,
                 hunks_llm: 0,
                 hunks_escalated: 0,
-                action: FileAction::Skipped,
+                kind: ProposalKind::Skipped,
             });
-            any_skipped_or_escalated = true;
             continue;
         }
 
-        let file_resolution = resolve_file(
+        proposals.push(propose_file(
             repo,
             path,
             &conflict,
@@ -206,41 +231,168 @@ pub fn run_resolve_in_repo(
             provider.as_ref(),
             &privacy,
             args,
-        )?;
-
-        match file_resolution.action {
-            FileAction::Accepted | FileAction::Edited => {}
-            FileAction::Skipped | FileAction::Escalated | FileAction::DryRun => {
-                any_skipped_or_escalated = true;
-            }
-        }
-        resolutions.push(file_resolution);
+        )?);
+    }
+    // From here on, on-disk differences from these recorded bytes mean an
+    // external edit, which the restore guard must not clobber.
+    if let Some(s) = snapshot.as_mut() {
+        s.record_written(repo)?;
     }
 
-    let status = if resolutions.is_empty() {
+    if args.dry_run {
+        let files: Vec<FileReport> = proposals
+            .iter()
+            .map(|p| {
+                let action = match &p.kind {
+                    ProposalKind::Resolved { .. } | ProposalKind::EscalatedHunks => {
+                        FileAction::DryRun
+                    }
+                    ProposalKind::AlreadyResolved => FileAction::Accepted,
+                    ProposalKind::EscalatedFile => FileAction::Escalated,
+                    ProposalKind::Skipped => FileAction::Skipped,
+                };
+                file_report(p, action)
+            })
+            .collect();
+        return Ok(report_for(files));
+    }
+
+    // Phase B - confirm: collect a decision for every proposal before anything
+    // is applied. Any rejection aborts the whole run and restores the pre-run
+    // working tree - ownership goes back to the user, exit 0.
+    let mut decisions: Vec<Option<FileAction>> = vec![None; proposals.len()];
+    let mut texts: Vec<Option<String>> = proposals
+        .iter()
+        .map(|p| match &p.kind {
+            ProposalKind::Resolved { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+
+    for i in 0..proposals.len() {
+        let Some(text) = texts[i].clone() else {
+            continue;
+        };
+        let path = proposals[i].path.clone();
+        if args.yes {
+            decisions[i] = Some(FileAction::Accepted);
+            continue;
+        }
+        match crate::ui::confirm_file(&path, &text, args.json)? {
+            crate::ui::FileDecision::Accept => decisions[i] = Some(FileAction::Accepted),
+            crate::ui::FileDecision::Edit => {
+                let edited = crate::ui::edit_in_editor(&text)?;
+                validate(&edited, conflict.validate_cmd.as_deref(), repo, &path).map_err(|e| {
+                    GcmError::ResolutionEscalated {
+                        path: path.clone(),
+                        reason: format!("edited content failed validation: {e:?}"),
+                    }
+                })?;
+                texts[i] = Some(edited);
+                decisions[i] = Some(FileAction::Edited);
+            }
+            crate::ui::FileDecision::Skip => {
+                decisions[i] = Some(FileAction::Rejected);
+                if let Some(s) = snapshot.as_ref() {
+                    s.restore(repo)?;
+                }
+                let files: Vec<FileReport> = proposals
+                    .iter()
+                    .enumerate()
+                    .map(|(j, p)| {
+                        let action = match &p.kind {
+                            // Decisions made up to the abort; undecided
+                            // proposals were never acted on.
+                            ProposalKind::Resolved { .. } => {
+                                decisions[j].unwrap_or(FileAction::Skipped)
+                            }
+                            ProposalKind::AlreadyResolved => FileAction::Skipped,
+                            ProposalKind::EscalatedHunks | ProposalKind::EscalatedFile => {
+                                FileAction::Escalated
+                            }
+                            ProposalKind::Skipped => FileAction::Skipped,
+                        };
+                        file_report(p, action)
+                    })
+                    .collect();
+                let mut report = report_for(files);
+                report.status = ResolveStatus::Aborted;
+                report.restored = true;
+                return Ok(report);
+            }
+        }
+    }
+
+    // Phase C - apply: write every confirmed resolution, then stage all
+    // resolved paths in one pass keyed by final action - LLM-resolved,
+    // edited, mergiraf-resolved, and already-marker-free files alike.
+    let mut files = Vec::with_capacity(proposals.len());
+    let mut staged: Vec<String> = Vec::new();
+    for (i, p) in proposals.iter().enumerate() {
+        let action = match &p.kind {
+            ProposalKind::Resolved { .. } => {
+                let action = decisions[i].expect("every resolved proposal was decided");
+                let text = texts[i].as_ref().expect("resolved text present");
+                repo.write_file(&p.path, text)?;
+                staged.push(p.path.clone());
+                action
+            }
+            ProposalKind::AlreadyResolved => {
+                staged.push(p.path.clone());
+                FileAction::Accepted
+            }
+            ProposalKind::EscalatedHunks | ProposalKind::EscalatedFile => FileAction::Escalated,
+            ProposalKind::Skipped => FileAction::Skipped,
+        };
+        files.push(file_report(p, action));
+    }
+    if !staged.is_empty() {
+        let refs: Vec<&str> = staged.iter().map(String::as_str).collect();
+        repo.stage_paths(&refs)?;
+    }
+
+    let mut report = report_for(files);
+    report.staged = staged;
+    Ok(report)
+}
+
+/// Build the per-file report row from a proposal and its final action.
+fn file_report(p: &FileProposal, action: FileAction) -> FileReport {
+    FileReport {
+        path: p.path.clone(),
+        hunks_total: p.hunks_total,
+        hunks_auto: p.hunks_auto,
+        hunks_llm: p.hunks_llm,
+        hunks_escalated: p.hunks_escalated,
+        action,
+    }
+}
+
+/// Assemble a report with the status derived from the per-file actions
+/// (`Noop` / `Partial` / `Resolved`); callers override status for abort.
+fn report_for(files: Vec<FileReport>) -> ResolveReport {
+    let any_incomplete = files.iter().any(|f| {
+        matches!(
+            f.action,
+            FileAction::Skipped | FileAction::Escalated | FileAction::DryRun
+        )
+    });
+    let status = if files.is_empty() {
         ResolveStatus::Noop
-    } else if any_skipped_or_escalated {
+    } else if any_incomplete {
         ResolveStatus::Partial
     } else {
         ResolveStatus::Resolved
     };
-
-    Ok(ResolveReport {
+    ResolveReport {
         v: output::SCHEMA_VERSION,
         status,
-        files: resolutions
-            .into_iter()
-            .map(|r| FileReport {
-                path: r.path,
-                hunks_total: r.hunks_total,
-                hunks_auto: r.hunks_auto,
-                hunks_llm: r.hunks_llm,
-                hunks_escalated: r.hunks_escalated,
-                action: r.action,
-            })
-            .collect(),
+        files,
+        staged: vec![],
+        finish: None,
+        restored: false,
         remote: None,
-    })
+    }
 }
 
 fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
@@ -327,7 +479,11 @@ struct ConflictCli {
     no_mergiraf: bool,
 }
 
-fn resolve_file(
+/// Build the proposal for one unmerged file (phase A). Runs mergiraf, the
+/// hunk classifier, the provider, and the validation gate - but never writes
+/// the resolution back, stages, or prompts; those belong to the confirm and
+/// apply phases.
+fn propose_file(
     repo: &Repo,
     path: &str,
     conflict: &ConflictConfig,
@@ -335,64 +491,60 @@ fn resolve_file(
     provider: &dyn Provider,
     privacy: &Privacy,
     args: &Cli,
-) -> Result<FileResolution, GcmError> {
-    if binary_set.contains(path) {
-        eprintln!("gcm resolve: skipping {path} (binary file)");
-        return Ok(FileResolution {
+) -> Result<FileProposal, GcmError> {
+    let escalated_file = |reason: &str| {
+        eprintln!("gcm resolve: {reason}");
+        FileProposal {
             path: path.to_string(),
             hunks_total: 0,
             hunks_auto: 0,
             hunks_llm: 0,
             hunks_escalated: 0,
-            action: FileAction::Escalated,
-        });
+            kind: ProposalKind::EscalatedFile,
+        }
+    };
+
+    if binary_set.contains(path) {
+        return Ok(escalated_file(&format!("skipping {path} (binary file)")));
     }
 
     if is_sensitive_path(path, &conflict.sensitive_paths) {
-        eprintln!("gcm resolve: escalating {path} (matches sensitive_paths)");
-        return Ok(FileResolution {
-            path: path.to_string(),
-            hunks_total: 0,
-            hunks_auto: 0,
-            hunks_llm: 0,
-            hunks_escalated: 0,
-            action: FileAction::Escalated,
-        });
+        return Ok(escalated_file(&format!(
+            "escalating {path} (matches sensitive_paths)"
+        )));
     }
 
     let content = repo.read_file(path)?;
     let file = parse(path.to_string(), &content);
 
     if file.hunks.is_empty() {
-        // File was already resolved (e.g. by a prior run) or has no markers.
-        return Ok(FileResolution {
+        // File was already resolved (e.g. by a prior run or by hand) - staged
+        // as-is in the apply phase.
+        return Ok(FileProposal {
             path: path.to_string(),
             hunks_total: 0,
             hunks_auto: 0,
             hunks_llm: 0,
             hunks_escalated: 0,
-            action: FileAction::Accepted,
+            kind: ProposalKind::AlreadyResolved,
         });
     }
 
-    // Optional mergiraf pre-stage. Skip in dry-run to avoid mutating the working tree.
+    // Optional mergiraf pre-stage. Skip in dry-run to avoid mutating the
+    // working tree. A full mergiraf resolution becomes an ordinary proposal:
+    // it is previewed and confirmed like any LLM resolution, never silently
+    // accepted (the snapshot keeps the in-place mutation reversible).
     if !args.dry_run && conflict.mergiraf && mergiraf::try_resolve(repo, path)? {
         let after = repo.read_file(path)?;
         let file = parse(path.to_string(), &after);
         if file.hunks.is_empty() {
-            let action = if args.dry_run {
-                FileAction::DryRun
-            } else {
-                // mergiraf already wrote the file; nothing more to do.
-                FileAction::Accepted
-            };
-            return Ok(FileResolution {
+            return Ok(FileProposal {
                 path: path.to_string(),
                 hunks_total: 0,
                 hunks_auto: 0,
                 hunks_llm: 0,
                 hunks_escalated: 0,
-                action,
+                kind: ProposalKind::Resolved { text: after },
             });
         }
     }
@@ -509,28 +661,18 @@ fn resolve_file(
     // validation gate here: retained markers are the expected escalation
     // artifact, not a provider-output validation failure.
     if escalated_count > 0 {
-        if args.dry_run {
-            if !args.json {
-                eprintln!(
-                    "gcm resolve: {path} would be partially resolved ({auto_count} auto, {llm_count} LLM, {escalated_count} escalated)"
-                );
-            }
-            return Ok(FileResolution {
-                path: path.to_string(),
-                hunks_total: total,
-                hunks_auto: auto_count,
-                hunks_llm: llm_count,
-                hunks_escalated: escalated_count,
-                action: FileAction::DryRun,
-            });
+        if args.dry_run && !args.json {
+            eprintln!(
+                "gcm resolve: {path} would be partially resolved ({auto_count} auto, {llm_count} LLM, {escalated_count} escalated)"
+            );
         }
-        return Ok(FileResolution {
+        return Ok(FileProposal {
             path: path.to_string(),
             hunks_total: total,
             hunks_auto: auto_count,
             hunks_llm: llm_count,
             hunks_escalated: escalated_count,
-            action: FileAction::Escalated,
+            kind: ProposalKind::EscalatedHunks,
         });
     }
 
@@ -564,69 +706,32 @@ fn resolve_file(
                     Ok(retried) => retried,
                     Err(_) => {
                         escalated_count += llm_count;
-                        return Ok(FileResolution {
+                        return Ok(FileProposal {
                             path: path.to_string(),
                             hunks_total: total,
                             hunks_auto: auto_count,
                             hunks_llm: 0,
                             hunks_escalated: escalated_count,
-                            action: FileAction::Escalated,
+                            kind: ProposalKind::EscalatedHunks,
                         });
                     }
                 }
             }
         };
 
-    if args.dry_run {
-        if !args.json {
-            eprintln!("gcm resolve: {path} would be resolved ({auto_count} auto, {llm_count} LLM)");
-        }
-        return Ok(FileResolution {
-            path: path.to_string(),
-            hunks_total: total,
-            hunks_auto: auto_count,
-            hunks_llm: llm_count,
-            hunks_escalated: escalated_count,
-            action: FileAction::DryRun,
-        });
+    if args.dry_run && !args.json {
+        eprintln!("gcm resolve: {path} would be resolved ({auto_count} auto, {llm_count} LLM)");
     }
 
-    // Per-file preview loop.
-    let action = if args.yes {
-        if escalated_count > 0 {
-            FileAction::Escalated
-        } else {
-            repo.write_file(path, &validated_text)?;
-            FileAction::Accepted
-        }
-    } else {
-        match crate::ui::confirm_file(path, &validated_text, args.json)? {
-            crate::ui::FileDecision::Accept => {
-                repo.write_file(path, &validated_text)?;
-                FileAction::Accepted
-            }
-            crate::ui::FileDecision::Skip => FileAction::Skipped,
-            crate::ui::FileDecision::Edit => {
-                let edited = crate::ui::edit_in_editor(&validated_text)?;
-                validate(&edited, conflict.validate_cmd.as_deref(), repo, path).map_err(|e| {
-                    GcmError::ResolutionEscalated {
-                        path: path.to_string(),
-                        reason: format!("edited content failed validation: {e:?}"),
-                    }
-                })?;
-                repo.write_file(path, &edited)?;
-                FileAction::Edited
-            }
-        }
-    };
-
-    Ok(FileResolution {
+    Ok(FileProposal {
         path: path.to_string(),
         hunks_total: total,
         hunks_auto: auto_count,
         hunks_llm: llm_count,
         hunks_escalated: escalated_count,
-        action,
+        kind: ProposalKind::Resolved {
+            text: validated_text,
+        },
     })
 }
 
@@ -813,6 +918,7 @@ fn print_human_report(report: &ResolveReport) {
             println!("Some files resolved; others were skipped or escalated.");
         }
         ResolveStatus::Noop => println!("No conflicts to resolve."),
+        ResolveStatus::Aborted => println!("Aborted - working tree restored, nothing changed."),
         ResolveStatus::Error => println!("Resolution failed."),
     }
     for f in &report.files {
