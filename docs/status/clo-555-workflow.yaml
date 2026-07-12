@@ -144,7 +144,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/35
     pr_number: 35
-    ci_passed: false
+    ci_passed: true
     mergeable: true
     pre_flight_passed: true
   complete:
@@ -240,3 +240,10 @@ history:
     action: pr_created
     phase: pr
     details: 'PR #35 opened (27 files, +3147/-287). Health gate MERGEABLE; CI queued (run 29212320030).'
+  - timestamp: '2026-07-13T01:58:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: >-
+      CI green on ubuntu-latest + macos-latest for both runs (initial head and the docs push);
+      mergeStateStatus CLEAN. No bot reviewers configured on this repo (CLO-545 precedent), so the PR
+      is at the owner merge checkpoint.
