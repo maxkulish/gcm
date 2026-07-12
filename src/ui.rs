@@ -75,16 +75,21 @@ pub enum FileDecision {
     Edit,
 }
 
-/// Render the resolved file and ask whether to keep it. With `auto_yes` the
-/// prompt is skipped and the file is accepted. With `quiet` no preview is
-/// printed to stdout (used in `--json` mode).
+/// Render the resolved file and ask whether to keep it. In `json_mode` the
+/// preview renders on stderr so stdout stays a pure JSON envelope - the user
+/// still sees what they are confirming, since Yes now carries commit
+/// authority (never confirm blind).
 pub fn confirm_file(
     path: &str,
     resolved_text: &str,
-    quiet: bool,
+    json_mode: bool,
 ) -> Result<FileDecision, GcmError> {
-    if !quiet {
-        print_file_preview(path, resolved_text);
+    if json_mode {
+        let mut err = std::io::stderr();
+        write_file_preview(&mut err, path, resolved_text).ok();
+    } else {
+        let mut out = std::io::stdout();
+        write_file_preview(&mut out, path, resolved_text).ok();
     }
 
     match prompt_choice(&format!("Keep resolution for {path}? [y/N/e(dit)] "))? {
@@ -94,20 +99,20 @@ pub fn confirm_file(
     }
 }
 
-fn print_file_preview(path: &str, resolved_text: &str) {
-    println!();
-    println!("Resolved {path} (preview):");
-    println!("-----------------------------");
+fn write_file_preview(w: &mut impl Write, path: &str, resolved_text: &str) -> std::io::Result<()> {
+    writeln!(w)?;
+    writeln!(w, "Resolved {path} (preview):")?;
+    writeln!(w, "-----------------------------")?;
     let lines: Vec<&str> = resolved_text.lines().collect();
     let max_preview = 40;
     for line in lines.iter().take(max_preview) {
-        println!("{line}");
+        writeln!(w, "{line}")?;
     }
     if lines.len() > max_preview {
-        println!("... {} more lines", lines.len() - max_preview);
+        writeln!(w, "... {} more lines", lines.len() - max_preview)?;
     }
-    println!("-----------------------------");
-    println!();
+    writeln!(w, "-----------------------------")?;
+    writeln!(w)
 }
 
 /// Render the message and ask the user to confirm (FR-5). With `auto_yes` the
