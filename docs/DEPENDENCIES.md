@@ -1,12 +1,12 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-11 (CLO-545 merged — PR #34; CLO-547 ready)
+**Last Updated**: 2026-07-12 (CLO-555 started; CLO-554 blocked by it)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | — | — | None. CLO-547 (ready) has no blockers. |
+| CLO-554 | CLO-555 | In Progress | Rebase loop builds on the transaction engine + `StoppedOnNextConflict` handoff |
 
 ## Unblocked & Ready
 
@@ -14,7 +14,7 @@
 |------|------------------------|-------------|
 | CLO-547 | split from CLO-545 review (self-contained, no blockers) | 2026-07-11 |
 
-> **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
+> **CLO-555** (rework `gcm resolve` into an ownership transaction) is In Progress (spec phase); **CLO-554** (rebase resolve-until-clean loop) waits on it. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 
