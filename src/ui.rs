@@ -1,7 +1,61 @@
-use std::io::{IsTerminal, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::process::{Command, Stdio};
 
 use crate::error::GcmError;
+
+/// A parsed answer to a `[y/N/e(dit)]` confirmation prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptChoice {
+    Yes,
+    No,
+    Edit,
+}
+
+/// Parse one line of prompt input. Case-insensitive `y`/`yes`, `n`/`no`,
+/// `e`/`edit`; bare Enter is the default No. Anything else returns `None` so
+/// the caller can reprompt. Accepting is only ever explicit.
+fn parse_choice(input: &str) -> Option<PromptChoice> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => Some(PromptChoice::Yes),
+        "n" | "no" | "" => Some(PromptChoice::No),
+        "e" | "edit" => Some(PromptChoice::Edit),
+        _ => None,
+    }
+}
+
+/// Bounded reprompt budget: after this many unrecognized answers the prompt
+/// resolves to No rather than looping forever on garbage input.
+const PROMPT_ATTEMPTS: usize = 3;
+
+/// Ask `prompt` on stderr and read the answer from `reader`. No is the
+/// default (bare Enter) and the EOF answer, so closed, exhausted, or Ctrl-D
+/// input can never accept; unrecognized input reprompts up to
+/// [`PROMPT_ATTEMPTS`] times and then resolves to No.
+fn prompt_choice_from(reader: &mut impl BufRead, prompt: &str) -> Result<PromptChoice, GcmError> {
+    for _ in 0..PROMPT_ATTEMPTS {
+        eprint!("{prompt}");
+        std::io::stderr().flush().ok();
+        let mut response = String::new();
+        let read = reader
+            .read_line(&mut response)
+            .map_err(|_| GcmError::NonInteractive)?;
+        if read == 0 {
+            return Ok(PromptChoice::No);
+        }
+        match parse_choice(&response) {
+            Some(choice) => return Ok(choice),
+            None => eprintln!("Please answer y(es), n(o), or e(dit)."),
+        }
+    }
+    Ok(PromptChoice::No)
+}
+
+/// Prompt on the real stdin.
+fn prompt_choice(prompt: &str) -> Result<PromptChoice, GcmError> {
+    let stdin = std::io::stdin();
+    let mut lock = stdin.lock();
+    prompt_choice_from(&mut lock, prompt)
+}
 
 /// Result of the confirmation step.
 pub enum Decision {
@@ -33,18 +87,10 @@ pub fn confirm_file(
         print_file_preview(path, resolved_text);
     }
 
-    eprint!("Keep resolution for {path}? [Y/n/e(dit)] ");
-    std::io::stderr().flush().ok();
-
-    let mut response = String::new();
-    if std::io::stdin().read_line(&mut response).is_err() {
-        return Err(GcmError::NonInteractive);
-    }
-
-    match response.trim() {
-        "n" | "N" => Ok(FileDecision::Skip),
-        "e" | "E" => Ok(FileDecision::Edit),
-        _ => Ok(FileDecision::Accept),
+    match prompt_choice(&format!("Keep resolution for {path}? [y/N/e(dit)] "))? {
+        PromptChoice::Yes => Ok(FileDecision::Accept),
+        PromptChoice::No => Ok(FileDecision::Skip),
+        PromptChoice::Edit => Ok(FileDecision::Edit),
     }
 }
 
@@ -78,17 +124,10 @@ pub fn confirm(message: &str, auto_yes: bool, quiet: bool) -> Result<Decision, G
         return Ok(Decision::Commit(message.to_string()));
     }
 
-    eprint!("Commit with this message? [Y/n/e(dit)] ");
-    std::io::stderr().flush().ok();
-
-    let mut response = String::new();
-    if std::io::stdin().read_line(&mut response).is_err() {
-        return Err(GcmError::NonInteractive);
-    }
-
-    match response.trim() {
-        "n" | "N" => Ok(Decision::Abort),
-        "e" | "E" => {
+    match prompt_choice("Commit with this message? [y/N/e(dit)] ")? {
+        PromptChoice::Yes => Ok(Decision::Commit(message.to_string())),
+        PromptChoice::No => Ok(Decision::Abort),
+        PromptChoice::Edit => {
             let edited = edit_in_editor(message)?;
             let edited = edited.trim().to_string();
             if edited.is_empty() {
@@ -97,7 +136,6 @@ pub fn confirm(message: &str, auto_yes: bool, quiet: bool) -> Result<Decision, G
                 Ok(Decision::Commit(edited))
             }
         }
-        _ => Ok(Decision::Commit(message.to_string())),
     }
 }
 
@@ -198,6 +236,76 @@ pub fn preview_plan(message: &str, group_count: usize, remaining: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+
+    fn choose(input: &str) -> PromptChoice {
+        prompt_choice_from(&mut Cursor::new(input.as_bytes()), "test? [y/N/e(dit)] ").unwrap()
+    }
+
+    #[test]
+    fn parse_choice_accepts_only_explicit_yes() {
+        for s in ["y", "Y", "yes", "YES", "Yes", " y ", "yes\n"] {
+            assert_eq!(parse_choice(s), Some(PromptChoice::Yes), "input {s:?}");
+        }
+    }
+
+    #[test]
+    fn parse_choice_rejects_no_variants_and_empty() {
+        for s in ["n", "N", "no", "NO", "No", "", "  ", "\n"] {
+            assert_eq!(parse_choice(s), Some(PromptChoice::No), "input {s:?}");
+        }
+    }
+
+    #[test]
+    fn parse_choice_edit_variants() {
+        for s in ["e", "E", "edit", "EDIT", "Edit"] {
+            assert_eq!(parse_choice(s), Some(PromptChoice::Edit), "input {s:?}");
+        }
+    }
+
+    #[test]
+    fn parse_choice_unknown_input_is_none() {
+        for s in ["ok", "q", "yess", "nope!", "ye s", "commit"] {
+            assert_eq!(parse_choice(s), None, "input {s:?} must reprompt, not act");
+        }
+    }
+
+    #[test]
+    fn prompt_no_and_empty_reject() {
+        assert_eq!(choose("no\n"), PromptChoice::No);
+        assert_eq!(choose("No\n"), PromptChoice::No);
+        assert_eq!(
+            choose("\n"),
+            PromptChoice::No,
+            "bare Enter is the default No"
+        );
+    }
+
+    #[test]
+    fn prompt_eof_rejects() {
+        assert_eq!(
+            choose(""),
+            PromptChoice::No,
+            "EOF (Ctrl-D) can never accept"
+        );
+    }
+
+    #[test]
+    fn prompt_explicit_yes_and_edit() {
+        assert_eq!(choose("yes\n"), PromptChoice::Yes);
+        assert_eq!(choose("e\n"), PromptChoice::Edit);
+    }
+
+    #[test]
+    fn prompt_unknown_input_reprompts_then_rejects() {
+        // Three garbage answers exhaust the attempt budget -> No.
+        assert_eq!(choose("q\nq\nq\n"), PromptChoice::No);
+        // A recognized answer after garbage is honored.
+        assert_eq!(choose("q\ny\n"), PromptChoice::Yes);
+        assert_eq!(choose("what\nok\nn\n"), PromptChoice::No);
+        // Garbage then EOF -> No.
+        assert_eq!(choose("q\n"), PromptChoice::No);
+    }
 
     #[test]
     fn curated_index_warning_has_required_substrings() {
