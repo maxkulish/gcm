@@ -93,10 +93,37 @@ pub fn run_resolve_remote_opt(
 
     let mut report = report?;
 
-    // Stage the resolved tree and create the merge commit on the resolution
-    // branch. This persists the resolution so it survives after the scratch
-    // is preserved and so --remote-push pushes the correct tree.
-    commit_resolution(&scratch.repo, &resolution_branch, &remote_ref)?;
+    // A user rejection in the scratch repo keeps nothing: no commit, no push,
+    // and the scratch dir is dropped (TempDir cleans up when this returns).
+    if report.status == ResolveStatus::Aborted {
+        report.remote = Some(RemoteReport {
+            host: remote_ref.host,
+            number: remote_ref.number,
+            base_branch: scratch.base_branch.clone(),
+            source_branch: scratch.source_branch.clone(),
+            resolution_branch,
+            pushed: false,
+            commented: false,
+            scratch_path: None,
+        });
+        return Ok(report);
+    }
+
+    // Commit gate (CLO-555): only a Resolved or Noop tree is committed. A
+    // Partial tree still holds raw conflict markers - `git add -A` would
+    // stage them and `--remote-push` would publish them.
+    let committable = matches!(report.status, ResolveStatus::Resolved | ResolveStatus::Noop);
+    if committable {
+        // Stage the resolved tree and create the merge commit on the
+        // resolution branch. This persists the resolution so it survives
+        // after the scratch is preserved and so --remote-push pushes the
+        // correct tree.
+        commit_resolution(&scratch.repo, &resolution_branch, &remote_ref)?;
+    } else {
+        eprintln!(
+            "gcm resolve: partial resolution - nothing committed; the scratch repo is kept for manual completion"
+        );
+    }
 
     // Optional publish: push and/or comment. Comment failures are surfaced
     // as warnings but do not abort the resolution (EC7).
@@ -105,8 +132,12 @@ pub fn run_resolve_remote_opt(
     let mut comment_warning: Option<String> = None;
 
     if args.remote_push() {
-        fetch::push_resolution_branch(&scratch.repo, &resolution_branch, remote_ref.host)?;
-        pushed = true;
+        if committable {
+            fetch::push_resolution_branch(&scratch.repo, &resolution_branch, remote_ref.host)?;
+            pushed = true;
+        } else {
+            eprintln!("gcm resolve: --remote-push skipped: a partial resolution is never pushed");
+        }
     }
 
     if args.remote_comment() {
