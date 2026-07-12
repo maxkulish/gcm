@@ -87,7 +87,7 @@ pub struct ProviderConfig {
 }
 
 /// Conflict-resolution settings for `gcm resolve` (CLO-531).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ConflictConfig {
     /// LLM temperature for resolution (default 0.1).
     #[serde(default = "default_conflict_temperature")]
@@ -116,6 +116,23 @@ fn default_auto_policy() -> AutoPolicy {
 
 fn default_mergiraf() -> bool {
     true
+}
+
+/// Must mirror the per-field serde defaults above. A derived `Default` does
+/// not (bool -> false, f64 -> 0.0): the parent field's `#[serde(default)]`
+/// routes through THIS impl whenever config.toml has no `[conflict]` section
+/// (the common case), which used to silently disable mergiraf and zero the
+/// resolve temperature.
+impl Default for ConflictConfig {
+    fn default() -> Self {
+        ConflictConfig {
+            temperature: default_conflict_temperature(),
+            validate_cmd: None,
+            sensitive_paths: Vec::new(),
+            auto_policy: default_auto_policy(),
+            mergiraf: default_mergiraf(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum, Serialize, Deserialize, PartialEq, Eq)]
@@ -1553,6 +1570,24 @@ mod tests {
             cfg.providers[1].endpoint.as_deref(),
             Some("http://localhost:11434")
         );
+    }
+
+    #[test]
+    fn missing_conflict_section_gets_documented_defaults() {
+        // The `[conflict]` block is optional. Its absence must yield the
+        // documented defaults (mergiraf on, temperature 0.1) - the derived
+        // Default used to produce mergiraf=false / temperature=0.0 here.
+        let text = "version = 2\n\
+                    default = \"ollama\"\n\
+                    \n\
+                    [[providers]]\n\
+                    id = \"ollama\"\n";
+        let cfg = parse_config(text).unwrap();
+        assert!(cfg.conflict.mergiraf, "mergiraf defaults to enabled");
+        assert_eq!(cfg.conflict.temperature, 0.1);
+        assert_eq!(cfg.conflict.auto_policy, AutoPolicy::Trivial);
+        // And the manual Default impl must agree with the serde defaults.
+        assert_eq!(cfg.conflict, ConflictConfig::default());
     }
 
     #[test]
