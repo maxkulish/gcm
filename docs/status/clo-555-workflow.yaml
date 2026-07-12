@@ -126,6 +126,20 @@ phases:
       - 'D1: FinishResult::Failed dropped - finish failure = FinishFailed error envelope, non-zero exit'
       - 'D2: NothingToFinish defensive-only (NoConflictInProgress gate precedes); unit-tested'
       - 'D3: interactive eval rows in scripts/acceptance.sh expect harness (non-TTY guard unchanged)'
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-555-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-555-gemini-validation.md
+    gemini_verdict: PASS
+    validation_synthesis_report: docs/reviews/clo-555-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_FIXES_APPLIED
+    validation_fix_iteration_count: 1
+    validation_fixes_applied:
+      - 'Provider errors + ConflictMarkers-retry failures escalate the file instead of aborting (owner decision 1)'
+      - 'Preconditions (provider select, privacy, non-TTY guard) ordered before snapshot/zdiff3 mutation'
+      - 'Edited-content validation failure escalates, preserving earlier confirmations'
+      - 'Remote comment failure no longer downgrades a committed run to Partial'
+      - 'Engine staging + staged report field are Local-only (AC8)'
   pr:
     status: pending
   complete:
@@ -187,3 +201,15 @@ history:
     action: phase_transition
     phase: spec
     details: Transitioned from spec to implement
+  - timestamp: '2026-07-13T00:55:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      ST1-ST8 landed as 12 commits on feat/clo-555-resolve-transaction (parser 42f66a5, snapshot 599d9e7,
+      finish helper dbc1794, transaction 831c15c, finish integration 5ecba32, remote gate cbb67a2, stderr
+      preview f214cfb, config-default fix 44ce964, marker-free fix 4a7e29e, cargo matrix 6ed99ab, README +
+      AC-R + remote tests 5abae3e, docs adccd07). Verification: 378 unit + 74 integration cargo tests green
+      (signed finish / cherry-pick / rebase probe-gated, ran signed on owner machine); fmt + clippy clean;
+      acceptance.sh 254 PASS / 0 FAIL / 1 SKIP incl. new PTY AC-R1/R2 (rejection restores bytes, EOF rejects)
+      and the CLO-545 model-gate staleness fix. Two bonus bugs found and fixed (ConflictConfig defaults;
+      zdiff3 destroying hand-resolutions). Deviations D1-D3 recorded in the spec as-built notes.
