@@ -1504,8 +1504,10 @@ fn resolved_remote_produces_exactly_one_commit() {
     assert_eq!(json["status"], "resolved", "{stdout}");
 
     let scratch = PathBuf::from(json["remote"]["scratch_path"].as_str().unwrap());
-    let first_parent_commits =
-        git_output(&scratch, &["rev-list", "--count", "--first-parent", "main..HEAD"]);
+    let first_parent_commits = git_output(
+        &scratch,
+        &["rev-list", "--count", "--first-parent", "main..HEAD"],
+    );
     assert_eq!(
         first_parent_commits, "1",
         "exactly the one merge commit on the resolution branch"

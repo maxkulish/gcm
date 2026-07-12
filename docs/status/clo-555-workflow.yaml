@@ -101,6 +101,31 @@ phases:
     status: in_progress
     branch: feat/clo-555-resolve-transaction
     plan_source: docs/specs/2026-07-12-clo-555-resolve-ownership-transaction.md (spec decomposition ST1-ST8)
+    commits:
+      - 97c7b67   # docs: spec + design doc + AI reviews + workflow + aggregation sync
+      - 42f66a5   # ST1 shared safe prompt parser (both prompts)
+      - 599d9e7   # ST2 byte-exact snapshot + external-modification guard
+      - dbc1794   # ST3 postcondition-classified signed finish helper
+      - 831c15c   # ST4a-c three-phase transaction (propose/confirm/apply)
+      - 5ecba32   # ST5 finish integration + --no-finish + ResolveMode
+      - cbb67a2   # ST6 remote commit/push gate (Partial/Aborted never commit or push)
+      - f214cfb   # ST7 interactive --json preview on stderr
+      - 44ce964   # bonus: ConflictConfig Default mismatch (mergiraf off, temp 0.0)
+      - 4a7e29e   # bonus: marker-free files excluded from zdiff3 re-checkout
+      - 6ed99ab   # ST8 cargo transaction test matrix
+    subtasks_complete:
+      - 'ST1: parse_choice + 3-attempt reprompt, EOF/empty=No, [y/N/e(dit)], confirm_file + commit confirm share it'
+      - 'ST2: WorkingTreeSnapshot capture/record_written/restore; guard skips externally modified/deleted files'
+      - 'ST3: finish_conflict_op (rebase->cherry-pick->merge dispatch, -S / -c commit.gpgsign=true, GIT_EDITOR=true, stdin inherited); FinishOutcome by postconditions; GcmError::FinishFailed leaves_staged'
+      - 'ST4a-c: propose/confirm/apply phases; mergiraf + marker-free as proposals; rejection = guarded byte restore + Aborted + exit 0; central literal-pathspec staging'
+      - 'ST5: local finish wiring, StoppedOnNextConflict message, --no-finish flag, ResolveMode{Local,Remote}'
+      - 'ST6: remote wrapper commits/pushes only Resolved|Noop; Partial keeps scratch, explains; Aborted drops scratch'
+      - 'ST7: truthful headlines incl. partial trailer; Aborted/Rejected enums; staged/finish/restored JSON (omitted when empty); --json preview to stderr'
+      - 'ST8: README transaction rewrite + breaking-change + SIGINT callouts; cargo matrix (7 new integration tests, probe-gated signing) + 2 remote gate tests; acceptance AC-R1/R2 expect cases; AC-2/G12 prompt regexes updated'
+    deviations:
+      - 'D1: FinishResult::Failed dropped - finish failure = FinishFailed error envelope, non-zero exit'
+      - 'D2: NothingToFinish defensive-only (NoConflictInProgress gate precedes); unit-tested'
+      - 'D3: interactive eval rows in scripts/acceptance.sh expect harness (non-TTY guard unchanged)'
   pr:
     status: pending
   complete:

@@ -105,7 +105,7 @@ Owner decisions (do not relitigate): (1) tool escalation is not rejection - esca
 | 11 | Remote Resolved = one commit; Partial = none | resolution branch has exactly 1 new commit; Partial: 0 commits, no push with `--remote-push` | `cargo test --test resolve_remote partial_never_commits` etc. (fake `gh`/`glab` harness) |
 | 12 | JSON purity + stderr preview | `--json --yes` stdout parses as one JSON object with new fields; interactive `--json` preview on stderr only | `cargo test --test resolve_integration json_` |
 | 13 | `--dry-run` unchanged | no snapshot, no mutation, no stage, no finish | existing dry-run tests still pass unmodified |
-| 14 | No-operation-ref conflict (`git checkout -m` style) | apply + stage succeed, finish reports `NothingToFinish`, staged-only headline | `cargo test --test resolve_integration nothing_to_finish` |
+| 14 | No-operation-ref state | `finish_conflict_op` returns `NothingToFinish` | `cargo test --bin gcm finish_nothing_to_finish` (unit; see deviation D2) |
 | 15 | External modification during confirm | file edited by "another terminal" between snapshot and rejection: not overwritten on restore, warning names it, other files restored | `cargo test --test resolve_integration restore_guard_external_edit` |
 | 16 | Full gates | all green | `cargo fmt --check && cargo clippy -- -D warnings && cargo test` |
 
@@ -118,3 +118,35 @@ Owner decisions (do not relitigate): (1) tool escalation is not rejection - esca
 - EOF at the second prompt of a multi-file run triggers the full abort-restore path (not a partial apply).
 - SIGINT mid-confirm is the documented limitation (no restore); the README recovery command is verified to exist in the rewritten section.
 - An Aborted remote run leaves the resolution branch commitless and the scratch dir cleaned up.
+
+## Implementation notes (as built, 2026-07-13)
+
+Documented deviations and discoveries from the implementation run:
+
+- **D1 - `FinishResult::Failed` dropped from the JSON enum.** A finish that
+  runs and fails never appears inside a `ResolveReport`: it surfaces as the
+  `FinishFailed` error envelope (`error.code: "FinishFailed"`) with a non-zero
+  exit and staged state kept. Keeping an unreachable enum value would have
+  been dead code; the JSON contract is `completed | stopped_on_conflict |
+  skipped` plus the error envelope.
+- **D2 - `NothingToFinish` is defensive-only locally.** The pre-existing entry
+  gate (`GcmError::NoConflictInProgress`) rejects conflict states without a
+  merge/rebase/cherry-pick ref (e.g. `git checkout -m`) before resolution
+  starts, so the eval row's integration path does not exist; the outcome is
+  unit-tested directly. Widening the entry gate was out of scope.
+- **D3 - interactive eval rows live in `scripts/acceptance.sh`.** The non-TTY
+  guard (kept unchanged per Must-not) blocks piped-stdin interactive runs in
+  cargo, and the repo's established seam for prompt-driven flows is the
+  expect harness (AC-2 precedent). Rejection-restores-bytes and EOF-rejects
+  are AC-R1/AC-R2 there; the byte-level restore + external-modification guard
+  are unit tests; the rest of the matrix is cargo-run (--yes, hooks,
+  probe-gated signing).
+- **Bonus fix 1 - `ConflictConfig` defaults.** The derived `Default` disagreed
+  with the serde field defaults, so any config.toml without a `[conflict]`
+  section (the common case) silently disabled mergiraf and ran resolve at
+  temperature 0.0. Manual `Default` impl + regression test.
+- **Bonus fix 2 - hand-resolved files survive.** Marker-free unmerged files
+  are now detected from pre-run bytes and excluded from the zdiff3 re-checkout
+  (which used to regenerate their markers and feed the user's finished
+  resolution to the LLM). This is what makes AC4's "staged without a prompt"
+  path real.
