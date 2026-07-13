@@ -1,0 +1,6 @@
+store:
+  path: .pi/lessons/
+  format: l-blocks
+  commit_flow: post-merge-docs-pr
+search:
+  extra_paths: [docs/specs/, docs/discovery/]
