@@ -16,8 +16,9 @@ Beyond commits, **`gcm resolve`** uses the same providers to resolve an in-progr
 merge, rebase, or cherry-pick: it feeds each conflict's three-way context
 (`base` / `ours` / `theirs`) to the LLM, pre-merges the easy hunks with
 [`mergiraf`](https://crates.io/crates/mergiraf) when available, validates the result,
-and previews each file before writing - it never stages files or continues the merge on
-its own. See [Resolving merge conflicts](#resolving-merge-conflicts-gcm-resolve).
+and previews every file. Confirming them all applies, stages, and finishes the
+operation with a signed commit; rejecting any file restores the working tree
+byte-for-byte. See [Resolving merge conflicts](#resolving-merge-conflicts-gcm-resolve).
 
 ## Privacy / data egress
 
@@ -139,8 +140,8 @@ gcm --dry-run         # preview only; stage or commit nothing
 ```sh
 git merge feature-branch      # ...leaves conflicts
 gcm resolve --dry-run         # preview the proposed resolutions, write nothing
-gcm resolve                   # resolve each file, confirming [Y/n/e] before it writes
-git add -A && git commit      # you stage and finish the merge - gcm never does it for you
+gcm resolve                   # confirm each file [y/N/e]; Yes to all = staged + merge committed
+git push                      # the only step left - gcm finished the merge for you
 ```
 
 Run `gcm status` anytime to see which provider, model, and key are active. See
@@ -151,7 +152,7 @@ behavior and configuration.
 
 ```sh
 export GROQ_API_KEY=...          # key for the selected provider
-gcm                              # group changes, show the plan, confirm [Y/n/e], commit group 1
+gcm                              # group changes, show the plan, confirm [y/N/e], commit group 1
 gcm                              # run again to commit the next group
 gcm --all                        # skip grouping; commit everything as one
 gcm --dry-run                    # preview the plan (or the --all message); stage/commit nothing
@@ -173,13 +174,17 @@ gcm status --json                # the same as a machine-readable JSON object
 gcm --reconfigure                # re-run the wizard (update keys/selection), then continue
 gcm --secret-scan=redact         # redact common credential-looking values before provider egress
 gcm --secret-scan=abort          # abort before provider egress when a credential-looking value is found
-gcm resolve                      # resolve in-progress merge/rebase/cherry-pick conflicts (see below)
+gcm resolve                      # resolve merge/rebase/cherry-pick conflicts, stage + finish on Yes (see below)
 gcm resolve --dry-run            # preview the resolutions; write nothing
 gcm --version                    # build-stamped version (crate version + git short SHA)
 ```
 
-At the prompt: `Y`/Enter commits group 1, `n` aborts (exit 0, nothing staged), `e` opens
-`$EDITOR` (default `vim`) to edit group 1's message first.
+At the prompt: `y`/`yes` commits group 1, `n`/`no`/**Enter**/EOF abort (exit 0, nothing
+staged), `e`/`edit` opens `$EDITOR` (default `vim`) to edit group 1's message first.
+Unrecognized input reprompts (3 attempts, then aborts) - accepting is only ever explicit.
+
+> **Breaking change (CLO-555):** Enter used to accept and now aborts, on both this
+> prompt and the `gcm resolve` per-file prompt. Type `y` to confirm.
 
 ### First-run setup
 
@@ -328,41 +333,64 @@ with an actionable message rather than hanging on a prompt.
 ## Resolving merge conflicts (`gcm resolve`)
 
 `gcm resolve` resolves the conflicts left by an in-progress `git merge`, `git rebase`, or
-`git cherry-pick`. It reuses the same provider layer as the commit flow, but instead of
-writing a commit message it proposes a resolution for each conflict and lets you review it
-before anything touches your files.
+`git cherry-pick`. It reuses the same provider layer as the commit flow and runs as one
+**ownership transaction**:
+
+> **Yes to every file = gcm applies everything, stages it, and finishes the operation
+> with a signed commit. No to any file = gcm restores the working tree byte-for-byte
+> and exits 0.**
 
 The pipeline is layered so the LLM only sees what genuinely needs judgement:
 
 1. **Normalize** - each conflicted file is re-read as a three-way (`zdiff3`) conflict, so
-   `base`, `ours`, and `theirs` are all available.
+   `base`, `ours`, and `theirs` are all available. A file you already resolved by hand
+   (marker-free) is left untouched and simply staged at the end. Pre-run file contents
+   are snapshotted first, so a rejection can restore them exactly.
 2. **Structural pre-merge** - if [`mergiraf`](https://crates.io/crates/mergiraf) is on
    `PATH`, structurally trivial hunks are merged with no LLM call. Skipped when it is
-   absent or with `--no-mergiraf`.
+   absent or with `--no-mergiraf`. A full mergiraf resolution is previewed and confirmed
+   like any other proposal - nothing is ever accepted silently.
 3. **LLM resolution** - the remaining hunks go to the provider with their three-way
    context, instructed to combine both sides' intent and only use symbols that already
    exist in the code.
 4. **Validation** - the resolved file is checked. With a validation command
    (`--conflict-validate-cmd`, e.g. `cargo check`), a failure triggers one bounded retry
    and then escalates the file to you rather than writing a broken resolution.
-5. **Preview** - each file is shown with a `[Y/n/e]` prompt (`e` opens `$EDITOR`). gcm
-   writes the resolved file only on `Y`, and **never runs `git add` or `--continue`** -
-   staging and finishing the merge stay in your hands.
+5. **Confirm, then apply** - every file is previewed with a `[y/N/e]` prompt (`e` opens
+   `$EDITOR`); nothing is written until every file has an answer. Then gcm writes the
+   confirmed resolutions, stages them, and finishes the operation: a merge gets its
+   signed merge commit (`git commit -S --no-edit`), a rebase or cherry-pick continues
+   with signing enabled. Answering `n` to any file aborts the whole run and restores
+   the pre-run bytes (a file you edited concurrently in another terminal is left alone,
+   with a warning). Files gcm cannot resolve (binary, sensitive paths, provider gaps)
+   never block your confirmed work: it is staged, the finish is skipped, and the
+   remaining paths are listed with the exact command to continue.
+
+A rebase that stops on its **next** conflicted commit after continuing ends the run with
+a message to re-run `gcm resolve` (one conflict stop per run).
 
 ```sh
-gcm resolve                                       # resolve conflicts, confirming each file
+gcm resolve                                       # confirm each file; Yes to all finishes the merge
 gcm resolve --dry-run                             # preview resolutions; write nothing
 gcm resolve --yes                                 # non-interactive: accept validated resolutions
+gcm resolve --no-finish                           # apply + stage, but skip the finishing commit
 gcm resolve --no-mergiraf                         # skip the structural pre-merge stage
 gcm resolve --conflict-validate-cmd "cargo check" # gate each resolution on a build/test
 gcm resolve --conflict-auto-policy complex        # send every hunk to the LLM (no auto-resolve)
 gcm resolve --provider=ollama                     # local, zero-egress resolution
 ```
 
-**Safety guarantees:** preview-before-write is always on; EOF / non-interactive input
-never auto-accepts (pass `--yes` to opt in); a resolution that fails validation is
-escalated rather than written; and an unparseable model response leaves the file
-conflicted for you to handle by hand.
+**Safety guarantees:** nothing is written or staged without an explicit `y` (or `--yes`);
+`no`, Enter, EOF, and unrecognized input can never accept; a rejection restores the
+repository byte-for-byte and exits 0; a resolution that fails validation is escalated
+rather than written; a failing hook or signing error during the finish keeps your staged
+resolutions intact and names the manual continue command; and `gcm resolve` **never
+pushes**.
+
+**Known limitation:** Ctrl-C (SIGINT) during the confirm or apply phase exits without
+the snapshot restore - conflicted files may be left with regenerated `zdiff3` markers.
+The conflicts are still in the index: re-run `gcm resolve` to resolve them, or
+regenerate clean markers with `git checkout --conflict=merge -- <paths>`.
 
 ### `[conflict]` configuration
 

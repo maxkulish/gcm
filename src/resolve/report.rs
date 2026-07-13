@@ -8,14 +8,58 @@ use serde::Serialize;
 
 use crate::resolve::remote::host::Host;
 
-/// The `--json` envelope for `gcm resolve`.
+/// The `--json` envelope for `gcm resolve`. The CLO-555 fields (`staged`,
+/// `finish`, `restored`) are additive and omitted when empty/absent/false, so
+/// a run that touches none of them emits byte-identical JSON to before.
 #[derive(Debug, Serialize)]
 pub struct ResolveReport {
     pub v: i32,
     pub status: ResolveStatus,
     pub files: Vec<FileReport>,
+    /// Paths staged in the apply phase.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub staged: Vec<String>,
+    /// Outcome of the finishing step (merge commit / rebase / cherry-pick).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish: Option<FinishReport>,
+    /// True when a user rejection restored the pre-run working tree.
+    #[serde(skip_serializing_if = "is_false")]
+    pub restored: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<RemoteReport>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// Outcome of the finishing step, mirroring `git::FinishOutcome` in stable
+/// snake_case for machine consumers.
+#[derive(Debug, Serialize)]
+pub struct FinishReport {
+    pub result: FinishResult,
+    /// Short sha of the finishing commit (present only on `completed`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// The operation that was (or would be) finished: merge / rebase /
+    /// cherry-pick. Absent when no operation ref exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub op: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FinishResult {
+    /// The operation was completed by a signed commit / continue.
+    Completed,
+    /// A rebase/cherry-pick continued and stopped on its next conflicted
+    /// commit (re-run `gcm resolve`).
+    StoppedOnConflict,
+    /// The finish was not attempted (`--no-finish`, escalations present, or
+    /// no operation ref to finish). A finish that ran and FAILED is not a
+    /// report value: it surfaces as the `FinishFailed` error envelope with a
+    /// non-zero exit, staged state kept.
+    Skipped,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,6 +85,9 @@ pub enum ResolveStatus {
     Partial,
     /// No conflicts found or all files already resolved.
     Noop,
+    /// The user rejected a proposal: the pre-run working tree was restored
+    /// and nothing was applied (exit 0).
+    Aborted,
     /// A fatal error aborted the run.
     #[allow(dead_code)]
     Error,
@@ -64,6 +111,8 @@ pub enum FileAction {
     Edited,
     Escalated,
     DryRun,
+    /// The user answered No to this file's proposal, aborting the run.
+    Rejected,
 }
 
 impl ResolveReport {
@@ -73,6 +122,7 @@ impl ResolveReport {
             ResolveStatus::Resolved => "resolved",
             ResolveStatus::Partial => "partial",
             ResolveStatus::Noop => "noop",
+            ResolveStatus::Aborted => "aborted",
             ResolveStatus::Error => "error",
         }
     }
@@ -105,12 +155,45 @@ mod tests {
                 hunks_escalated: 1,
                 action: FileAction::Accepted,
             }],
+            staged: vec![],
+            finish: None,
+            restored: false,
             remote: None,
         };
         let json = serde_json::to_string(&report).unwrap();
         assert!(json.contains("\"status\":\"partial\""));
         assert!(json.contains("\"hunks_total\":3"));
         assert!(json.contains("\"action\":\"accepted\""));
+        // Empty/false/absent CLO-555 fields are omitted entirely.
+        assert!(!json.contains("staged"));
+        assert!(!json.contains("finish"));
+        assert!(!json.contains("restored"));
+    }
+
+    #[test]
+    fn resolve_report_new_fields_serialize_when_set() {
+        let report = ResolveReport {
+            v: 1,
+            status: ResolveStatus::Aborted,
+            files: vec![],
+            staged: vec!["a.txt".to_string()],
+            finish: Some(FinishReport {
+                result: FinishResult::StoppedOnConflict,
+                commit: None,
+                op: Some("rebase".to_string()),
+            }),
+            restored: true,
+            remote: None,
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("\"status\":\"aborted\""));
+        assert!(json.contains("\"staged\":[\"a.txt\"]"));
+        assert!(json.contains("\"result\":\"stopped_on_conflict\""));
+        assert!(json.contains("\"restored\":true"));
+        assert!(
+            !json.contains("commit"),
+            "absent commit sha is omitted: {json}"
+        );
     }
 
     #[test]

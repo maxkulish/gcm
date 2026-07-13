@@ -1,0 +1,249 @@
+task_id: clo-555
+task_type: specification
+task_title: Rework gcm resolve into an ownership transaction (apply, stage, signed finish)
+task_url: https://linear.app/cloud-ai/issue/CLO-555/rework-gcm-resolve-into-an-ownership-transaction-apply-stage-signed
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius:
+      lean: dev
+      note: Cross-module - src/resolve/mod.rs, src/ui.rs, src/git.rs, src/resolve/remote/mod.rs, src/cli.rs, README (~6 files + tests)
+    architecture_novelty:
+      lean: spec
+      note: Every mechanism follows an existing in-repo pattern - FR-47 index snapshot/restore (transaction), commit_signed (finish subprocess + pinentry), stage_group (literal-pathspec staging); no new dependency, data model, or process boundary
+    prior_art:
+      lean: spec
+      note: Strong in-repo templates for all four mechanisms; edit of an existing flow, not greenfield
+    requirement_clarity:
+      lean: spec
+      note: Accepted design doc docs/hotfix/2026-07-12-resolve-stage-and-finish.md (v2, externally reviewed 10 points, 4 owner decisions recorded), ST1-ST8 scope, full test matrix, ACs written
+    scope_signal:
+      lean: dev
+      note: 8 subtasks across ~6 source files plus a large integration test matrix - L-ish
+  rationale: >-
+    Discovery and design are already complete and reviewed - the hotfix doc IS the design document (v2 accepted
+    2026-07-12 with decisions 1-4). Only the implementation blueprint is missing, which is exactly what /spec
+    produces; a full development cycle would re-run finished phases.
+task_profile:
+  has_backend: true
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: null
+  status_at_start: Todo
+  blocks: [CLO-554]
+  blocked_by: []
+  related: []
+  branch_suggested: kmamemo/clo-555-rework-gcm-resolve-into-an-ownership-transaction-apply-stage
+  priority: Medium
+  branch_actual: null
+design_source: docs/hotfix/2026-07-12-resolve-stage-and-finish.md
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-07-12T20:55:00.000Z'
+  updated_at: '2026-07-13T01:40:00.000Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: >-
+      Specification task - accepted hotfix design doc (docs/hotfix/2026-07-12-resolve-stage-and-finish.md v2,
+      externally reviewed, owner decisions 1-4 recorded) serves as the design; /spec turns it into the blueprint
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-12-clo-555-resolve-ownership-transaction.md
+    approved: true
+    approved_at: '2026-07-12T21:50:00.000Z'
+    owner_verdict: approve
+    owner_review_rounds: 0
+    review_gemini: docs/reviews/clo-555-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-555-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-555-spec-review-synthesis.md
+    review_verdict: approve_with_suggestions
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - 'SIGINT gap: documented as known limitation in Must-not + AC11 + eval (handler rejected - would need a new dependency); README must name the recovery command'
+      - 'External-modification guard on abort restore (dependency-free): a file whose content changed concurrently is not overwritten; warning names it'
+      - 'GcmError::leaves_staged() must return true for FinishFailed (AC7 index preservation)'
+      - 'Resolved --dry-run wording contradiction: mergiraf dry-run arm removal is dead-code cleanup, no observable behavior change'
+      - '--yes semantics spelled out in AC5: auto-confirm validated proposals, first-file escalation, --yes --no-finish combination, --yes never aborts'
+      - 'Enter-now-aborts commit-prompt breaking change flagged in AC3 + AC11 (README + release notes)'
+      - 'ST4 split into ST4a (proposal building) / ST4b (confirm + abort/restore) / ST4c (apply + central staging) per Ollama sizing concern'
+      - 'Validation-retry/provider errors pinned to phase A; phases B/C never call the provider'
+      - 'NothingToFinish (git checkout -m) eval row #14 + restore-guard eval row #15 added'
+      - 'AC9 serialization rules: restored/staged/finish omitted when false/empty/absent - unchanged runs emit byte-identical JSON'
+      - 'AC11 switched from README line numbers to section anchors'
+      - 'ST8: Rust-side signing_available() probe helper mirroring scripts/acceptance.sh probe_signing'
+      - 'Aborted remote run: no commit, no push, scratch dir not preserved'
+    flagged_suggestions: []
+    review_disagreement_resolution: >-
+      Two reviewer disagreements resolved without user conflict prompts: (1) SIGINT remedy - Ollama's signal
+      handler requires a new dependency, which the spec's own Must-not forbids, so Gemini's document-as-limitation
+      position wins, strengthened with the dependency-free external-modification restore guard (also covers
+      Ollama's concurrent-edit finding); (2) ST4 sizing - split applied as a pure decomposition refinement,
+      contradicts no prior decision.
+  implement:
+    status: complete
+    branch: feat/clo-555-resolve-transaction
+    plan_source: docs/specs/2026-07-12-clo-555-resolve-ownership-transaction.md (spec decomposition ST1-ST8)
+    commits:
+      - 97c7b67   # docs: spec + design doc + AI reviews + workflow + aggregation sync
+      - 42f66a5   # ST1 shared safe prompt parser (both prompts)
+      - 599d9e7   # ST2 byte-exact snapshot + external-modification guard
+      - dbc1794   # ST3 postcondition-classified signed finish helper
+      - 831c15c   # ST4a-c three-phase transaction (propose/confirm/apply)
+      - 5ecba32   # ST5 finish integration + --no-finish + ResolveMode
+      - cbb67a2   # ST6 remote commit/push gate (Partial/Aborted never commit or push)
+      - f214cfb   # ST7 interactive --json preview on stderr
+      - 44ce964   # bonus: ConflictConfig Default mismatch (mergiraf off, temp 0.0)
+      - 4a7e29e   # bonus: marker-free files excluded from zdiff3 re-checkout
+      - 6ed99ab   # ST8 cargo transaction test matrix
+    subtasks_complete:
+      - 'ST1: parse_choice + 3-attempt reprompt, EOF/empty=No, [y/N/e(dit)], confirm_file + commit confirm share it'
+      - 'ST2: WorkingTreeSnapshot capture/record_written/restore; guard skips externally modified/deleted files'
+      - 'ST3: finish_conflict_op (rebase->cherry-pick->merge dispatch, -S / -c commit.gpgsign=true, GIT_EDITOR=true, stdin inherited); FinishOutcome by postconditions; GcmError::FinishFailed leaves_staged'
+      - 'ST4a-c: propose/confirm/apply phases; mergiraf + marker-free as proposals; rejection = guarded byte restore + Aborted + exit 0; central literal-pathspec staging'
+      - 'ST5: local finish wiring, StoppedOnNextConflict message, --no-finish flag, ResolveMode{Local,Remote}'
+      - 'ST6: remote wrapper commits/pushes only Resolved|Noop; Partial keeps scratch, explains; Aborted drops scratch'
+      - 'ST7: truthful headlines incl. partial trailer; Aborted/Rejected enums; staged/finish/restored JSON (omitted when empty); --json preview to stderr'
+      - 'ST8: README transaction rewrite + breaking-change + SIGINT callouts; cargo matrix (7 new integration tests, probe-gated signing) + 2 remote gate tests; acceptance AC-R1/R2 expect cases; AC-2/G12 prompt regexes updated'
+    deviations:
+      - 'D1: FinishResult::Failed dropped - finish failure = FinishFailed error envelope, non-zero exit'
+      - 'D2: NothingToFinish defensive-only (NoConflictInProgress gate precedes); unit-tested'
+      - 'D3: interactive eval rows in scripts/acceptance.sh expect harness (non-TTY guard unchanged)'
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-555-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-555-gemini-validation.md
+    gemini_verdict: PASS
+    validation_synthesis_report: docs/reviews/clo-555-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_FIXES_APPLIED
+    validation_fix_iteration_count: 1
+    validation_fixes_applied:
+      - 'Provider errors + ConflictMarkers-retry failures escalate the file instead of aborting (owner decision 1)'
+      - 'Preconditions (provider select, privacy, non-TTY guard) ordered before snapshot/zdiff3 mutation'
+      - 'Edited-content validation failure escalates, preserving earlier confirmations'
+      - 'Remote comment failure no longer downgrades a committed run to Partial'
+      - 'Engine staging + staged report field are Local-only (AC8)'
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/35
+    pr_number: 35
+    ci_passed: true
+    mergeable: true
+    pre_flight_passed: true
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-12T20:55:00.000Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-555
+  - timestamp: '2026-07-12T20:55:00.000Z'
+    action: task_classified
+    phase: init
+    details: >-
+      Classified as specification (confidence medium, 3/2 split via probe). Spec leans: architecture novelty
+      (all mechanisms have in-repo templates), prior art, requirement clarity (accepted design doc with owner
+      decisions). Dev leans: cross-module blast radius, L-ish scope. Holistic override factor: design/discovery
+      already done and reviewed in the hotfix doc. Owner confirmed specification.
+  - timestamp: '2026-07-12T21:00:00.000Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-555 --start; WIP limit OK (0/3 active),
+      no blockers on CLO-555. Added to Active Work + master table (R3); CLO-554 recorded as blocked by CLO-555
+      (Blocked table + Current Blockers). ROADMAP Phase 4 reopened: 4 tasks, 2 complete, In Progress.
+  - timestamp: '2026-07-12T21:00:00.000Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to spec
+  - timestamp: '2026-07-12T21:20:00.000Z'
+    action: spec_draft_complete
+    phase: spec
+    details: >-
+      Spec drafted at docs/specs/2026-07-12-clo-555-resolve-ownership-transaction.md (scope L, 8 sub-tasks,
+      14-row eval table). Operationalizes the accepted hotfix design doc; codebase gaps re-verified before
+      writing (report.rs JSON shapes, cli.rs Resolve flags, main.rs exit codes, error.rs variants, signing
+      probe-gate precedent in scripts/acceptance.sh). lok spec-review launched (Gemini + Ollama).
+  - timestamp: '2026-07-12T21:40:00.000Z'
+    action: spec_review_complete
+    phase: spec
+    details: >-
+      lok spec-review: Gemini APPROVE_WITH_SUGGESTIONS + Ollama APPROVE_WITH_SUGGESTIONS; Claude fallback
+      skipped. Consensus APPROVE_WITH_SUGGESTIONS. High-severity agreement: SIGINT mid-run bypasses restore.
+      Gemini High: leaves_staged() for FinishFailed. Ollama High: --dry-run wording contradiction. Both:
+      --yes underspecified. Positives: zero codebase-pattern violations; ACs measurable.
+  - timestamp: '2026-07-12T21:45:00.000Z'
+    action: spec_review_applied
+    phase: spec
+    details: >-
+      Applied 13 additive/refinement suggestions (see phases.spec.applied_suggestions). No suggestion
+      contradicted a prior decision; the two reviewer disagreements (SIGINT remedy, ST4 sizing) resolved by
+      the no-new-deps constraint and a decomposition split respectively. Spec at checkpoint.
+  - timestamp: '2026-07-12T21:50:00.000Z'
+    action: spec_approved
+    phase: spec
+    details: >-
+      Owner approved the spec at the checkpoint without revision rounds (design was already owner-reviewed
+      twice at the hotfix-doc stage). Spec exit fields complete. Transitioning spec -> implement.
+  - timestamp: '2026-07-12T21:50:00.000Z'
+    action: phase_transition
+    phase: spec
+    details: Transitioned from spec to implement
+  - timestamp: '2026-07-13T00:55:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      ST1-ST8 landed as 12 commits on feat/clo-555-resolve-transaction (parser 42f66a5, snapshot 599d9e7,
+      finish helper dbc1794, transaction 831c15c, finish integration 5ecba32, remote gate cbb67a2, stderr
+      preview f214cfb, config-default fix 44ce964, marker-free fix 4a7e29e, cargo matrix 6ed99ab, README +
+      AC-R + remote tests 5abae3e, docs adccd07). Verification: 378 unit + 74 integration cargo tests green
+      (signed finish / cherry-pick / rebase probe-gated, ran signed on owner machine); fmt + clippy clean;
+      acceptance.sh 254 PASS / 0 FAIL / 1 SKIP incl. new PTY AC-R1/R2 (rejection restores bytes, EOF rejects)
+      and the CLO-545 model-gate staleness fix. Two bonus bugs found and fixed (ConflictConfig defaults;
+      zdiff3 destroying hand-resolutions). Deviations D1-D3 recorded in the spec as-built notes.
+  - timestamp: '2026-07-13T01:35:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Validation gate: Gemini PASS (no findings, all 12 ACs confirmed); Codex FAIL with 5 findings, ALL
+      validated as real against the code (CRITICAL provider-abort vs owner decision 1 - overstated on
+      data-loss but valid on contract; HIGH precondition ordering; HIGH edit-validation abort; HIGH remote
+      comment-failure Partial downgrade; MEDIUM remote engine staging). One fix iteration (1db180e) resolved
+      all five + updated 2 tests to the AC5 contract + added 2 new tests. Post-fix: 378 unit + 76
+      integration green, clippy/fmt clean, acceptance 254/0/1. Synthesis: PASS_WITH_FIXES_APPLIED.
+  - timestamp: '2026-07-13T01:40:00.000Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-13T01:48:00.000Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'cargo fmt --check, clippy -D warnings, cargo test (454 tests across 7 targets) all green; branch pushed.'
+  - timestamp: '2026-07-13T01:52:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #35 opened (27 files, +3147/-287). Health gate MERGEABLE; CI queued (run 29212320030).'
+  - timestamp: '2026-07-13T01:58:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: >-
+      CI green on ubuntu-latest + macos-latest for both runs (initial head and the docs push);
+      mergeStateStatus CLEAN. No bot reviewers configured on this repo (CLO-545 precedent), so the PR
+      is at the owner merge checkpoint.

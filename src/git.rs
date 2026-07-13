@@ -11,6 +11,25 @@ pub struct Repo {
     root: PathBuf,
 }
 
+/// Outcome of [`Repo::finish_conflict_op`], classified by postconditions
+/// (operation refs and unmerged entries re-read after the subprocess exits),
+/// never by parsing git's output text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinishOutcome {
+    /// The operation finished: no conflict state remains, no unmerged entries.
+    /// Carries the new short HEAD sha for the report.
+    Completed { head_sha: String },
+    /// A rebase/cherry-pick continued past this stop and halted on the next
+    /// conflicted commit in its sequence (CLO-554 handles looping).
+    StoppedOnNextConflict,
+    /// No merge/rebase/cherry-pick is in progress (e.g. `git checkout -m`
+    /// conflicts) - there is nothing to finish.
+    NothingToFinish,
+    /// The finishing command failed (rejecting hook, signing failure, ...);
+    /// the operation is still in progress and staged state is untouched.
+    Failed { op: &'static str },
+}
+
 impl Repo {
     /// Discover the enclosing work tree. `Ok(None)` when CWD is not inside a git
     /// repository; `Err` only when the `git` binary itself cannot be run.
@@ -252,6 +271,69 @@ impl Repo {
         Ok(())
     }
 
+    /// Finish the in-progress conflict operation once every resolution is
+    /// staged. A merge is committed with `git commit -S --no-edit` (consumes
+    /// the prepared MERGE_MSG; FR-4 signing preserved); a rebase/cherry-pick
+    /// continues with `-c commit.gpgsign=true <op> --continue` so its commits
+    /// are signed too. `GIT_EDITOR=true` suppresses message editors; stdin and
+    /// stderr are inherited (the `commit_signed` pattern) so pinentry and hook
+    /// output reach the user's terminal, while stdout is captured and re-logged
+    /// to stderr to keep machine output clean.
+    pub fn finish_conflict_op(&self) -> Result<FinishOutcome, GcmError> {
+        // Dispatch order matters: a stopped rebase or cherry-pick can carry
+        // auxiliary merge state, so MERGE_HEAD alone must not route to
+        // `git commit`.
+        let (op, args): (&'static str, &[&str]) = if self.is_rebasing() {
+            (
+                "rebase",
+                &["-c", "commit.gpgsign=true", "rebase", "--continue"],
+            )
+        } else if self.is_cherry_picking() {
+            (
+                "cherry-pick",
+                &["-c", "commit.gpgsign=true", "cherry-pick", "--continue"],
+            )
+        } else if self.is_merging() {
+            ("merge", &["commit", "-S", "--no-edit"])
+        } else {
+            return Ok(FinishOutcome::NothingToFinish);
+        };
+
+        let output = self
+            .git(args)
+            .env("GIT_EDITOR", "true")
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .output()
+            .map_err(|e| GcmError::Git(format!("failed to run git {op} finish: {e}")))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            eprintln!("{stdout}");
+        }
+
+        // Classify strictly by postconditions - the exit code alone decides
+        // nothing (a rebase stopping on the next conflicted commit also exits
+        // non-zero, and hook stderr is unreliable to parse).
+        let unmerged = self.unmerged_files()?;
+        if !self.has_conflict_state() {
+            if unmerged.is_empty() {
+                let head_sha = self
+                    .capture(&["rev-parse", "--short", "HEAD"])?
+                    .trim()
+                    .to_string();
+                return Ok(FinishOutcome::Completed { head_sha });
+            }
+            return Ok(FinishOutcome::Failed { op });
+        }
+        if !unmerged.is_empty() && (op == "rebase" || op == "cherry-pick") {
+            // The caller staged everything before this call, so any unmerged
+            // entries now are NEW conflicts from the next commit in sequence.
+            return Ok(FinishOutcome::StoppedOnNextConflict);
+        }
+        Ok(FinishOutcome::Failed { op })
+    }
+
     /// The full changed-file set for grouping, from
     /// `git status --porcelain=v1 -uall -z`. `-uall` expands untracked
     /// directories to individual files so these paths match the per-file diff
@@ -355,6 +437,22 @@ impl Repo {
             .map_err(|e| GcmError::Git(format!("could not write {}: {e}", full.display())))
     }
 
+    /// Read a file's raw bytes from the working tree. Byte-exact counterpart of
+    /// [`Self::read_file`] for snapshot/restore, where UTF-8 lossiness or
+    /// line-ending normalization would corrupt the restored file.
+    pub fn read_file_bytes(&self, path: &str) -> Result<Vec<u8>, GcmError> {
+        let full = self.root.join(path);
+        std::fs::read(&full)
+            .map_err(|e| GcmError::Git(format!("could not read {}: {e}", full.display())))
+    }
+
+    /// Write raw bytes to a working-tree file (byte-exact restore IO).
+    pub fn write_file_bytes(&self, path: &str, bytes: &[u8]) -> Result<(), GcmError> {
+        let full = self.root.join(path);
+        std::fs::write(&full, bytes)
+            .map_err(|e| GcmError::Git(format!("could not write {}: {e}", full.display())))
+    }
+
     /// Detect binary conflicted files from the combined unmerged diff. Binary
     /// files appear as `Binary files differ` under their `diff --cc <path>`
     /// header; text conflicts show hunk content instead. Returns the set of
@@ -423,6 +521,22 @@ impl Repo {
                 stdin_bytes.push(0);
             }
         }
+        self.stage_pathspecs(stdin_bytes)
+    }
+
+    /// Stage exact paths (resolve apply phase). Same literal, NUL-delimited
+    /// pathspec mechanism as [`Self::stage_group`], so a filename containing a
+    /// glob metacharacter can never pull in siblings.
+    pub fn stage_paths(&self, paths: &[&str]) -> Result<(), GcmError> {
+        let mut stdin_bytes: Vec<u8> = Vec::new();
+        for p in paths {
+            stdin_bytes.extend_from_slice(p.as_bytes());
+            stdin_bytes.push(0);
+        }
+        self.stage_pathspecs(stdin_bytes)
+    }
+
+    fn stage_pathspecs(&self, stdin_bytes: Vec<u8>) -> Result<(), GcmError> {
         let mut child = self
             .git(&["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"])
             .env("GIT_LITERAL_PATHSPECS", "1")
@@ -832,6 +946,184 @@ mod tests {
 
         let unmerged = repo.unmerged_files().unwrap();
         assert_eq!(unmerged, vec!["file with spaces.txt"]);
+    }
+
+    /// Probe whether `git commit -S` works in this environment (mirrors
+    /// `scripts/acceptance.sh` `probe_signing`). CI runners have no signing
+    /// key, so signing-dependent tests skip there and run on dev machines.
+    fn signing_available() -> bool {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        run_git(root, &["init", "-q"]);
+        run_git(root, &["config", "user.email", "t@t"]);
+        run_git(root, &["config", "user.name", "T"]);
+        run_git(
+            root,
+            &["commit", "-S", "--allow-empty", "-q", "-m", "probe"],
+        )
+        .status
+        .success()
+    }
+
+    /// Build a merge stopped on a conflict in `f.txt`, with the resolution
+    /// already written and staged (the state `finish_conflict_op` expects).
+    fn staged_conflicted_merge(root: &Path) {
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "feature\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "feature"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "main side\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "main side"]);
+        run_git(root, &["merge", "feature"]); // exits non-zero: conflict
+        std::fs::write(root.join("f.txt"), "resolved\n").unwrap();
+        run_git(root, &["add", "f.txt"]);
+    }
+
+    #[test]
+    fn finish_nothing_to_finish_without_conflict_state() {
+        let (dir, repo) = temp_repo();
+        std::fs::write(dir.path().join("f.txt"), "x").unwrap();
+        run_git(dir.path(), &["add", "-A"]);
+        run_git(dir.path(), &["commit", "-q", "-m", "init"]);
+        assert_eq!(
+            repo.finish_conflict_op().unwrap(),
+            FinishOutcome::NothingToFinish
+        );
+    }
+
+    #[test]
+    fn finish_merge_completes_with_signed_two_parent_commit() {
+        if !signing_available() {
+            eprintln!("skipping finish_merge_completes: commit signing unavailable here");
+            return;
+        }
+        let (dir, repo) = temp_repo();
+        staged_conflicted_merge(dir.path());
+        assert!(repo.is_merging(), "precondition: merge in progress");
+
+        let outcome = repo.finish_conflict_op().unwrap();
+        let FinishOutcome::Completed { head_sha } = outcome else {
+            panic!("expected Completed, got {outcome:?}");
+        };
+        assert!(!head_sha.is_empty());
+        assert!(!repo.is_merging(), "MERGE_HEAD cleared");
+        assert!(repo.unmerged_files().unwrap().is_empty());
+        // Two parents = a real merge commit.
+        let second_parent = run_git(dir.path(), &["rev-parse", "--verify", "HEAD^2"]);
+        assert!(second_parent.status.success(), "HEAD has a second parent");
+        // Signature header present (gpgsig covers both GPG and SSH signing).
+        let raw = run_git(dir.path(), &["cat-file", "commit", "HEAD"]);
+        assert!(
+            String::from_utf8_lossy(&raw.stdout).contains("gpgsig"),
+            "merge commit carries a signature header"
+        );
+    }
+
+    #[test]
+    fn finish_merge_hook_rejection_keeps_staged_state() {
+        let (dir, repo) = temp_repo();
+        staged_conflicted_merge(dir.path());
+        let hook_dir = dir.path().join(".git/hooks");
+        std::fs::create_dir_all(&hook_dir).unwrap();
+        let hook = hook_dir.join("pre-commit");
+        std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // Fails on the hook (before signing), so this runs on unsigned machines too.
+        let outcome = repo.finish_conflict_op().unwrap();
+        assert_eq!(outcome, FinishOutcome::Failed { op: "merge" });
+        assert!(repo.is_merging(), "MERGE_HEAD preserved for manual retry");
+        assert!(
+            staged_names(dir.path()).contains(&"f.txt".to_string()),
+            "staged resolution untouched"
+        );
+    }
+
+    #[test]
+    fn finish_cherry_pick_completes_and_clears_state() {
+        if !signing_available() {
+            eprintln!("skipping finish_cherry_pick: commit signing unavailable here");
+            return;
+        }
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "feature\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "feature"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "main side\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "main side"]);
+        run_git(root, &["cherry-pick", "feature"]); // conflict
+        assert!(
+            repo.is_cherry_picking(),
+            "precondition: cherry-pick stopped"
+        );
+        std::fs::write(root.join("f.txt"), "resolved\n").unwrap();
+        run_git(root, &["add", "f.txt"]);
+
+        let outcome = repo.finish_conflict_op().unwrap();
+        assert!(
+            matches!(outcome, FinishOutcome::Completed { .. }),
+            "expected Completed, got {outcome:?}"
+        );
+        assert!(!repo.is_cherry_picking(), "CHERRY_PICK_HEAD cleared");
+    }
+
+    #[test]
+    fn finish_rebase_stops_on_next_conflicted_commit() {
+        if !signing_available() {
+            eprintln!("skipping finish_rebase_stops: commit signing unavailable here");
+            return;
+        }
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "f1\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "c1"]);
+        std::fs::write(root.join("f.txt"), "f2\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "c2"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "moved\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "move main"]);
+        run_git(root, &["checkout", "-q", "feature"]);
+        run_git(root, &["rebase", "@{-1}"]); // stops on c1
+        assert!(repo.is_rebasing(), "precondition: rebase stopped on c1");
+        std::fs::write(root.join("f.txt"), "r1\n").unwrap();
+        run_git(root, &["add", "f.txt"]);
+
+        // Continuing commits r1 (signed), then c2 conflicts against it.
+        let outcome = repo.finish_conflict_op().unwrap();
+        assert_eq!(outcome, FinishOutcome::StoppedOnNextConflict);
+        assert!(repo.is_rebasing(), "rebase still in progress at next stop");
+        assert!(
+            !repo.unmerged_files().unwrap().is_empty(),
+            "next commit's conflict is present"
+        );
+    }
+
+    #[test]
+    fn file_bytes_round_trip_is_byte_exact() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        // Non-UTF8 bytes: the String-based read_file would reject or mangle these.
+        let bytes: Vec<u8> = vec![0xff, 0x00, b'\r', b'\n', 0xfe, b'x'];
+        std::fs::write(root.join("bin.dat"), &bytes).unwrap();
+        assert_eq!(repo.read_file_bytes("bin.dat").unwrap(), bytes);
+        repo.write_file_bytes("bin.dat", &bytes).unwrap();
+        assert_eq!(std::fs::read(root.join("bin.dat")).unwrap(), bytes);
     }
 
     #[test]

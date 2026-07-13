@@ -78,7 +78,7 @@ pub fn run_resolve_remote_opt(
     // (AC13: cleanup on error/abort). On success, we call `into_path()` to
     // preserve the scratch and report its path (AC7: print scratch path).
     let report = match merge_result {
-        Ok(()) => run_resolve_in_repo(&scratch.repo, args, true),
+        Ok(()) => run_resolve_in_repo(&scratch.repo, args, crate::resolve::ResolveMode::Remote),
         Err(e) => {
             // If merge failed because of conflicts, the engine will find unmerged
             // files and resolve them. Any other failure is propagated (TempDir
@@ -87,34 +87,67 @@ pub fn run_resolve_remote_opt(
             if unmerged.is_empty() {
                 return Err(e);
             }
-            run_resolve_in_repo(&scratch.repo, args, true)
+            run_resolve_in_repo(&scratch.repo, args, crate::resolve::ResolveMode::Remote)
         }
     };
 
     let mut report = report?;
 
-    // Stage the resolved tree and create the merge commit on the resolution
-    // branch. This persists the resolution so it survives after the scratch
-    // is preserved and so --remote-push pushes the correct tree.
-    commit_resolution(&scratch.repo, &resolution_branch, &remote_ref)?;
+    // A user rejection in the scratch repo keeps nothing: no commit, no push,
+    // and the scratch dir is dropped (TempDir cleans up when this returns).
+    if report.status == ResolveStatus::Aborted {
+        report.remote = Some(RemoteReport {
+            host: remote_ref.host,
+            number: remote_ref.number,
+            base_branch: scratch.base_branch.clone(),
+            source_branch: scratch.source_branch.clone(),
+            resolution_branch,
+            pushed: false,
+            commented: false,
+            scratch_path: None,
+        });
+        return Ok(report);
+    }
+
+    // Commit gate (CLO-555): only a Resolved or Noop tree is committed. A
+    // Partial tree still holds raw conflict markers - `git add -A` would
+    // stage them and `--remote-push` would publish them.
+    let committable = matches!(report.status, ResolveStatus::Resolved | ResolveStatus::Noop);
+    if committable {
+        // Stage the resolved tree and create the merge commit on the
+        // resolution branch. This persists the resolution so it survives
+        // after the scratch is preserved and so --remote-push pushes the
+        // correct tree.
+        commit_resolution(&scratch.repo, &resolution_branch, &remote_ref)?;
+    } else {
+        eprintln!(
+            "gcm resolve: partial resolution - nothing committed; the scratch repo is kept for manual completion"
+        );
+    }
 
     // Optional publish: push and/or comment. Comment failures are surfaced
     // as warnings but do not abort the resolution (EC7).
     let mut pushed = false;
     let mut commented = false;
-    let mut comment_warning: Option<String> = None;
 
     if args.remote_push() {
-        fetch::push_resolution_branch(&scratch.repo, &resolution_branch, remote_ref.host)?;
-        pushed = true;
+        if committable {
+            fetch::push_resolution_branch(&scratch.repo, &resolution_branch, remote_ref.host)?;
+            pushed = true;
+        } else {
+            eprintln!("gcm resolve: --remote-push skipped: a partial resolution is never pushed");
+        }
     }
 
     if args.remote_comment() {
         match publish::post_comment(&scratch.repo, &remote_ref, &report) {
             Ok(()) => commented = true,
             Err(e) => {
-                // EC7: surface but do not abort.
-                comment_warning = Some(e.to_string());
+                // EC7: surface but do not abort. Reported via this warning and
+                // `commented: false` - never by downgrading the status:
+                // `Partial` means "unresolved conflicts, not committed"
+                // (CLO-555 commit gate), and a committed-and-maybe-pushed
+                // resolution must stay Resolved despite publish hiccups.
                 eprintln!("gcm resolve: warning: comment failed: {e}");
             }
         }
@@ -139,12 +172,6 @@ pub fn run_resolve_remote_opt(
         commented,
         scratch_path: Some(scratch_path_str),
     });
-
-    // If comment failed, downgrade status to Partial so the user knows not
-    // everything succeeded. (The resolution itself is still committed.)
-    if comment_warning.is_some() && report.status == ResolveStatus::Resolved {
-        report.status = ResolveStatus::Partial;
-    }
 
     Ok(report)
 }
@@ -194,6 +221,9 @@ fn dry_run_report(remote_ref: &RemoteRef) -> ResolveReport {
         v: crate::output::SCHEMA_VERSION,
         status: ResolveStatus::Noop,
         files: vec![],
+        staged: vec![],
+        finish: None,
+        restored: false,
         remote: Some(RemoteReport {
             host: remote_ref.host,
             number: remote_ref.number,

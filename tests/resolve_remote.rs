@@ -407,6 +407,30 @@ id = "ollama"
     );
 }
 
+/// Fake Ollama that returns one real resolution for the single conflicted hunk.
+fn start_fake_ollama_with_resolution(replacement: &str) -> String {
+    let inner = serde_json::json!({
+        "resolutions": [{"hunk_index": 0, "replacement": replacement}]
+    })
+    .to_string();
+    let body = serde_json::json!({"message": {"content": inner}}).to_string();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0_u8; 8192];
+            let _ = stream.read(&mut buf);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    format!("http://{addr}")
+}
+
 fn start_fake_ollama_empty_resolutions() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1373,4 +1397,123 @@ fn scratch_cleanup_on_error() {
     // We can't directly check temp dirs, but the user repo should be clean.
     let user_branch = git_output(&user_repo, &["branch", "--show-current"]);
     assert_eq!(user_branch, "main", "user repo should be unchanged");
+}
+
+// ---------------------------------------------------------------------------
+// CLO-555 remote gate: commit/push only committable (Resolved/Noop) reports.
+// ---------------------------------------------------------------------------
+
+/// A Partial resolution is never committed and never pushed, even with
+/// --remote-push: raw conflict markers must not be published.
+#[test]
+fn partial_never_commits_or_pushes() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    // Provider returns no resolutions -> every hunk escalates -> Partial.
+    let ollama_base = start_fake_ollama_empty_resolutions();
+    let out = run_gcm_with_home_env(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &home,
+        &[
+            ("GCM_PROVIDER", "ollama"),
+            ("GCM_OLLAMA_BASE_URL", ollama_base.as_str()),
+        ],
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--remote-push",
+            "--yes",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(json["status"], "partial", "{stdout}");
+    assert_eq!(json["remote"]["pushed"], false, "{stdout}");
+
+    // Nothing reached the remote.
+    let remote_branches = git_output(&remote, &["branch", "--list"]);
+    assert!(
+        !remote_branches.contains("gcm-resolve-github-42"),
+        "partial branch must not be pushed: {remote_branches}"
+    );
+
+    // The scratch resolution branch has zero new commits (no marker commit).
+    let scratch = PathBuf::from(json["remote"]["scratch_path"].as_str().unwrap());
+    assert!(scratch.exists(), "scratch kept for manual completion");
+    let new_commits = git_output(&scratch, &["rev-list", "--count", "main..HEAD"]);
+    assert_eq!(new_commits, "0", "no commit on a partial resolution");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("never pushed"),
+        "push skip explained: {stderr}"
+    );
+}
+
+/// A Resolved remote run produces exactly one first-parent commit on the
+/// resolution branch - the merge commit - never a stacked empty duplicate.
+#[test]
+fn resolved_remote_produces_exactly_one_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let remote = build_fake_remote(dir.path(), "pr-42-source");
+    let user_repo = setup_user_repo(dir.path(), &remote);
+    let bin = dir.path().join("bin");
+    write_fake_scripts(&bin, None);
+    let cfg_dir = dir.path().join("cfg");
+    basic_config(&cfg_dir);
+    let home = setup_git_redirect(dir.path(), &remote, GITHUB_URL_PREFIX);
+    let ollama_base = start_fake_ollama_with_resolution("resolved\n");
+    let out = run_gcm_with_home_env(
+        &user_repo,
+        &cfg_dir,
+        &bin,
+        &home,
+        &[
+            ("GCM_PROVIDER", "ollama"),
+            ("GCM_OLLAMA_BASE_URL", ollama_base.as_str()),
+        ],
+        &[
+            "resolve",
+            "--pr",
+            "https://github.com/acme/app/pull/42",
+            "--yes",
+            "--json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stdout: {stdout}, stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(json["status"], "resolved", "{stdout}");
+
+    let scratch = PathBuf::from(json["remote"]["scratch_path"].as_str().unwrap());
+    let first_parent_commits = git_output(
+        &scratch,
+        &["rev-list", "--count", "--first-parent", "main..HEAD"],
+    );
+    assert_eq!(
+        first_parent_commits, "1",
+        "exactly the one merge commit on the resolution branch"
+    );
+    assert_eq!(
+        std::fs::read_to_string(scratch.join("f.txt")).unwrap(),
+        "resolved\n"
+    );
 }

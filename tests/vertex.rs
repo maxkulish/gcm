@@ -199,7 +199,7 @@ fn resolve_via_vertex_hits_mock_generatecontent_with_bearer_and_resolves() {
             ("GCM_VERTEX_BASE_URL", &url),
             ("GCM_VERTEX_TOKEN", "fake-adc-token"),
         ],
-        &["resolve", "--yes", "--provider", "vertex"],
+        &["resolve", "--yes", "--no-finish", "--provider", "vertex"],
     );
     let request = server.join().unwrap();
 
@@ -285,9 +285,15 @@ fn vertex_missing_gcloud_and_token_is_actionable_not_a_panic() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
+    // CLO-555: a provider failure escalates the file (Partial, exit 0)
+    // instead of aborting the run; the actionable message still surfaces.
     assert!(
-        !out.status.success(),
-        "expected failure without a token: {combined}"
+        out.status.success(),
+        "provider failure escalates rather than aborts: {combined}"
+    );
+    assert!(
+        combined.contains("escalating this file"),
+        "file escalated on provider failure: {combined}"
     );
     assert!(!combined.contains("panicked"), "must not panic: {combined}");
     assert!(
