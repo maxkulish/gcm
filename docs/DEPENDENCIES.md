@@ -1,25 +1,27 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-12 (CLO-555 started; CLO-554 blocked by it)
+**Last Updated**: 2026-07-13 (CLO-555 merged — PR #35; CLO-554 unblocked)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| CLO-554 | CLO-555 | In Progress | Rebase loop builds on the transaction engine + `StoppedOnNextConflict` handoff |
+| — | — | — | None. CLO-547 and CLO-554 (both ready) have no blockers. |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
+| CLO-554 | CLO-555 complete (transaction engine + `StoppedOnNextConflict` handoff) | 2026-07-13 |
 | CLO-547 | split from CLO-545 review (self-contained, no blockers) | 2026-07-11 |
 
-> **CLO-555** (rework `gcm resolve` into an ownership transaction) is In Progress (spec phase); **CLO-554** (rebase resolve-until-clean loop) waits on it. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
+> **CLO-555** (rework `gcm resolve` into an ownership transaction) merged in PR #35 (2026-07-13); **CLO-554** (rebase resolve-until-clean loop) is now ready with no blockers. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 
 | Task | Previous Blocker | Resolved |
 |------|-----------------|----------|
+| CLO-554 | CLO-555 (resolve ownership transaction) | 2026-07-13 (merged PR #35) |
 | CLO-533 | CLO-531 (Phase-1 resolve core) | 2026-07-07 (merged PR #25) |
 | CLO-534 | CLO-531 (resolve feature) | 2026-07-07 (merged same day) |
 | CLO-535 | CLO-531 (resolve feature) | 2026-07-07 (merged PR #29) |

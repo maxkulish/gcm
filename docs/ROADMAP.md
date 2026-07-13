@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-12 (CLO-555 started — resolve ownership transaction; CLO-554 filed)
+**Last Updated**: 2026-07-13 (CLO-555 merged — PR #35; CLO-554 unblocked)
 
 ## Summary
 
@@ -9,7 +9,7 @@
 | Phase 1: Foundations | 13 | 13 | Complete |
 | Phase 2: Hardening | 1 | 1 | Complete |
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
-| Phase 4: `gcm resolve` (conflict resolution) | 4 | 2 | In Progress |
+| Phase 4: `gcm resolve` (conflict resolution) | 4 | 3 | In Progress |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
 | Maintenance (cross-cutting) | 2 | 1 | In Progress |
@@ -59,8 +59,8 @@ New feature area: LLM-assisted git merge/rebase/cherry-pick conflict resolution,
 |------|-------|--------|--------------|
 | CLO-531 | `gcm resolve` LLM-assisted resolver (Phase 1: local markers) | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) |
 | CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | Done | CLO-531 |
-| CLO-555 | Rework `gcm resolve` into an ownership transaction (apply, stage, signed finish) | In Progress | CLO-531, CLO-533 (both Done); design: docs/hotfix/2026-07-12-resolve-stage-and-finish.md |
-| CLO-554 | Add resolve-until-clean rebase loop to `gcm resolve` | Backlog | CLO-555 |
+| CLO-555 | Rework `gcm resolve` into an ownership transaction (apply, stage, signed finish) | Done | CLO-531, CLO-533 (both Done); design: docs/hotfix/2026-07-12-resolve-stage-and-finish.md |
+| CLO-554 | Add resolve-until-clean rebase loop to `gcm resolve` | Backlog | CLO-555 (Done 2026-07-13) |
 
 ## Phase 5: Provider expansion
 
