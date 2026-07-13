@@ -43,7 +43,8 @@ linear:
   related: []
   branch_suggested: kmamemo/clo-555-rework-gcm-resolve-into-an-ownership-transaction-apply-stage
   priority: Medium
-  branch_actual: null
+  branch_actual: feat/clo-555-resolve-transaction
+  status_at_complete: Done
 design_source: docs/hotfix/2026-07-12-resolve-stage-and-finish.md
 workflow:
   current_phase: complete
@@ -63,6 +64,7 @@ phases:
   plan:
     status: skipped
     skip_reason: Specification task - spec decomposition is the plan
+    plan_file: docs/plans/clo-555-resolve-transaction.md (checkbox tracker over the spec ST1-ST8)
   spec:
     status: complete
     spec_file: docs/specs/2026-07-12-clo-555-resolve-ownership-transaction.md
@@ -113,6 +115,10 @@ phases:
       - 44ce964   # bonus: ConflictConfig Default mismatch (mergiraf off, temp 0.0)
       - 4a7e29e   # bonus: marker-free files excluded from zdiff3 re-checkout
       - 6ed99ab   # ST8 cargo transaction test matrix
+      - 5abae3e   # ST8 README + acceptance AC-R cases + remote gate tests
+      - daf0b07   # docs: plan 100% + spec as-built notes
+      - 1db180e   # validation-gate fix iteration (5 Codex findings)
+      - a945757   # docs: validation reports + synthesis
     subtasks_complete:
       - 'ST1: parse_choice + 3-attempt reprompt, EOF/empty=No, [y/N/e(dit)], confirm_file + commit confirm share it'
       - 'ST2: WorkingTreeSnapshot capture/record_written/restore; guard skips externally modified/deleted files'
