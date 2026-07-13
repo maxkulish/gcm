@@ -35,6 +35,13 @@ git checkout main && git pull
 git checkout -b feat/clo-XX-<short-slug>
 ```
 
+After the branch exists, initialize session knowledge capture (deterministic,
+survives worktree/branch teardown; no-ops if the CLI is not installed):
+
+```bash
+"$HOME/bin/session-knowledge" init
+```
+
 Record:
 
 ```ts

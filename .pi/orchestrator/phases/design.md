@@ -78,6 +78,14 @@ ls .pi/lessons/ 2>/dev/null
 grep -l -i -e backend -e workflow -e conductor -e tasks -e apply_verify -e role .pi/lessons/ 2>/dev/null
 ```
 
+Also search the central session capture (durable facts first, raw
+`unverified` notes second - these include findings captured this task or by
+a sibling task, including work done in the pi runtime):
+
+```bash
+"$HOME/bin/session-knowledge" search <keywords for the touched subsystems>
+```
+
 Adjust the keyword list to match what this task is about. Read every
 matching file end-to-end. Hits become inputs to:
 
