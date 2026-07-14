@@ -699,13 +699,14 @@ fn commit_first_group(
                     );
                 }
             };
-            output::committed(
+            output::committed_group(
                 Some(provider_name),
                 Some(model),
-                output::MODE_GROUPED,
                 hash,
                 message,
                 group1.files.clone(),
+                plan.groups.len(),
+                remaining_files(plan),
             )
         }
         Err(e) => output::error(
@@ -980,6 +981,21 @@ fn grouped_mode(args: &Cli) -> Option<&'static str> {
     }
 }
 
+/// Human summary printed after a grouped commit. gcm commits the first group of
+/// the current run's plan, so this is always "group 1 of N"; when later groups
+/// remain it adds how many files/groups are left and the hint to re-run. Mirrors
+/// the `--dry-run` preview wording ([`ui::preview_plan`]).
+fn grouped_commit_summary(group_count: usize, remaining_files: usize) -> String {
+    let mut summary = format!("Committed group 1 of {group_count}.");
+    if group_count > 1 {
+        summary.push_str(&format!(
+            "\n{remaining_files} file(s) remain in {} more group(s); run gcm again to commit the next group.",
+            group_count - 1
+        ));
+    }
+    summary
+}
+
 fn print_human(env: &Envelope) {
     match env.status {
         output::STATUS_NOOP => {
@@ -996,7 +1012,13 @@ fn print_human(env: &Envelope) {
         output::STATUS_COMMITTED => {
             if let Some(commit) = &env.commit {
                 if env.mode == Some(output::MODE_GROUPED) {
-                    println!("Committed group 1.");
+                    match &env.group_progress {
+                        Some(gp) => println!(
+                            "{}",
+                            grouped_commit_summary(gp.group_count, gp.remaining_files)
+                        ),
+                        None => println!("Committed group 1."),
+                    }
                 } else {
                     println!("Committed.");
                 }
@@ -1015,5 +1037,24 @@ fn print_human(env: &Envelope) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grouped_summary_multi_group_shows_count_and_remaining() {
+        assert_eq!(
+            grouped_commit_summary(3, 5),
+            "Committed group 1 of 3.\n\
+             5 file(s) remain in 2 more group(s); run gcm again to commit the next group."
+        );
+    }
+
+    #[test]
+    fn grouped_summary_last_group_omits_remaining_line() {
+        assert_eq!(grouped_commit_summary(1, 0), "Committed group 1 of 1.");
     }
 }
