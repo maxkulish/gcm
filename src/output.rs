@@ -44,9 +44,21 @@ pub struct Envelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commit: Option<CommitSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_progress: Option<GroupProgress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback: Option<FallbackInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+}
+
+/// Grouped-mode progress: how many groups the current run's plan holds and how
+/// many files remain in the later groups. gcm commits the first group each run,
+/// so the committed group is always group 1 of `group_count`; `remaining_files`
+/// counts the files left for subsequent runs. Present only on a grouped commit.
+#[derive(Debug, Clone, Serialize)]
+pub struct GroupProgress {
+    pub group_count: usize,
+    pub remaining_files: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +100,7 @@ impl Envelope {
             changed_files: None,
             cached: None,
             commit: None,
+            group_progress: None,
             fallback: None,
             error: None,
         }
@@ -130,6 +143,26 @@ pub fn committed(
         hash,
         message,
         changed_files,
+    });
+    env
+}
+
+/// One group was committed in grouped mode, carrying the plan's group count and
+/// remaining-file total so the human output can report progress (which group of
+/// how many, how many files are left for later runs).
+pub fn committed_group(
+    provider: Option<&str>,
+    model: Option<&str>,
+    hash: String,
+    message: String,
+    changed_files: Vec<String>,
+    group_count: usize,
+    remaining_files: usize,
+) -> Envelope {
+    let mut env = committed(provider, model, MODE_GROUPED, hash, message, changed_files);
+    env.group_progress = Some(GroupProgress {
+        group_count,
+        remaining_files,
     });
     env
 }
@@ -286,6 +319,40 @@ mod tests {
         assert_eq!(c.status, "ok");
         assert_eq!(c.hash, "abc123");
         assert_eq!(c.message, "feat: x");
+    }
+
+    #[test]
+    fn committed_group_carries_progress_and_serializes_it() {
+        let env = committed_group(
+            Some("Groq"),
+            Some("m"),
+            "abc123".to_string(),
+            "feat: x".to_string(),
+            vec!["x.rs".to_string()],
+            3,
+            5,
+        );
+        assert_eq!(env.mode, Some(MODE_GROUPED));
+        let gp = env.group_progress.as_ref().expect("progress set");
+        assert_eq!(gp.group_count, 3);
+        assert_eq!(gp.remaining_files, 5);
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(json.contains("\"group_progress\""), "json: {json}");
+    }
+
+    #[test]
+    fn single_commit_omits_group_progress() {
+        let env = committed(
+            Some("Groq"),
+            Some("m"),
+            MODE_SINGLE,
+            "abc123".to_string(),
+            "feat: x".to_string(),
+            vec!["x.rs".to_string()],
+        );
+        assert!(env.group_progress.is_none());
+        let json = serde_json::to_string(&env).unwrap();
+        assert!(!json.contains("group_progress"), "json: {json}");
     }
 
     #[test]
