@@ -4,8 +4,8 @@
 //! light retry via [`super::http::get_json`]); on *any* failure - no key, transport
 //! error, non-2xx, unparseable body, or an empty result - it degrades to a static
 //! per-provider fallback list so the wizard spinner always resolves to a usable set.
-//! The raw list is post-processed (D7): non-chat models filtered out, static
-//! baselines (including the provider's `default_model`) merged in, then deduped.
+//! The raw list is post-processed (D7): non-chat models filtered out, then deduped.
+//! If the live list is empty (or the fetch fails), it degrades to the static baselines.
 //!
 //! Centralized here (rather than spread across the five backends) deliberately:
 //! discovery is fallback-safe, so a base-URL drift only costs a fallback, not a
@@ -39,6 +39,15 @@ pub fn fetch_supported_models(
     key: Option<&str>,
     endpoint: Option<&str>,
 ) -> ModelFetchOutcome {
+    fetch_supported_models_with(id, key, endpoint, http::get_json)
+}
+
+fn fetch_supported_models_with(
+    id: ProviderId,
+    key: Option<&str>,
+    endpoint: Option<&str>,
+    fetch: impl Fn(&HttpGet) -> Result<String, super::ProviderError>,
+) -> ModelFetchOutcome {
     let key = key.map(str::trim).filter(|k| !k.is_empty());
 
     // Vertex (CLO-537): keyless ADC, no live models endpoint in the MVP (design D4),
@@ -66,18 +75,15 @@ pub fn fetch_supported_models(
         }
     }
 
-    match fetch_live(id, key, endpoint) {
+    match fetch_live(id, key, endpoint, &fetch) {
         Ok(raw) => {
             let live: Vec<String> = raw.into_iter().filter(|m| keep_chat_model(id, m)).collect();
             let live_count = live.len();
-            // Merge static baselines (incl. default_model) so known-good models are
-            // always selectable even if the live list omits them (D7.3).
-            let mut models = live;
-            models.extend(static_fallback_models(id));
-            let models = dedupe(models);
             if live_count == 0 {
+                let mut models = live;
+                models.extend(static_fallback_models(id));
                 ModelFetchOutcome {
-                    models,
+                    models: dedupe(models),
                     source: FetchSource::Fallback,
                     warning: Some(format!(
                         "{} returned no usable models; using the built-in list",
@@ -86,7 +92,7 @@ pub fn fetch_supported_models(
                 }
             } else {
                 ModelFetchOutcome {
-                    models,
+                    models: dedupe(live),
                     source: FetchSource::Live,
                     warning: None,
                 }
@@ -108,12 +114,19 @@ fn fetch_live(
     id: ProviderId,
     key: Option<&str>,
     endpoint: Option<&str>,
+    fetch: &impl Fn(&HttpGet) -> Result<String, super::ProviderError>,
 ) -> Result<Vec<String>, super::ProviderError> {
+    let req = build_fetch_request(id, key, endpoint);
+    let raw = fetch(&req)?;
+    Ok(parse_models(id, &raw))
+}
+
+fn build_fetch_request(id: ProviderId, key: Option<&str>, endpoint: Option<&str>) -> HttpGet {
     let base = resolved_base_url(id, endpoint);
     let base = base.trim_end_matches('/');
     let name = provider_name(id);
     let env_var = id.key_env_var().unwrap_or("");
-    let req = match id {
+    match id {
         ProviderId::Groq | ProviderId::Openai => HttpGet {
             provider: name,
             auth_env_var: env_var,
@@ -144,9 +157,7 @@ fn fetch_live(
             auth: None,
             extra_headers: Vec::new(),
         },
-    };
-    let raw = http::get_json(&req)?;
-    Ok(parse_models(id, &raw))
+    }
 }
 
 /// Resolve the model-list base URL: an explicit `endpoint` (Ollama, from the
@@ -241,13 +252,18 @@ fn parse_models(id: ProviderId, body: &str) -> Vec<String> {
     }
 }
 
-/// Whether a model id is a chat/text-generation model gcm can use (D7.1). OpenAI
-/// and Groq `/models` return non-text families (whisper/tts/dall-e/embeddings);
-/// an exclude-list is safer than an include-list (new chat families aren't missed).
-/// Gemini is already filtered in [`parse_models`]; Anthropic/Ollama pass through.
+/// Whether a model id is a chat/text-generation model gcm can use (D7.1).
+/// OpenAI is filtered to the runtime-validated [`super::openai::SUPPORTED_MODELS`]
+/// family - the `provider::select` gate (CLO-545) rejects everything else, so a
+/// wider discovery list would only offer selectable-but-broken configs. Groq keeps
+/// a name exclude-list (open catalog, no runtime gate; new chat families aren't
+/// missed). Google/Vertex layer a name exclude-list on top of the structural
+/// `generateContent` filter in [`parse_models`] - that method alone also passes
+/// image/tts/music/robotics/agent ids (CLO-547). Anthropic/Ollama pass through.
 fn keep_chat_model(id: ProviderId, model: &str) -> bool {
     match id {
-        ProviderId::Openai | ProviderId::Groq => {
+        ProviderId::Openai => super::openai::SUPPORTED_MODELS.contains(&model),
+        ProviderId::Groq => {
             const EXCLUDE: &[&str] = &[
                 "whisper",
                 "tts",
@@ -262,6 +278,24 @@ fn keep_chat_model(id: ProviderId, model: &str) -> bool {
                 "audio",
                 "image",
                 "rerank",
+            ];
+            let m = model.to_ascii_lowercase();
+            !EXCLUDE.iter().any(|bad| m.contains(bad))
+        }
+        ProviderId::Google | ProviderId::Vertex => {
+            const EXCLUDE: &[&str] = &[
+                "image",
+                "tts",
+                "lyria",
+                "robotics",
+                "computer-use",
+                "deep-research",
+                "nano-banana",
+                "antigravity",
+                "omni",
+                "audio",
+                "veo",
+                "imagen",
             ];
             let m = model.to_ascii_lowercase();
             !EXCLUDE.iter().any(|bad| m.contains(bad))
@@ -321,6 +355,44 @@ fn provider_name(id: ProviderId) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn mock_server(response_headers: &str, body: &str) -> (String, thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let body = body.to_string();
+        let response_headers = response_headers.to_string();
+        let handle = thread::spawn(move || {
+            listener.set_nonblocking(true).ok();
+            let start = std::time::Instant::now();
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                        let mut buf = [0u8; 8192];
+                        let n = stream.read(&mut buf).unwrap_or(0);
+                        let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let response = format!(
+                            "{response_headers}\r\nContent-Length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = stream.write_all(response.as_bytes());
+                        return req;
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if start.elapsed() > std::time::Duration::from_secs(2) {
+                            return String::new();
+                        }
+                        thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(_) => return String::new(),
+                }
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
 
     #[test]
     fn parse_openai_compatible_data_ids() {
@@ -381,6 +453,55 @@ mod tests {
         // Anthropic/Ollama pass through (no exclude-list)
         assert!(keep_chat_model(ProviderId::Anthropic, "claude-haiku-4-5"));
         assert!(keep_chat_model(ProviderId::Ollama, "anything:latest"));
+    }
+
+    #[test]
+    fn keep_chat_model_openai_is_exactly_the_gate_family() {
+        // Adding a model to SUPPORTED_MODELS widens both the runtime gate and
+        // discovery automatically - assert the coupling by iterating the source.
+        for m in crate::provider::openai::SUPPORTED_MODELS {
+            assert!(keep_chat_model(ProviderId::Openai, m), "{m} must pass");
+        }
+        // Chat-capable but gate-rejected ids are excluded from discovery too.
+        for bad in [
+            "gpt-4.1",
+            "gpt-4o",
+            "o3-mini",
+            "gpt-realtime",
+            "codex-mini-latest",
+        ] {
+            assert!(!keep_chat_model(ProviderId::Openai, bad), "{bad} excluded");
+        }
+    }
+
+    #[test]
+    fn keep_chat_model_gemini_name_policy() {
+        for good in [
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-3.1-pro",
+            "gemma-4-31b-it",
+        ] {
+            assert!(keep_chat_model(ProviderId::Google, good), "{good} kept");
+            assert!(keep_chat_model(ProviderId::Vertex, good), "{good} kept");
+        }
+        for bad in [
+            "lyria-3-pro-preview",
+            "nano-banana-pro-preview",
+            "gemini-3.1-flash-image",
+            "gemini-2.5-flash-preview-tts",
+            "gemini-robotics-er-1.6-preview",
+            "gemini-2.5-computer-use-preview-10-2025",
+            "deep-research-max-preview-04-2026",
+            "antigravity-preview-05-2026",
+            "gemini-omni-flash-preview",
+            "Gemini-3.1-Flash-IMAGE", // case-insensitive match
+        ] {
+            assert!(!keep_chat_model(ProviderId::Google, bad), "{bad} excluded");
+            assert!(!keep_chat_model(ProviderId::Vertex, bad), "{bad} excluded");
+        }
     }
 
     #[test]
@@ -457,5 +578,167 @@ mod tests {
             resolved_base_url_with(ProviderId::Google, None, |_| None),
             "https://generativelanguage.googleapis.com"
         );
+    }
+
+    #[test]
+    fn transport_auth_headers_and_parsing() {
+        let (url, handle) = mock_server(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json",
+            r#"{"data":[{"id":"gpt-5.6-terra"}]}"#,
+        );
+        let out = fetch_supported_models_with(
+            ProviderId::Openai,
+            Some("sk-123"),
+            Some(&url),
+            http::get_json,
+        );
+        let req = handle.join().unwrap();
+        assert!(
+            req.to_lowercase().contains("authorization: bearer sk-123"),
+            "openai auth"
+        );
+        assert_eq!(out.models, vec!["gpt-5.6-terra"]);
+        assert!(matches!(out.source, FetchSource::Live));
+
+        let (url, handle) = mock_server(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json",
+            r#"{"data":[{"id":"claude-haiku-4-5"}]}"#,
+        );
+        fetch_supported_models_with(
+            ProviderId::Anthropic,
+            Some("sk-anth"),
+            Some(&url),
+            http::get_json,
+        );
+        let req = handle.join().unwrap();
+        assert!(
+            req.to_lowercase().contains("x-api-key: sk-anth"),
+            "anthropic auth"
+        );
+        assert!(
+            req.to_lowercase().contains("anthropic-version: 2023-06-01"),
+            "anthropic extra header"
+        );
+
+        let (url, handle) = mock_server(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json",
+            r#"{"models":[{"name":"models/gemini-3.6-flash","supportedGenerationMethods":["generateContent"]}]}"#,
+        );
+        // Note: ProviderId::Google, not Vertex, since Vertex is short-circuited.
+        fetch_supported_models_with(
+            ProviderId::Google,
+            Some("AIza..."),
+            Some(&url),
+            http::get_json,
+        );
+        let req = handle.join().unwrap();
+        assert!(
+            req.to_lowercase().contains("x-goog-api-key: aiza..."),
+            "google auth"
+        );
+    }
+
+    #[test]
+    fn transport_capability_filtering_and_no_inject_after_live() {
+        let body = r#"{
+            "data": [
+                {"id":"gpt-5.6-terra"},
+                {"id":"gpt-4.1"},
+                {"id":"o3-mini"},
+                {"id":"gpt-realtime"},
+                {"id":"codex-mini-latest"},
+                {"id":"deep-research"}
+            ]
+        }"#;
+        let (url, handle) = mock_server("HTTP/1.1 200 OK\r\nContent-Type: application/json", body);
+        let out = fetch_supported_models_with(
+            ProviderId::Openai,
+            Some("sk-123"),
+            Some(&url),
+            http::get_json,
+        );
+        let _ = handle.join();
+        // Only gpt-5.6-terra is supported.
+        assert_eq!(
+            out.models,
+            vec!["gpt-5.6-terra"],
+            "no static injection, capability filtered"
+        );
+        assert!(matches!(out.source, FetchSource::Live));
+    }
+
+    #[test]
+    fn transport_gemini_filtering() {
+        let body = r#"{"models":[
+            {"name":"models/gemini-3.6-flash","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/lyria-3-pro-preview","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-3.1-flash-image","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-2.5-flash-preview-tts","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/gemini-robotics-er-1.6-preview","supportedGenerationMethods":["generateContent"]},
+            {"name":"models/nano-banana-pro-preview","supportedGenerationMethods":["generateContent"]}
+        ]}"#;
+        let (url, handle) = mock_server("HTTP/1.1 200 OK\r\nContent-Type: application/json", body);
+        let out = fetch_supported_models_with(
+            ProviderId::Google,
+            Some("sk-123"),
+            Some(&url),
+            http::get_json,
+        );
+        let _ = handle.join();
+        assert_eq!(out.models, vec!["gemini-3.6-flash"]);
+        assert!(matches!(out.source, FetchSource::Live));
+    }
+
+    #[test]
+    fn transport_live_empty_after_filter_falls_back() {
+        // A 200 OK but all models are filtered out.
+        let (url, handle) = mock_server(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json",
+            r#"{"data":[{"id":"gpt-4o"}]}"#,
+        );
+        let out = fetch_supported_models_with(
+            ProviderId::Openai,
+            Some("sk-123"),
+            Some(&url),
+            http::get_json,
+        );
+        let _ = handle.join();
+        assert!(matches!(out.source, FetchSource::Fallback));
+        assert_eq!(out.models, static_fallback_models(ProviderId::Openai));
+    }
+
+    #[test]
+    fn transport_fallback_on_401_and_500() {
+        let (url, handle) = mock_server("HTTP/1.1 401 Unauthorized", "{}");
+        let out = fetch_supported_models_with(
+            ProviderId::Openai,
+            Some("sk-123"),
+            Some(&url),
+            http::get_json,
+        );
+        let _ = handle.join();
+        assert!(matches!(out.source, FetchSource::Fallback));
+
+        let (url, handle) = mock_server("HTTP/1.1 500 Internal Server Error", "{}");
+        let out = fetch_supported_models_with(
+            ProviderId::Openai,
+            Some("sk-123"),
+            Some(&url),
+            http::get_json,
+        );
+        let _ = handle.join();
+        assert!(matches!(out.source, FetchSource::Fallback));
+    }
+
+    #[test]
+    fn transport_fallback_on_timeout_injected() {
+        let fetch_err = |_req: &HttpGet| -> Result<String, crate::provider::ProviderError> {
+            Err(crate::provider::ProviderError {
+                provider: "OpenAI",
+                kind: crate::provider::ErrorKind::Transport("timeout".to_string()),
+            })
+        };
+        let out = fetch_supported_models_with(ProviderId::Openai, Some("sk-123"), None, fetch_err);
+        assert!(matches!(out.source, FetchSource::Fallback));
     }
 }

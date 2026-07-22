@@ -968,7 +968,10 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
     );
     let model_items: Vec<(String, String, &'static str)> = candidates
         .iter()
-        .map(|m| (m.clone(), m.clone(), ""))
+        .map(|m| {
+            let hint = wizard_model_hint(id, m, &outcome.source, &outcome.models);
+            (m.clone(), m.clone(), hint)
+        })
         .collect();
     // Pre-select the candidates whose canonical form matches a currently-enabled
     // model, so a migrated `llama3` / `models/gemini-x` still highlights (review L1).
@@ -1066,6 +1069,29 @@ fn wizard_model_list(
         push_if_new(d, &mut out);
     }
     out
+}
+
+/// Computes the hint for a model candidate in the wizard multiselect (AC5).
+/// If the fetch succeeded (`Live`) but the candidate is not in the live list
+/// (by canonical form), it gets a `not in live catalog` hint.
+/// Otherwise, or if the source is `Fallback`, the hint is empty.
+fn wizard_model_hint(
+    id: ProviderId,
+    candidate: &str,
+    source: &crate::provider::FetchSource,
+    live_models: &[String],
+) -> &'static str {
+    match source {
+        crate::provider::FetchSource::Fallback => "",
+        crate::provider::FetchSource::Live => {
+            let c = canonicalize_model(id, candidate);
+            if live_models.iter().any(|m| canonicalize_model(id, m) == c) {
+                ""
+            } else {
+                "not in live catalog"
+            }
+        }
+    }
 }
 
 /// The pre-selected default model: the current default if it survived into
@@ -2359,6 +2385,55 @@ mod tests {
             list,
             vec!["llama3:latest"],
             "canonical dedupe keeps the fetched form"
+        );
+    }
+
+    #[test]
+    fn wizard_model_hint_flags_absent_live_models_by_canonical_form() {
+        let live = vec!["llama3:latest".to_string(), "gemma".to_string()];
+
+        // fallback source: always empty hint
+        assert_eq!(
+            wizard_model_hint(
+                ProviderId::Ollama,
+                "llama3",
+                &crate::provider::FetchSource::Fallback,
+                &live
+            ),
+            ""
+        );
+
+        // live source: present models get empty hint
+        assert_eq!(
+            wizard_model_hint(
+                ProviderId::Ollama,
+                "gemma",
+                &crate::provider::FetchSource::Live,
+                &live
+            ),
+            ""
+        );
+
+        // live source: absent models get warning
+        assert_eq!(
+            wizard_model_hint(
+                ProviderId::Ollama,
+                "absent",
+                &crate::provider::FetchSource::Live,
+                &live
+            ),
+            "not in live catalog"
+        );
+
+        // canonical matching: llama3 matches llama3:latest
+        assert_eq!(
+            wizard_model_hint(
+                ProviderId::Ollama,
+                "llama3",
+                &crate::provider::FetchSource::Live,
+                &live
+            ),
+            ""
         );
     }
 
