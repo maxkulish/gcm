@@ -1,0 +1,115 @@
+task_id: clo-564
+task_type: specification
+task_title: Add live Vertex model discovery to `gcm provider` and refresh the Gemini catalog (default -> gemini-3.5-flash-lite)
+task_url: https://linear.app/cloud-ai/issue/CLO-564/add-live-vertex-model-discovery-to-gcm-provider-and-refresh-the-gemini
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:
+      lean: spec
+      note: src/provider/models.rs + vertex.rs token exposure + mod.rs default + config.rs wizard call site; one subsystem
+    architecture_novelty:
+      lean: spec
+      note: New parse/request arm behind the CLO-547 seam; no new dependency or interface - HttpGet already carries Bearer + extra headers
+    prior_art:
+      lean: spec
+      note: CLO-547's transport seam + tests are the direct template; vertex.rs already owns ADC token acquisition
+    requirement_clarity:
+      lean: spec
+      note: Issue has scope checkboxes + 5 ACs; both owner decisions recorded (default gemini-3.5-flash-lite; endpoint verified live 2026-07-22)
+    scope_signal:
+      lean: spec
+      note: S/M - one new fetch arm, parse arm, catalog refresh, default bump, tests
+  rationale: Well-scoped single-subsystem feature on a fresh template; owner explicitly wants it shipped now - lean spec cycle, checkpoints compressed.
+process_note: >-
+  Owner feedback after v0.5.1 (2026-07-22): the visible goal - new Gemini models in the
+  Vertex picker - had not shipped; classification/checkpoint ceremony compressed at owner's
+  implicit direction (screenshot of the stale picker + "I still don't see it"). Spec review
+  runs in parallel with implementation instead of blocking it.
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: null
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related: [CLO-547, CLO-537, CLO-516]
+  branch_suggested: kmamemo/clo-564-add-live-vertex-model-discovery-to-gcm-provider-and-refresh
+  priority: Medium
+  branch_actual: feat/clo-564-vertex-discovery
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-07-22T11:10:00.000Z'
+  updated_at: '2026-07-22T11:10:00.000Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: Specification task - using /spec instead of full design doc
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-22-clo-564-vertex-live-discovery.md
+    approved: true
+    approved_at: '2026-07-22T12:05:00.000Z'
+    approval_basis: 'Compressed checkpoint (owner directive to ship); AI review APPROVE_WITH_SUGGESTIONS - all 4 priority actions already covered by the implementation, 2 spec-text amendments folded in'
+    review_gemini: docs/reviews/clo-564-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-564-spec-review-ollama.md
+    review_synthesis: docs/reviews/clo-564-spec-review-synthesis.md
+    review_verdict: approve_with_suggestions
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - 'AC5 amended: publisherModels key + de-prefix + malformed-shape empty-vec requirement made explicit'
+      - 'Vertex/Google resolved_base_url split made explicit in AC5 (was already implemented)'
+    flagged_suggestions: []
+    design_decisions:
+      default_model: 'gemini-3.5-flash-lite for Google + Vertex (owner decision 2026-07-22, recorded on CLO-564)'
+      vertex_endpoint: 'Global aiplatform.googleapis.com publisher-models list; ADC Bearer + x-goog-user-project header; GCM_VERTEX_BASE_URL honored as test seam (verified live 2026-07-22)'
+      token_flow: 'Wizard resolves the ADC token (GCM_VERTEX_TOKEN else gcloud) and passes it as the discovery key - models.rs never shells out'
+  implement:
+    status: complete
+    completed_at: '2026-07-22T12:20:00.000Z'
+    live_proof: >-
+      PTY-driven wizard run of the branch build against the real Vertex endpoint
+      (owner ADC + project): "Fetched 14 models" Live; picker shows gemini-3.5-flash,
+      gemini-3.5-flash-lite, gemini-3.6-flash; existing enabled gemini-3.1-flash-lite
+      pre-checked; cancel-safe exit, config untouched. First run leaked
+      gemini-embedding-2 (publisher list has no generateContent signal) - fixed by
+      adding embedding/embed to the Google/Vertex exclude list, re-proved clean.
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-22T11:10:00.000Z'
+    action: workflow_started
+    phase: init
+    details: Workflow created for CLO-564 after owner feedback that v0.5.1 does not yet surface new Gemini models on Vertex
+  - timestamp: '2026-07-22T11:10:30.000Z'
+    action: task_classified
+    phase: init
+    details: 'recommended: specification, chosen: specification, confidence: high (5/5); checkpoint ceremony compressed at owner direction'
+  - timestamp: '2026-07-22T12:05:00.000Z'
+    action: spec_review_complete
+    phase: spec
+    details: 'lok review (parallel with implementation): Gemini+Ollama FAILED (same infra as CLO-547), Claude fallback APPROVE_WITH_SUGGESTIONS; all 4 priority actions already implemented, 2 spec-text amendments applied'
+  - timestamp: '2026-07-22T12:20:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      Vertex live discovery (publisher-models, ADC Bearer + x-goog-user-project),
+      catalog refresh (3.5/3.6 + retained 3.1), default -> gemini-3.5-flash-lite,
+      embedding leak fixed after first live proof. Branch renamed to
+      feat/clo-564-vertex-discovery per new CLAUDE.md convention (base moved to
+      post-PR#40 main mid-flight; work carried over). 398 unit + 76 integration,
+      fmt/clippy clean; live PTY proof: Fetched 14 models incl. all three targets.

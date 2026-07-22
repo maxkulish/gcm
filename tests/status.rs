@@ -76,7 +76,7 @@ fn status_no_config_clean_env_exits_zero() {
     // default models surface
     assert!(stdout.contains("openai/gpt-oss-120b (default)"), "{stdout}");
     assert!(
-        stdout.contains("gemini-3.1-flash-lite (default)"),
+        stdout.contains("gemini-3.5-flash-lite (default)"),
         "{stdout}"
     );
 }

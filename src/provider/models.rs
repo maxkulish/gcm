@@ -31,33 +31,42 @@ pub struct ModelFetchOutcome {
 }
 
 /// Fetch the provider's available models for the wizard. Never errors: returns a
-/// usable list in every case (live + baselines, or the static fallback).
+/// usable list in every case (live, or the static fallback).
 /// `key` is the resolved API key (None for Ollama, or a cloud provider with none
-/// yet); `endpoint` is an explicit base URL (Ollama, from the wizard).
+/// yet; for Vertex it is the ADC access token resolved by the wizard, CLO-564);
+/// `endpoint` is an explicit base URL (Ollama, from the wizard); `project` is
+/// Vertex-only - the `x-goog-user-project` quota header.
 pub fn fetch_supported_models(
     id: ProviderId,
     key: Option<&str>,
     endpoint: Option<&str>,
+    project: Option<&str>,
 ) -> ModelFetchOutcome {
-    fetch_supported_models_with(id, key, endpoint, http::get_json)
+    fetch_supported_models_with(id, key, endpoint, project, http::get_json)
 }
 
 fn fetch_supported_models_with(
     id: ProviderId,
     key: Option<&str>,
     endpoint: Option<&str>,
+    project: Option<&str>,
     fetch: impl Fn(&HttpGet) -> Result<String, super::ProviderError>,
 ) -> ModelFetchOutcome {
     let key = key.map(str::trim).filter(|k| !k.is_empty());
 
-    // Vertex (CLO-537): keyless ADC, no live models endpoint in the MVP (design D4),
-    // so return the static Gemini set directly. This short-circuit also keeps the
-    // exhaustive `match id` arms below unreachable for Vertex at runtime.
-    if id == ProviderId::Vertex {
+    // Vertex (CLO-564): keyless ADC - the wizard resolves the access token and
+    // passes it as `key`; models.rs never shells out to gcloud. No token is the
+    // credential-less case: show the built-in list without touching the network,
+    // mirroring the keyed providers' no-key short-circuit below.
+    if id == ProviderId::Vertex && key.is_none() {
         return ModelFetchOutcome {
             models: static_fallback_models(id),
             source: FetchSource::Fallback,
-            warning: None,
+            warning: Some(
+                "no ADC token - showing the built-in model list; run `gcloud auth \
+                 application-default login` or set GCM_VERTEX_TOKEN for the live catalog"
+                    .to_string(),
+            ),
         };
     }
 
@@ -75,7 +84,7 @@ fn fetch_supported_models_with(
         }
     }
 
-    match fetch_live(id, key, endpoint, &fetch) {
+    match fetch_live(id, key, endpoint, project, &fetch) {
         Ok(raw) => {
             // Blank/whitespace-only ids (a malformed catalog or proxy) must not
             // count as live results: pass-through arms of `keep_chat_model` would
@@ -105,14 +114,28 @@ fn fetch_supported_models_with(
                 }
             }
         }
-        Err(e) => ModelFetchOutcome {
-            models: static_fallback_models(id),
-            source: FetchSource::Fallback,
-            warning: Some(format!(
-                "could not fetch {} models ({e}); using the built-in list",
-                id.as_str()
-            )),
-        },
+        Err(e) => {
+            // Vertex auth failures are ADC failures, not API-key failures (PR #41
+            // review): point at gcloud/quota-project, not at a key env var.
+            let warning = if id == ProviderId::Vertex
+                && matches!(e.kind, super::ErrorKind::Http(401 | 403))
+            {
+                "Vertex rejected the ADC credentials (expired token, or the quota \
+                 project lacks permission) - run `gcloud auth application-default \
+                 login` or check the project; using the built-in list"
+                    .to_string()
+            } else {
+                format!(
+                    "could not fetch {} models ({e}); using the built-in list",
+                    id.as_str()
+                )
+            };
+            ModelFetchOutcome {
+                models: static_fallback_models(id),
+                source: FetchSource::Fallback,
+                warning: Some(warning),
+            }
+        }
     }
 }
 
@@ -121,14 +144,20 @@ fn fetch_live(
     id: ProviderId,
     key: Option<&str>,
     endpoint: Option<&str>,
+    project: Option<&str>,
     fetch: &impl Fn(&HttpGet) -> Result<String, super::ProviderError>,
 ) -> Result<Vec<String>, super::ProviderError> {
-    let req = build_fetch_request(id, key, endpoint);
+    let req = build_fetch_request(id, key, endpoint, project);
     let raw = fetch(&req)?;
     Ok(parse_models(id, &raw))
 }
 
-fn build_fetch_request(id: ProviderId, key: Option<&str>, endpoint: Option<&str>) -> HttpGet {
+fn build_fetch_request(
+    id: ProviderId,
+    key: Option<&str>,
+    endpoint: Option<&str>,
+    project: Option<&str>,
+) -> HttpGet {
     let base = resolved_base_url(id, endpoint);
     let base = base.trim_end_matches('/');
     let name = provider_name(id);
@@ -148,15 +177,36 @@ fn build_fetch_request(id: ProviderId, key: Option<&str>, endpoint: Option<&str>
             auth: key.map(|k| ("x-api-key", k.to_string())),
             extra_headers: vec![("anthropic-version", "2023-06-01".to_string())],
         },
-        // Vertex is short-circuited in fetch_supported_models; this arm only
-        // satisfies exhaustiveness and never runs.
-        ProviderId::Google | ProviderId::Vertex => HttpGet {
+        ProviderId::Google => HttpGet {
             provider: name,
             auth_env_var: env_var,
             endpoint: format!("{base}/v1beta/models?pageSize=1000"),
             auth: key.map(|k| ("x-goog-api-key", k.to_string())),
             extra_headers: Vec::new(),
         },
+        // Vertex (CLO-564): publisher-models list on the global aiplatform host.
+        // Plain-ADC calls require a quota project - sent as x-goog-user-project
+        // (verified live 2026-07-22; without it the API answers 403). The Bearer
+        // token rides in `extra_headers` with `auth: None`, mirroring the runtime
+        // Vertex path: a 401/403 then classifies as `Http(status)` rather than
+        // `Auth{env_var}` - the credential is ADC, not an API key, and the
+        // fallback warning rewrites it with the gcloud hint below.
+        ProviderId::Vertex => {
+            let mut extra: Vec<(&'static str, String)> = Vec::new();
+            if let Some(k) = key {
+                extra.push(("Authorization", format!("Bearer {k}")));
+            }
+            if let Some(p) = project {
+                extra.push(("x-goog-user-project", p.to_string()));
+            }
+            HttpGet {
+                provider: name,
+                auth_env_var: "",
+                endpoint: format!("{base}/v1beta1/publishers/google/models?pageSize=200"),
+                auth: None,
+                extra_headers: extra,
+            }
+        }
         ProviderId::Ollama => HttpGet {
             provider: name,
             auth_env_var: env_var,
@@ -191,9 +241,16 @@ fn resolved_base_url_with(
         ProviderId::Groq => (&["GCM_GROQ_BASE_URL"], "https://api.groq.com/openai/v1"),
         ProviderId::Openai => (&["GCM_OPENAI_BASE_URL"], "https://api.openai.com/v1"),
         ProviderId::Anthropic => (&["GCM_ANTHROPIC_BASE_URL"], "https://api.anthropic.com"),
-        ProviderId::Google | ProviderId::Vertex => (
+        ProviderId::Google => (
             &["GCM_GEMINI_BASE_URL", "GCM_GOOGLE_BASE_URL"],
             "https://generativelanguage.googleapis.com",
+        ),
+        // Vertex discovery always uses the global host (the publisher-models
+        // list is not region-scoped for the wizard's purposes); the runtime's
+        // GCM_VERTEX_BASE_URL test seam is honored here too.
+        ProviderId::Vertex => (
+            &["GCM_VERTEX_BASE_URL"],
+            "https://aiplatform.googleapis.com",
         ),
         ProviderId::Ollama => (&["GCM_OLLAMA_BASE_URL"], "http://localhost:11434"),
     };
@@ -225,8 +282,27 @@ fn parse_models(id: ProviderId, body: &str) -> Vec<String> {
                     .collect()
             })
             .unwrap_or_default(),
+        // Vertex publisher models (CLO-564): { "publisherModels": [ { "name":
+        // "publishers/google/models/x", ... } ] }. No generation-method signal in
+        // this shape - the Google/Vertex name policy in `keep_chat_model` is the
+        // capability filter (it already excludes imagen/veo/lyria/... families).
+        ProviderId::Vertex => v
+            .get("publisherModels")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        m.get("name").and_then(Value::as_str).map(|n| {
+                            n.strip_prefix("publishers/google/models/")
+                                .unwrap_or(n)
+                                .to_string()
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         // Gemini models.list: { "models": [ { "name": "models/x", "supportedGenerationMethods": [...] } ] }
-        ProviderId::Google | ProviderId::Vertex => v
+        ProviderId::Google => v
             .get("models")
             .and_then(Value::as_array)
             .map(|arr| {
@@ -290,6 +366,9 @@ fn keep_chat_model(id: ProviderId, model: &str) -> bool {
             !EXCLUDE.iter().any(|bad| m.contains(bad))
         }
         ProviderId::Google | ProviderId::Vertex => {
+            // "embedding"/"embed" matter for Vertex (CLO-564): the publisher-models
+            // list has no generateContent signal, so embeddings arrive by name only
+            // (live-verified: gemini-embedding-2 leaked without it).
             const EXCLUDE: &[&str] = &[
                 "image",
                 "tts",
@@ -303,6 +382,8 @@ fn keep_chat_model(id: ProviderId, model: &str) -> bool {
                 "audio",
                 "veo",
                 "imagen",
+                "embedding",
+                "embed",
             ];
             let m = model.to_ascii_lowercase();
             !EXCLUDE.iter().any(|bad| m.contains(bad))
@@ -324,6 +405,9 @@ fn static_fallback_models(id: ProviderId) -> Vec<String> {
         ProviderId::Openai => &super::openai::SUPPORTED_MODELS,
         ProviderId::Anthropic => &["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"],
         ProviderId::Google | ProviderId::Vertex => &[
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.6-flash",
             "gemini-3.1-flash-lite",
             "gemini-3.1-flash",
             "gemini-3.1-pro",
@@ -504,6 +588,7 @@ mod tests {
             "deep-research-max-preview-04-2026",
             "antigravity-preview-05-2026",
             "gemini-omni-flash-preview",
+            "gemini-embedding-2", // Vertex publisher list has no method signal
             "Gemini-3.1-Flash-IMAGE", // case-insensitive match
         ] {
             assert!(!keep_chat_model(ProviderId::Google, bad), "{bad} excluded");
@@ -519,6 +604,7 @@ mod tests {
             ProviderId::Openai,
             ProviderId::Anthropic,
             ProviderId::Ollama,
+            ProviderId::Vertex,
         ] {
             let fb = static_fallback_models(id);
             assert!(
@@ -544,7 +630,7 @@ mod tests {
     fn no_key_short_circuits_to_fallback_without_network() {
         // A cloud provider with no key must not hit the network: returns fallback +
         // a warning naming its key env var. (No network is reachable in tests.)
-        let out = fetch_supported_models(ProviderId::Openai, None, None);
+        let out = fetch_supported_models(ProviderId::Openai, None, None, None);
         assert!(matches!(out.source, FetchSource::Fallback));
         assert!(out.warning.as_deref().unwrap().contains("OPENAI_API_KEY"));
         assert!(out
@@ -597,6 +683,7 @@ mod tests {
             ProviderId::Openai,
             Some("sk-123"),
             Some(&url),
+            None,
             http::get_json,
         );
         let req = handle.join().unwrap();
@@ -615,6 +702,7 @@ mod tests {
             ProviderId::Anthropic,
             Some("sk-anth"),
             Some(&url),
+            None,
             http::get_json,
         );
         let req = handle.join().unwrap();
@@ -636,6 +724,7 @@ mod tests {
             ProviderId::Google,
             Some("AIza..."),
             Some(&url),
+            None,
             http::get_json,
         );
         let req = handle.join().unwrap();
@@ -662,6 +751,7 @@ mod tests {
             ProviderId::Openai,
             Some("sk-123"),
             Some(&url),
+            None,
             http::get_json,
         );
         let _ = handle.join();
@@ -689,6 +779,7 @@ mod tests {
             ProviderId::Google,
             Some("sk-123"),
             Some(&url),
+            None,
             http::get_json,
         );
         let _ = handle.join();
@@ -707,6 +798,7 @@ mod tests {
             ProviderId::Openai,
             Some("sk-123"),
             Some(&url),
+            None,
             http::get_json,
         );
         let _ = handle.join();
@@ -721,6 +813,7 @@ mod tests {
             ProviderId::Openai,
             Some("sk-123"),
             Some(&url),
+            None,
             http::get_json,
         );
         let _ = handle.join();
@@ -731,6 +824,7 @@ mod tests {
             ProviderId::Openai,
             Some("sk-123"),
             Some(&url),
+            None,
             http::get_json,
         );
         let _ = handle.join();
@@ -745,7 +839,8 @@ mod tests {
                 kind: crate::provider::ErrorKind::Transport("timeout".to_string()),
             })
         };
-        let out = fetch_supported_models_with(ProviderId::Openai, Some("sk-123"), None, fetch_err);
+        let out =
+            fetch_supported_models_with(ProviderId::Openai, Some("sk-123"), None, None, fetch_err);
         assert!(matches!(out.source, FetchSource::Fallback));
     }
 
@@ -756,7 +851,7 @@ mod tests {
         let fetch = |_req: &HttpGet| -> Result<String, crate::provider::ProviderError> {
             Ok(r#"{"models":[{"name":""},{"name":"   "}]}"#.to_string())
         };
-        let out = fetch_supported_models_with(ProviderId::Ollama, None, None, fetch);
+        let out = fetch_supported_models_with(ProviderId::Ollama, None, None, None, fetch);
         assert!(matches!(out.source, FetchSource::Fallback));
         assert_eq!(out.models, static_fallback_models(ProviderId::Ollama));
         assert!(out.warning.as_deref().unwrap().contains("no usable models"));
@@ -773,8 +868,128 @@ mod tests {
             ]}"#
             .to_string())
         };
-        let out = fetch_supported_models_with(ProviderId::Google, Some("k"), None, fetch);
+        let out = fetch_supported_models_with(ProviderId::Google, Some("k"), None, None, fetch);
         assert!(matches!(out.source, FetchSource::Live));
         assert_eq!(out.models, vec!["gemini-3.6-flash"]);
+    }
+
+    #[test]
+    fn parse_vertex_publisher_models_strips_prefix() {
+        let body = r#"{"publisherModels":[
+            {"name":"publishers/google/models/gemini-3.5-flash"},
+            {"name":"publishers/google/models/gemini-3.6-flash"},
+            {"name":"publishers/google/models/imagen-4"}
+        ]}"#;
+        let ids = parse_models(ProviderId::Vertex, body);
+        assert_eq!(
+            ids,
+            vec!["gemini-3.5-flash", "gemini-3.6-flash", "imagen-4"],
+            "raw parse strips the publisher prefix; capability filtering is keep_chat_model's job"
+        );
+        assert!(parse_models(ProviderId::Vertex, "{}").is_empty());
+    }
+
+    #[test]
+    fn transport_vertex_bearer_quota_project_and_filtering() {
+        let body = r#"{"publisherModels":[
+            {"name":"publishers/google/models/gemini-3.6-flash"},
+            {"name":"publishers/google/models/gemini-3.5-flash-lite"},
+            {"name":"publishers/google/models/imagen-4"},
+            {"name":"publishers/google/models/veo-3"}
+        ]}"#;
+        let (url, handle) = mock_server("HTTP/1.1 200 OK\r\nContent-Type: application/json", body);
+        let out = fetch_supported_models_with(
+            ProviderId::Vertex,
+            Some("adc-token"),
+            Some(&url),
+            Some("my-project"),
+            http::get_json,
+        );
+        let req = handle.join().unwrap();
+        assert!(
+            req.to_lowercase()
+                .contains("authorization: bearer adc-token"),
+            "vertex ADC bearer auth"
+        );
+        assert!(
+            req.to_lowercase()
+                .contains("x-goog-user-project: my-project"),
+            "vertex quota-project header"
+        );
+        assert!(
+            req.contains("/v1beta1/publishers/google/models"),
+            "publisher-models path"
+        );
+        assert!(matches!(out.source, FetchSource::Live));
+        assert_eq!(
+            out.models,
+            vec!["gemini-3.6-flash", "gemini-3.5-flash-lite"],
+            "imagen/veo name-filtered; live-only, no static injection"
+        );
+    }
+
+    #[test]
+    fn vertex_auth_failure_warns_about_adc_not_api_keys() {
+        // 401 on the Vertex publisher list is an ADC failure: the warning must
+        // point at gcloud/quota-project, never at an API key or GCM_VERTEX_TOKEN
+        // rejection text (PR #41 review; Bearer rides in extra_headers so the
+        // transport classifies it as Http(401), not Auth).
+        let (url, handle) = mock_server("HTTP/1.1 401 Unauthorized", "{}");
+        let out = fetch_supported_models_with(
+            ProviderId::Vertex,
+            Some("stale-token"),
+            Some(&url),
+            Some("my-project"),
+            http::get_json,
+        );
+        let _ = handle.join();
+        assert!(matches!(out.source, FetchSource::Fallback));
+        let w = out.warning.as_deref().unwrap();
+        assert!(w.contains("gcloud auth application-default login"), "{w}");
+        assert!(!w.to_lowercase().contains("api key"), "{w}");
+    }
+
+    #[test]
+    fn vertex_no_token_short_circuits_to_fallback_without_network() {
+        // No ADC token: static list + actionable warning, zero network calls
+        // (no server is listening in tests - a network attempt would error).
+        let out = fetch_supported_models(ProviderId::Vertex, None, None, Some("my-project"));
+        assert!(matches!(out.source, FetchSource::Fallback));
+        let w = out.warning.as_deref().unwrap();
+        assert!(
+            w.contains("GCM_VERTEX_TOKEN") && w.contains("gcloud"),
+            "{w}"
+        );
+        assert!(out.models.iter().any(|m| m == "gemini-3.5-flash-lite"));
+    }
+
+    #[test]
+    fn gemini_fallback_catalog_is_refreshed_default_first() {
+        for id in [ProviderId::Google, ProviderId::Vertex] {
+            assert_eq!(
+                static_fallback_models(id),
+                vec![
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-3.6-flash",
+                    "gemini-3.1-flash-lite",
+                    "gemini-3.1-flash",
+                    "gemini-3.1-pro",
+                ],
+                "{id:?} catalog: 3.5/3.6 generation first (default leads), 3.1 retained"
+            );
+        }
+    }
+
+    #[test]
+    fn base_url_vertex_honors_override_and_global_default() {
+        let v = resolved_base_url_with(ProviderId::Vertex, None, |var| {
+            (var == "GCM_VERTEX_BASE_URL").then(|| "https://stub".to_string())
+        });
+        assert_eq!(v, "https://stub");
+        assert_eq!(
+            resolved_base_url_with(ProviderId::Vertex, None, |_| None),
+            "https://aiplatform.googleapis.com"
+        );
     }
 }

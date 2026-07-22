@@ -86,4 +86,4 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 |------|-------|--------|--------------|
 | CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | Done | CLO-489 (related) |
 | CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | Done | CLO-516 (related), split from CLO-545 |
-| CLO-564 | Add live Vertex model discovery + refresh Gemini catalog (default → gemini-3.5-flash-lite) | Backlog | CLO-547/537/516 (related); closes CLO-537 design-D4 deferral |
+| CLO-564 | Add live Vertex model discovery + refresh Gemini catalog (default → gemini-3.5-flash-lite) | In Progress | CLO-547/537/516 (related); closes CLO-537 design-D4 deferral |

@@ -882,8 +882,8 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         }
         AuthMethod::KeylessAdc => {
             // Vertex: project (required) + location (default global); no key, no
-            // endpoint. The model list comes from the static Gemini set (the fetch
-            // below short-circuits Vertex).
+            // endpoint. Live discovery (CLO-564) authenticates with the ADC token
+            // resolved below; on failure the fetch degrades to the static set.
             let default_project = existing_pc
                 .and_then(|p| p.project.clone())
                 .or_else(|| env_value("GCM_VERTEX_PROJECT"))
@@ -923,11 +923,17 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
             } else {
                 Some(location)
             };
-            // Non-blocking ADC probe (warns; never blocks a keyless setup).
+            // Single ADC acquisition (PR #41 review): the resolved token drives
+            // both the spinner verdict and live discovery - no second gcloud
+            // shell-out, no probe/fetch disagreement. Non-blocking: on failure
+            // fetch_key stays None and the fetch shows the built-in list.
             let sp = spinner();
             sp.start("Checking gcloud ADC...");
-            match crate::provider::vertex_adc_probe() {
-                Ok(()) => sp.stop("gcloud ADC ready"),
+            match crate::provider::vertex_access_token() {
+                Ok(tok) => {
+                    sp.stop("gcloud ADC ready");
+                    fetch_key = Some(tok);
+                }
                 Err(msg) => sp.stop(format!(
                     "ADC not ready: {msg} (set GCM_VERTEX_TOKEN or run `gcloud auth application-default login`)"
                 )),
@@ -935,13 +941,15 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         }
     }
 
-    // 3. Fetch the model list (spinner; never fails - falls back).
+    // 3. Fetch the model list (spinner; never fails - falls back). The project
+    // is Vertex-only: it becomes the x-goog-user-project quota header (CLO-564).
     let sp = spinner();
     sp.start("Fetching supported models...");
     let outcome = crate::provider::fetch_supported_models(
         id,
         fetch_key.as_deref(),
         fetch_endpoint.as_deref(),
+        persist_project.as_deref(),
     );
     match outcome.source {
         crate::provider::FetchSource::Live => {
