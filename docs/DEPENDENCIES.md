@@ -13,7 +13,6 @@
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
 | CLO-554 | CLO-555 complete (transaction engine + `StoppedOnNextConflict` handoff) | 2026-07-13 |
-| CLO-564 | CLO-537 shipped the Vertex provider (live discovery was its deferred design D4); endpoint feasibility verified | 2026-07-22 |
 
 > **CLO-555** (rework `gcm resolve` into an ownership transaction) merged in PR #35 (2026-07-13); **CLO-554** (rebase resolve-until-clean loop) is now ready with no blockers. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
