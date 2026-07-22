@@ -77,7 +77,14 @@ fn fetch_supported_models_with(
 
     match fetch_live(id, key, endpoint, &fetch) {
         Ok(raw) => {
-            let live: Vec<String> = raw.into_iter().filter(|m| keep_chat_model(id, m)).collect();
+            // Blank/whitespace-only ids (a malformed catalog or proxy) must not
+            // count as live results: pass-through arms of `keep_chat_model` would
+            // keep them, and a blank-only list would bypass the fallback and leave
+            // the wizard's required selection unusable.
+            let live: Vec<String> = raw
+                .into_iter()
+                .filter(|m| !m.trim().is_empty() && keep_chat_model(id, m))
+                .collect();
             let live_count = live.len();
             if live_count == 0 {
                 let mut models = live;
@@ -740,5 +747,34 @@ mod tests {
         };
         let out = fetch_supported_models_with(ProviderId::Openai, Some("sk-123"), None, fetch_err);
         assert!(matches!(out.source, FetchSource::Fallback));
+    }
+
+    #[test]
+    fn blank_only_live_ids_fall_back_instead_of_marking_live() {
+        // A malformed catalog of blank/whitespace ids passes the pass-through
+        // arms of keep_chat_model; it must not count as a live result (PR #38 P2).
+        let fetch = |_req: &HttpGet| -> Result<String, crate::provider::ProviderError> {
+            Ok(r#"{"models":[{"name":""},{"name":"   "}]}"#.to_string())
+        };
+        let out = fetch_supported_models_with(ProviderId::Ollama, None, None, fetch);
+        assert!(matches!(out.source, FetchSource::Fallback));
+        assert_eq!(out.models, static_fallback_models(ProviderId::Ollama));
+        assert!(out.warning.as_deref().unwrap().contains("no usable models"));
+    }
+
+    #[test]
+    fn blank_live_ids_are_discarded_from_a_mixed_live_list() {
+        // Gemini "models/" strips to ""; blanks are dropped, valid ids stay live.
+        let fetch = |_req: &HttpGet| -> Result<String, crate::provider::ProviderError> {
+            Ok(r#"{"models":[
+                {"name":"models/","supportedGenerationMethods":["generateContent"]},
+                {"name":"   ","supportedGenerationMethods":["generateContent"]},
+                {"name":"models/gemini-3.6-flash","supportedGenerationMethods":["generateContent"]}
+            ]}"#
+            .to_string())
+        };
+        let out = fetch_supported_models_with(ProviderId::Google, Some("k"), None, fetch);
+        assert!(matches!(out.source, FetchSource::Live));
+        assert_eq!(out.models, vec!["gemini-3.6-flash"]);
     }
 }
