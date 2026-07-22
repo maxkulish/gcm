@@ -923,19 +923,21 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
             } else {
                 Some(location)
             };
-            // Non-blocking ADC probe (warns; never blocks a keyless setup).
+            // Single ADC acquisition (PR #41 review): the resolved token drives
+            // both the spinner verdict and live discovery - no second gcloud
+            // shell-out, no probe/fetch disagreement. Non-blocking: on failure
+            // fetch_key stays None and the fetch shows the built-in list.
             let sp = spinner();
             sp.start("Checking gcloud ADC...");
-            match crate::provider::vertex_adc_probe() {
-                Ok(()) => sp.stop("gcloud ADC ready"),
+            match crate::provider::vertex_access_token() {
+                Ok(tok) => {
+                    sp.stop("gcloud ADC ready");
+                    fetch_key = Some(tok);
+                }
                 Err(msg) => sp.stop(format!(
                     "ADC not ready: {msg} (set GCM_VERTEX_TOKEN or run `gcloud auth application-default login`)"
                 )),
             }
-            // Resolve the ADC token for live model discovery (CLO-564). On
-            // failure fetch_key stays None and the fetch shows the built-in
-            // list with its own warning - never blocks the wizard.
-            fetch_key = crate::provider::vertex_access_token().ok();
         }
     }
 

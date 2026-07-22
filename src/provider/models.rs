@@ -114,14 +114,28 @@ fn fetch_supported_models_with(
                 }
             }
         }
-        Err(e) => ModelFetchOutcome {
-            models: static_fallback_models(id),
-            source: FetchSource::Fallback,
-            warning: Some(format!(
-                "could not fetch {} models ({e}); using the built-in list",
-                id.as_str()
-            )),
-        },
+        Err(e) => {
+            // Vertex auth failures are ADC failures, not API-key failures (PR #41
+            // review): point at gcloud/quota-project, not at a key env var.
+            let warning = if id == ProviderId::Vertex
+                && matches!(e.kind, super::ErrorKind::Http(401 | 403))
+            {
+                "Vertex rejected the ADC credentials (expired token, or the quota \
+                 project lacks permission) - run `gcloud auth application-default \
+                 login` or check the project; using the built-in list"
+                    .to_string()
+            } else {
+                format!(
+                    "could not fetch {} models ({e}); using the built-in list",
+                    id.as_str()
+                )
+            };
+            ModelFetchOutcome {
+                models: static_fallback_models(id),
+                source: FetchSource::Fallback,
+                warning: Some(warning),
+            }
+        }
     }
 }
 
@@ -172,16 +186,27 @@ fn build_fetch_request(
         },
         // Vertex (CLO-564): publisher-models list on the global aiplatform host.
         // Plain-ADC calls require a quota project - sent as x-goog-user-project
-        // (verified live 2026-07-22; without it the API answers 403).
-        ProviderId::Vertex => HttpGet {
-            provider: name,
-            auth_env_var: "GCM_VERTEX_TOKEN",
-            endpoint: format!("{base}/v1beta1/publishers/google/models?pageSize=200"),
-            auth: key.map(|k| ("Authorization", format!("Bearer {k}"))),
-            extra_headers: project
-                .map(|p| vec![("x-goog-user-project", p.to_string())])
-                .unwrap_or_default(),
-        },
+        // (verified live 2026-07-22; without it the API answers 403). The Bearer
+        // token rides in `extra_headers` with `auth: None`, mirroring the runtime
+        // Vertex path: a 401/403 then classifies as `Http(status)` rather than
+        // `Auth{env_var}` - the credential is ADC, not an API key, and the
+        // fallback warning rewrites it with the gcloud hint below.
+        ProviderId::Vertex => {
+            let mut extra: Vec<(&'static str, String)> = Vec::new();
+            if let Some(k) = key {
+                extra.push(("Authorization", format!("Bearer {k}")));
+            }
+            if let Some(p) = project {
+                extra.push(("x-goog-user-project", p.to_string()));
+            }
+            HttpGet {
+                provider: name,
+                auth_env_var: "",
+                endpoint: format!("{base}/v1beta1/publishers/google/models?pageSize=200"),
+                auth: None,
+                extra_headers: extra,
+            }
+        }
         ProviderId::Ollama => HttpGet {
             provider: name,
             auth_env_var: env_var,
@@ -901,6 +926,27 @@ mod tests {
             vec!["gemini-3.6-flash", "gemini-3.5-flash-lite"],
             "imagen/veo name-filtered; live-only, no static injection"
         );
+    }
+
+    #[test]
+    fn vertex_auth_failure_warns_about_adc_not_api_keys() {
+        // 401 on the Vertex publisher list is an ADC failure: the warning must
+        // point at gcloud/quota-project, never at an API key or GCM_VERTEX_TOKEN
+        // rejection text (PR #41 review; Bearer rides in extra_headers so the
+        // transport classifies it as Http(401), not Auth).
+        let (url, handle) = mock_server("HTTP/1.1 401 Unauthorized", "{}");
+        let out = fetch_supported_models_with(
+            ProviderId::Vertex,
+            Some("stale-token"),
+            Some(&url),
+            Some("my-project"),
+            http::get_json,
+        );
+        let _ = handle.join();
+        assert!(matches!(out.source, FetchSource::Fallback));
+        let w = out.warning.as_deref().unwrap();
+        assert!(w.contains("gcloud auth application-default login"), "{w}");
+        assert!(!w.to_lowercase().contains("api key"), "{w}");
     }
 
     #[test]
