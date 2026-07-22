@@ -1,12 +1,12 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-22 (CLO-564 filed — no blockers, pairs with CLO-547)
+**Last Updated**: 2026-07-22 (CLO-547 merged — PR #38; CLO-564 ready on its seam)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | — | — | None. CLO-547 and CLO-554 (both ready) have no blockers. |
+| — | — | — | None. CLO-564 and CLO-554 (both ready) have no blockers. |
 
 ## Unblocked & Ready
 

@@ -40,7 +40,7 @@ linear:
   related: [CLO-545, CLO-516, CLO-564]
   branch_suggested: kmamemo/clo-547-harden-gcm-provider-model-discovery-capability-filtering-no
   priority: Medium
-  branch_actual: null
+  branch_actual: kmamemo/clo-547-harden-gcm-provider-model-discovery-capability-filtering-no
 context:
   pairing: >-
     Implemented back-to-back with CLO-564 (live Vertex model discovery + Gemini catalog refresh),
@@ -52,10 +52,10 @@ context:
     robotics, computer-use, deep-research ids - the selectable-but-broken gap is real for Gemini
     too, not just OpenAI. Capability policy must cover Google/Vertex names, not only OpenAI/Groq.
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-07-22T09:58:00.000Z'
-  updated_at: '2026-07-22T09:58:00.000Z'
+  updated_at: '2026-07-22T10:50:00.000Z'
 phases:
   discovery:
     status: skipped
@@ -96,9 +96,18 @@ phases:
     completed_at: '2026-07-22T11:20:00.000Z'
     notes: 'Owner-implemented from spec; validated AC1-AC8 + 4 fix-round findings; 391 unit + 76 integration green, fmt/clippy clean'
   pr:
-    status: pending
+    status: complete
+    pr_url: https://github.com/maxkulish/gcm/pull/38
+    pr_number: 38
+    ci_passed: true
+    approved: true
+    reviews_addressed: 1
+    merged_at: '2026-07-22T10:47:13Z'
+    merge_commit: 7c5ab8d
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-07-22T10:47:13Z'
 history:
   - timestamp: '2026-07-22T09:58:00.000Z'
     action: workflow_started
@@ -133,3 +142,47 @@ history:
       SUPPORTED_MODELS-iteration coupling test added (F2); Gemini name-policy exemplar
       test incl. case-insensitivity added (F3); stray test_cases.patch/test_seam.patch
       removed (F4). Gates: 391 unit + 76 integration green, fmt + clippy -D warnings clean.
+  - timestamp: '2026-07-22T11:30:00.000Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'fmt --check, clippy --all-targets -D warnings, cargo test (391+76) all clean'
+  - timestamp: '2026-07-22T11:32:00.000Z'
+    action: commit_created
+    phase: pr
+    details: 'e319fa0 feat(CLO-547) implementation; cc5bbd8 docs(CLO-547) spec/reviews/workflow/aggregation'
+  - timestamp: '2026-07-22T11:33:00.000Z'
+    action: pushed_to_remote
+    phase: pr
+    details: 'Branch kmamemo/clo-547-harden-gcm-provider-model-discovery-capability-filtering-no pushed'
+  - timestamp: '2026-07-22T11:35:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #38 created; mergeability gate MERGEABLE; Linear -> In Review + PR comment; CI queued (run 29912473322)'
+  - timestamp: '2026-07-22T11:45:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: 'CI green: build/test ubuntu-latest + macos-latest SUCCESS; PR mergeStateStatus CLEAN'
+  - timestamp: '2026-07-22T12:00:00.000Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      Owner review P2 (blank live ids bypass fallback) validated and fixed in 1eec521:
+      blank/whitespace ids filtered before the live/fallback decision; 2 regression
+      tests (blank-only -> fallback+warning; mixed -> live keeps valid only).
+      Pre-flight re-run clean (393 unit + 76 integration); CI re-watch on new head.
+  - timestamp: '2026-07-22T12:10:00.000Z'
+    action: ci_passed
+    phase: pr
+    details: 'CI green on review-fix head 1eec521 (ubuntu + macos SUCCESS); PR CLEAN/MERGEABLE'
+  - timestamp: '2026-07-22T10:47:13.000Z'
+    action: pr_merged
+    phase: pr
+    details: 'PR #38 merged by owner (merge commit 7c5ab8d); local + remote branch deleted'
+  - timestamp: '2026-07-22T10:50:00.000Z'
+    action: project_sync_complete
+    phase: complete
+    details: 'Linear -> Done + completion comment; PROJECT.md moved to Recently Completed, ROADMAP Maintenance 2/3, DEPENDENCIES notes updated'
+  - timestamp: '2026-07-22T10:51:00.000Z'
+    action: workflow_complete
+    phase: complete
+    details: 'Task CLO-547 fully completed'
