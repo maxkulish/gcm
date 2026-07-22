@@ -35,6 +35,7 @@ linear:
   team: Cloud-ai
   project: null
   status_at_start: Backlog
+  status_at_complete: Done
   blocks: []
   blocked_by: []
   related: [CLO-545, CLO-516, CLO-564]
@@ -94,6 +95,10 @@ phases:
   implement:
     status: complete
     completed_at: '2026-07-22T11:20:00.000Z'
+    commits:
+      - e319fa0
+      - cc5bbd8
+      - 1eec521
     notes: 'Owner-implemented from spec; validated AC1-AC8 + 4 fix-round findings; 391 unit + 76 integration green, fmt/clippy clean'
   pr:
     status: complete
