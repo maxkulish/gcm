@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-13 (CLO-555 merged — PR #35; CLO-554 unblocked)
+**Last Updated**: 2026-07-22 (CLO-564 filed — live Vertex model discovery + Gemini catalog refresh)
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 3 | In Progress |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
-| Maintenance (cross-cutting) | 2 | 1 | In Progress |
+| Maintenance (cross-cutting) | 3 | 1 | In Progress |
 
 ## Phase 1: Foundations
 
@@ -85,4 +85,5 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
 | CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | Done | CLO-489 (related) |
-| CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | Backlog | CLO-516 (related), split from CLO-545 |
+| CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | In Progress | CLO-516 (related), split from CLO-545 |
+| CLO-564 | Add live Vertex model discovery + refresh Gemini catalog (default → gemini-3.5-flash-lite) | Backlog | CLO-547/537/516 (related); closes CLO-537 design-D4 deferral |

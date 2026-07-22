@@ -1,0 +1,135 @@
+task_id: clo-547
+task_type: specification
+task_title: 'Harden gcm provider model discovery: capability filtering + no-inject-after-live + transport tests'
+task_url: https://linear.app/cloud-ai/issue/CLO-547/harden-gcm-provider-model-discovery-capability-filtering-no-inject
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:
+      lean: spec
+      note: One file (src/provider/models.rs, 461 lines) + tests; single call site each in config.rs and provider/mod.rs
+    architecture_novelty:
+      lean: spec
+      note: Injectable-fetch seam is an internal refactor; no new dependency, data model, interface, or process boundary
+    prior_art:
+      lean: spec
+      note: TcpListener HTTP-stub pattern already in tests/vertex.rs + resolve tests; keep_chat_model exclude-list is the filter to extend
+    requirement_clarity:
+      lean: spec
+      note: Scope checkboxes + 5 explicit ACs, owner-validated against code during the CLO-545 review
+    scope_signal:
+      lean: spec
+      note: S/M - three bounded changes in one module (filter policy, no-inject, test seam)
+  rationale: Well-scoped single-module hardening with explicit ACs and existing test patterns; lean spec->implement->PR cycle fits (same shape as CLO-545/515/517).
+task_profile:
+  has_backend: true
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: null
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related: [CLO-545, CLO-516, CLO-564]
+  branch_suggested: kmamemo/clo-547-harden-gcm-provider-model-discovery-capability-filtering-no
+  priority: Medium
+  branch_actual: null
+context:
+  pairing: >-
+    Implemented back-to-back with CLO-564 (live Vertex model discovery + Gemini catalog refresh),
+    CLO-547 first: the transport seam makes CLO-564's Vertex fetch unit-testable, and the
+    no-inject-after-live + capability-filter decisions shape how Vertex live results merge.
+  fresh_evidence: >-
+    2026-07-22 live AI Studio catalog check (CLO-564 investigation comment): 41 models pass the
+    generateContent filter including lyria-3-* (music), nano-banana-pro-preview, *-image, *-tts,
+    robotics, computer-use, deep-research ids - the selectable-but-broken gap is real for Gemini
+    too, not just OpenAI. Capability policy must cover Google/Vertex names, not only OpenAI/Groq.
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-07-22T09:58:00.000Z'
+  updated_at: '2026-07-22T09:58:00.000Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: Specification task - using /spec instead of full design doc
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-22-clo-547-model-discovery-hardening.md
+    approved: true
+    approved_at: '2026-07-22T11:00:00.000Z'
+    approval_basis: 'Owner implemented directly from the spec and requested code validation of the result (de facto approval at the checkpoint)'
+    review_gemini: docs/reviews/clo-547-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-547-spec-review-ollama.md
+    review_claude_fallback: docs/reviews/clo-547-spec-review-claude-fallback.md
+    review_synthesis: docs/reviews/clo-547-spec-review-synthesis.md
+    review_verdict: approve_with_suggestions
+    review_completed: true
+    review_notes: 'Gemini REVIEW_FAILED (CLI invocation), Ollama REVIEW_FAILED (empty output); Claude fallback succeeded, code-validated'
+    review_applied: true
+    applied_suggestions:
+      - 'AC6/Decomp 4: committed to in-crate #[cfg(test)] tests (binary-only crate; tests/ cannot reach pub(crate) seams)'
+      - 'Test 5: timeout via injected-seam Err, not a real TcpListener stall (5s const + retry, no env override)'
+      - 'AC5/Test 8: absent-from-live check by canonicalize_model; llama3 vs llama3:latest exemplar'
+      - 'Decomp 3: models.rs module-doc update (D7 merge description) added'
+      - 'Constraints: Google name-exclusion false-positive accepted risk recorded (enabled-set union as mitigation)'
+    flagged_suggestions: []
+    design_decisions:
+      openai_filter: 'Gate family only: live OpenAI ids filtered to openai::SUPPORTED_MODELS membership (owner decision 2026-07-22)'
+      gemini_name_policy: 'New Google/Vertex arm in keep_chat_model excluding image/tts/lyria/robotics/computer-use/deep-research/nano-banana/antigravity/omni/audio/veo/imagen'
+  implement:
+    status: complete
+    completed_at: '2026-07-22T11:20:00.000Z'
+    notes: 'Owner-implemented from spec; validated AC1-AC8 + 4 fix-round findings; 391 unit + 76 integration green, fmt/clippy clean'
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-22T09:58:00.000Z'
+    action: workflow_started
+    phase: init
+    details: Workflow created for CLO-547 via /task:orchestrate (kicked off from /project:status -> CLO-564 triage; paired with CLO-564, CLO-547 first)
+  - timestamp: '2026-07-22T09:58:30.000Z'
+    action: task_classified
+    phase: init
+    details: 'recommended: specification, chosen: specification, confidence: high (5/5 probe signals aligned)'
+  - timestamp: '2026-07-22T10:00:00.000Z'
+    action: project_sync_start
+    phase: init
+    details: 'WIP 1/3; PROJECT.md Active Work + master table In Progress, ROADMAP.md In Progress, DEPENDENCIES.md removed from Unblocked & Ready'
+  - timestamp: '2026-07-22T10:15:00.000Z'
+    action: spec_review_complete
+    phase: spec
+    details: 'lok spec-review: Gemini FAILED (CLI invocation), Ollama FAILED (empty); Claude fallback APPROVE_WITH_SUGGESTIONS, code-validated, 5 findings'
+  - timestamp: '2026-07-22T10:16:00.000Z'
+    action: spec_review_applied
+    phase: spec
+    details: 'All 5 suggestions auto-applied (2 Medium refinements, 3 Low additive); no conflicts with prior decisions'
+  - timestamp: '2026-07-22T11:00:00.000Z'
+    action: spec_approved
+    phase: spec
+    details: 'Owner implemented the spec directly (models.rs +260/-25, config.rs +77) and requested validation of the implementation against it'
+  - timestamp: '2026-07-22T11:20:00.000Z'
+    action: phase_completed
+    phase: implement
+    details: >-
+      Validation round: all 4 owner-reported points confirmed against code (AC1-AC8).
+      4 residual findings fixed: stale keep_chat_model doc comment rewritten (F1);
+      SUPPORTED_MODELS-iteration coupling test added (F2); Gemini name-policy exemplar
+      test incl. case-insensitivity added (F3); stray test_cases.patch/test_seam.patch
+      removed (F4). Gates: 391 unit + 76 integration green, fmt + clippy -D warnings clean.
