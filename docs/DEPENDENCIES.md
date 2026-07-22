@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-22 (CLO-547 merged — PR #38; CLO-564 ready on its seam)
+**Last Updated**: 2026-07-22 (CLO-564 merged — PR #41; CLO-554 is the only ready backlog item)
 
 ## Current Blockers
 
