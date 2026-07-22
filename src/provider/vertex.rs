@@ -46,10 +46,7 @@ impl Vertex {
     /// Acquire the ADC access token: `GCM_VERTEX_TOKEN` (trimmed, non-empty) wins,
     /// else shell out to gcloud. Resolved lazily per call.
     fn access_token(&self) -> Result<String, ProviderError> {
-        if let Some(tok) = env_nonblank(TOKEN_ENV) {
-            return Ok(tok);
-        }
-        gcloud_token()
+        resolve_access_token()
     }
 
     /// GCP project: `GCM_VERTEX_PROJECT` > `GOOGLE_CLOUD_PROJECT` > `GCP_PROJECT`.
@@ -267,6 +264,16 @@ fn validate_project(project: &str) -> Result<(), ProviderError> {
     } else {
         Ok(())
     }
+}
+
+/// Acquire the ADC access token outside a request context (`GCM_VERTEX_TOKEN`
+/// wins, else gcloud). Used by the wizard's model discovery (CLO-564) so
+/// `models.rs` never shells out itself.
+pub(super) fn resolve_access_token() -> Result<String, ProviderError> {
+    if let Some(tok) = env_nonblank(TOKEN_ENV) {
+        return Ok(tok);
+    }
+    gcloud_token()
 }
 
 /// Shell out to `gcloud auth application-default print-access-token` under a bounded

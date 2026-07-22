@@ -372,13 +372,13 @@ impl ProviderId {
     pub(crate) fn default_model(self) -> &'static str {
         match self {
             ProviderId::Groq => "openai/gpt-oss-120b",
-            ProviderId::Google => "gemini-3.1-flash-lite",
+            ProviderId::Google => "gemini-3.5-flash-lite",
             ProviderId::Openai => openai::SUPPORTED_MODELS[0],
             ProviderId::Anthropic => "claude-haiku-4-5",
             // Local, user-pulled model (FR-56; owner default). `:cloud` variants
             // (e.g. deepseek-v4-flash:cloud) work via --model but are NOT zero-egress.
             ProviderId::Ollama => "gemma4:e4b-mlx",
-            ProviderId::Vertex => "gemini-3.1-flash-lite",
+            ProviderId::Vertex => "gemini-3.5-flash-lite",
         }
     }
 
@@ -466,6 +466,14 @@ pub fn select(
 /// on the hot path.
 pub(crate) fn vertex_adc_probe() -> Result<(), String> {
     vertex::probe_adc()
+}
+
+/// Resolve the Vertex ADC access token for wizard model discovery (CLO-564):
+/// `GCM_VERTEX_TOKEN` wins, else a bounded gcloud shell-out. The wizard passes
+/// the token to `fetch_supported_models` as the discovery key; on `Err` it
+/// passes `None` and discovery degrades to the static list.
+pub(crate) fn vertex_access_token() -> Result<String, String> {
+    vertex::resolve_access_token().map_err(|e| e.to_string())
 }
 
 fn resolve_provider_id(cli: Option<ProviderId>) -> Result<ProviderId, ProviderError> {
@@ -808,7 +816,8 @@ mod tests {
     #[test]
     fn provider_defaults_and_tokens() {
         assert_eq!(ProviderId::Groq.default_model(), "openai/gpt-oss-120b");
-        assert_eq!(ProviderId::Google.default_model(), "gemini-3.1-flash-lite");
+        assert_eq!(ProviderId::Google.default_model(), "gemini-3.5-flash-lite");
+        assert_eq!(ProviderId::Vertex.default_model(), "gemini-3.5-flash-lite");
         assert_eq!(ProviderId::Openai.default_model(), "gpt-5.6-terra");
         assert_eq!(ProviderId::Anthropic.default_model(), "claude-haiku-4-5");
         assert_eq!(ProviderId::Ollama.default_model(), "gemma4:e4b-mlx");

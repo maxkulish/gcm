@@ -266,7 +266,7 @@ Override the model with `--model` or the per-provider env var.
 | Provider | `--provider` | API key | Default model | Model env | Structured output |
 |----------|--------------|---------|---------------|-----------|-------------------|
 | Groq (default) | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `GCM_GROQ_MODEL` | strict `json_schema` |
-| Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.1-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
+| Google (Gemini) | `google` (alias `gemini`) | `GEMINI_API_KEY` | `gemini-3.5-flash-lite` | `GCM_GEMINI_MODEL` (or `GCM_GOOGLE_MODEL`) | `responseSchema` |
 | OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-5.6-terra` | `GCM_OPENAI_MODEL` | strict `json_schema` |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` | `GCM_ANTHROPIC_MODEL` | forced tool-use (`input_schema`) |
 | Ollama (local) | `ollama` | none | `gemma4:e4b-mlx` | `GCM_OLLAMA_MODEL` | native `format` (model-dependent) |

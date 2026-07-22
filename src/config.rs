@@ -882,8 +882,8 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         }
         AuthMethod::KeylessAdc => {
             // Vertex: project (required) + location (default global); no key, no
-            // endpoint. The model list comes from the static Gemini set (the fetch
-            // below short-circuits Vertex).
+            // endpoint. Live discovery (CLO-564) authenticates with the ADC token
+            // resolved below; on failure the fetch degrades to the static set.
             let default_project = existing_pc
                 .and_then(|p| p.project.clone())
                 .or_else(|| env_value("GCM_VERTEX_PROJECT"))
@@ -932,16 +932,22 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
                     "ADC not ready: {msg} (set GCM_VERTEX_TOKEN or run `gcloud auth application-default login`)"
                 )),
             }
+            // Resolve the ADC token for live model discovery (CLO-564). On
+            // failure fetch_key stays None and the fetch shows the built-in
+            // list with its own warning - never blocks the wizard.
+            fetch_key = crate::provider::vertex_access_token().ok();
         }
     }
 
-    // 3. Fetch the model list (spinner; never fails - falls back).
+    // 3. Fetch the model list (spinner; never fails - falls back). The project
+    // is Vertex-only: it becomes the x-goog-user-project quota header (CLO-564).
     let sp = spinner();
     sp.start("Fetching supported models...");
     let outcome = crate::provider::fetch_supported_models(
         id,
         fetch_key.as_deref(),
         fetch_endpoint.as_deref(),
+        persist_project.as_deref(),
     );
     match outcome.source {
         crate::provider::FetchSource::Live => {

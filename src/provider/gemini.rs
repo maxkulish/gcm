@@ -117,7 +117,7 @@ impl Provider for Gemini {
     }
 
     fn diff_budget(&self) -> DiffBudget {
-        // gemini-3.1-flash-lite has a very large context; standard budget for v1.
+        // Gemini flash-lite models have a very large context; standard budget for v1.
         DiffBudget::standard()
     }
 }
