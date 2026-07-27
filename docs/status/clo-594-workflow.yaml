@@ -22,10 +22,10 @@ linear:
   priority: High
   branch_actual: feat/clo-594-lock
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: active
   created_at: '2026-07-27T07:53:49.988Z'
-  updated_at: '2026-07-27T08:04:26.601Z'
+  updated_at: '2026-07-27T08:16:37.418Z'
 phases:
   discovery:
     status: complete
@@ -100,9 +100,52 @@ phases:
     plan_file: docs/plans/clo-594-library-boundary.md
     approved: true
   implement:
-    status: pending
+    status: complete
+    commits:
+      - 63ecb47
+    assumption_outcomes:
+      - evidence: untested — no code moves under CLO-594; will be verified in CLO-595
+        outcome: untested
+        text: >-
+          In a single-package [lib]+[[bin]] setup, the binary must import shared types from the library crate (use
+          gcm::config::Config), not declare mod config; in both targets — otherwise the compiler treats them as distinct
+          types.
+      - evidence: untested — no code moves under CLO-594; will be verified in CLO-595
+        outcome: untested
+        text: >-
+          cliclack and console must be optional=true in Cargo.toml and gated behind a cli feature — otherwise every
+          library consumer inherits them.
+      - evidence: untested — no code moves under CLO-594; verified by Rust module system semantics
+        outcome: untested
+        text: 'Binary-internal modules do not need #[cfg(not(feature=library))] — omitting them from lib.rs is sufficient.'
+      - evidence: untested — no code moves under CLO-594; will be verified in CLO-595
+        outcome: untested
+        text: 'The save function''s 0600 permission logic must use #[cfg(unix)] to avoid breaking Windows builds.'
+      - evidence: untested — no code moves under CLO-594; deferred to CLO-595
+        outcome: untested
+        text: >-
+          GcmError contains binary-specific variants; the library may need a lightweight error type or feature-gated
+          variants.
+      - evidence: untested — no code moves under CLO-594; CLO-595 scope confirms
+        outcome: untested
+        text: >-
+          SecretScanMode is the primary export for CLO-595; the scanner's check/filter/redact functions stay in the
+          binary for now.
+      - evidence: untested — no code moves under CLO-594; both consumers use path deps
+        outcome: untested
+        text: >-
+          Path-only consumption (no crates.io publish) is sufficient because both consumers are in the same
+          organization.
+    assumptions_revalidated: true
+    codex_report: docs/reviews/clo-594-codex-validation.md
+    codex_validated: true
+    codex_verdict: FAIL
+    gemini_validation_report: docs/reviews/clo-594-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-594-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
   pr:
-    status: pending
+    status: in_progress
   complete:
     status: pending
 history:
@@ -198,5 +241,38 @@ history:
     action: phase_transition
     phase: plan
     details: Transitioned from plan to implement
+  - timestamp: '2026-07-27T08:05:31.140Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST1+ST2 landed: ADR-002 acceptance criteria verified (all 4 ACs met). No .rs file changes (git diff empty). Commit
+      63ecb47.
+  - timestamp: '2026-07-27T08:06:20.076Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      7 assumptions reviewed. held: 0, violated: 0, untested: 7. All assumptions are implementation-phase concerns for
+      CLO-595; this ADR-only task produces no code to test them against.
+  - timestamp: '2026-07-27T08:06:24.221Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All sub-tasks landed. ADR-002 accepted, all 4 issue ACs verified. fmt+clippy+test green. 1 commit (63ecb47). No
+      code changes (docs-only).
+  - timestamp: '2026-07-27T08:13:34.083Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: FAIL (3 findings: type identity contradiction, AutoPolicy missing, gcm-core name wrong). Gemini: PASS (3
+      LOW/informational). Synthesis: PASS_WITH_NOTES. 3 Must-Fix items applied in 1 fix iteration (commit c8aebbe). No
+      code changes — all fixes are docs edits.
+  - timestamp: '2026-07-27T08:14:13.688Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-27T08:16:37.418Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'Pre-merge gate green: fmt + clippy + test all pass (475 tests, 0 failures).'
 task_title: Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
 task_url: https://linear.app/cloud-ai/issue/CLO-594/lock-the-gcm-library-boundary-the-syncasync-seam-and-the-config-shape
