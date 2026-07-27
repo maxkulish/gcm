@@ -5,8 +5,8 @@
   "type": "module",
   "main": "index.ts",
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "^0.73.1",
-    "@mariozechner/pi-tui": "^0.70.5",
+    "@earendil-works/pi-coding-agent": "^0.82.1",
+    "@earendil-works/pi-tui": "^0.82.1",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "typebox": "^1.1.24"
   },
@@ -14,6 +14,7 @@
     "@types/node": "^20.0.0"
   },
   "overrides": {
-    "@hono/node-server": "^2.0.5"
+    "@hono/node-server": "^2.0.5",
+    "brace-expansion": "^5.0.8"
   }
 }

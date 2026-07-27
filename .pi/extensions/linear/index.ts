@@ -7,9 +7,9 @@ import {
   formatSize,
   truncateHead,
   type ExtensionAPI,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 const LINEAR_MCP_SSE_URL = "https://mcp.linear.app/sse";
 const LINEAR_MCP_HTTP_URL = "https://mcp.linear.app/mcp";
