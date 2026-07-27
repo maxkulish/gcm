@@ -12,7 +12,7 @@ task_profile:
 pending_human_action: null
 linear:
   team: Cloud-ai
-  project: Personal-health
+  project: GCM
   status_at_start: Backlog
   blocks:
     - CLO-595
@@ -23,9 +23,9 @@ linear:
   branch_actual: feat/clo-594-lock
 workflow:
   current_phase: complete
-  status: active
+  status: complete
   created_at: '2026-07-27T07:53:49.988Z'
-  updated_at: '2026-07-27T08:34:22.580Z'
+  updated_at: '2026-07-27T19:22:30Z'
 phases:
   discovery:
     status: complete
@@ -126,8 +126,13 @@ phases:
         text: >-
           GcmError contains binary-specific variants; the library may need a lightweight error type or feature-gated
           variants.
-      - evidence: untested — no code moves under CLO-594; CLO-595 scope confirms
-        outcome: untested
+      - evidence: >-
+          violated 2026-07-27 (PR #44, commit 8dedf57) before CLO-595 began. Checking ADR-002's surface list against
+          CLO-595's acceptance criteria showed the assumption cannot hold: those criteria require an external consumer to
+          compile a rule engine and scan text, and SecretScanMode is only the off/redact/abort enum. Leaving
+          secret_ranges, redact_secrets, merge_ranges, RuleEngine, vendored and the entropy helpers in the binary would
+          have handed the first consumer a mode and nothing to scan with. ADR-002's Library Surface now carries them.
+        outcome: violated
         text: >-
           SecretScanMode is the primary export for CLO-595; the scanner's check/filter/redact functions stay in the
           binary for now.
@@ -157,10 +162,23 @@ phases:
     merge_commit: 4bf4e1537d5c00a06868a469d81c4817048d4b4d
     merged_at: '2026-07-27T08:32:25Z'
   complete:
-    status: pending
+    status: complete
     merge_commit: 4bf4e1537d5c00a06868a469d81c4817048d4b4d
     merged_at: '2026-07-27T08:32:25Z'
+    follow_up_prs:
+      - number: 43
+        url: https://github.com/maxkulish/gcm/pull/43
+        merge_commit: 387f357
+        details: workflow state and lessons
+      - number: 44
+        url: https://github.com/maxkulish/gcm/pull/44
+        merge_commit: 75f3106
+        merged_at: '2026-07-27T19:18:51Z'
+        details: >-
+          ADR-002 Library Surface amendment (assumption A6 violated) plus an unrelated fix for non-blocking mock sockets
+          on macOS, found while verifying this task had landed.
     aggregation_files_updated: true
+    aggregation_files_commit: af084c7
     lessons_file: .pi/lessons/clo-594-library-boundary-lessons.md
     lessons_learned:
       - 'L1 - ADR must state type identity consistently: binary imports from library target, not both crate:: and gcm::'
@@ -340,5 +358,29 @@ history:
     details: >-
       3 lessons recorded. File: .pi/lessons/clo-594-library-boundary-lessons.md. L1: type identity in [lib]+[[bin]], L2:
       dep:clap vs clap feature, L3: package name in path dependency.
+  - timestamp: '2026-07-27T19:18:51Z'
+    action: assumption_violated
+    phase: complete
+    details: >-
+      Assumption A6 (SecretScanMode is the primary export for CLO-595; scanner functions stay in the binary) violated
+      before CLO-595 began. ADR-002's Library Surface was checked against CLO-595's acceptance criteria, which require an
+      external consumer to compile a rule engine and scan text; the surface as written offered only the off/redact/abort
+      enum. Surface amended in PR #44 to carry the scanner, the model registry and the status report types, and Decision
+      2 re-drawn at transport implementations so the injectable-fetcher registry may cross. Tally moves to 0 held / 1
+      violated / 6 untested.
+  - timestamp: '2026-07-27T19:21:00Z'
+    action: aggregation_files_corrected
+    phase: complete
+    details: >-
+      The project_sync_complete entry at 08:33:53 recorded the aggregation files as synced, but they were not. All three
+      still showed CLO-594 as In Progress, ROADMAP Phase 6 listed one task with count 1|0, and none of CLO-595 through
+      CLO-598 appeared anywhere. Corrected in af084c7: CLO-594 to Done and Recently Completed, Phase 6 count 5|1 with the
+      full chain, CLO-595 unblocked as of 2026-07-27, and the serial chain behind it recorded.
+  - timestamp: '2026-07-27T19:22:30Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-594 fully completed. Also corrected linear.project from Personal-health to GCM, and workflow.status from
+      active to complete, both of which had blocked the DONE signal.
 task_title: Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
 task_url: https://linear.app/cloud-ai/issue/CLO-594/lock-the-gcm-library-boundary-the-syncasync-seam-and-the-config-shape
