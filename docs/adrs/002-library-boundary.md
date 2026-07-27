@@ -43,16 +43,16 @@ Three facts frame the whole set:
 **Drivers:**
 1. **Minimal disruption** — the primary user's daily-use tool keeps its `Cargo.toml`, its `cargo build` workflow, and its `src/` layout. No workspace root, no path-dependency gymnastics, no `use gcm_core::X` migration across the entire codebase.
 2. **Single version, single publish** — one `cargo publish` updates both the library and the binary. No version-sync headaches between two crates.
-3. **Incremental extraction** — the `[lib]` target can start with a small re-export surface (`pub use config::Config`, `pub use provider::ProviderId`, `pub use privacy::SecretScanMode`) and grow as more types are extracted. The binary continues to use `use crate::config::Config` internally; the library re-exports via `pub use`.
+3. **Incremental extraction** — the `[lib]` target can start with a small re-export surface (`pub use config::Config`, `pub use provider::ProviderId`, `pub use privacy::SecretScanMode`) and grow as more types are extracted. The binary imports shared types from the library target (`use gcm::config::Config`) to ensure type identity — the `[lib]` and `[[bin]]` targets compile as separate crates, so `crate::Config` and `gcm::Config` are distinct, incompatible types if both declare `mod config;`. Binary-internal modules (`cache`, `git`, `resolve`, `ui`) stay as local `mod` declarations in `main.rs` only; the library omits them from `lib.rs`.
 
 **Alternatives considered:**
-- *Workspace with separate crate (rejected):* clean semantic boundary and independent versioning, but forces every `use crate::X` in the binary to become `use gcm_core::X` or a path dependency. This is a daily-use signed-commit tool — the disruption to the primary user's workflow is real and immediate. Two `Cargo.toml` files, two `cargo publish` steps, two version numbers to track. The workspace root changes the `cargo` UX for existing contributors.
+- *Workspace with separate crate (rejected):* clean semantic boundary and independent versioning, but forces every `use crate::X` in the binary to become `use gcm_core::X` or a path dependency — *every* module, not just the shared types. This is a daily-use signed-commit tool — the disruption to the primary user's workflow is real and immediate. Two `Cargo.toml` files, two `cargo publish` steps, two version numbers to track. The workspace root changes the `cargo` UX for existing contributors. Note: the chosen `[lib]` option still requires migrating shared-type imports (`use gcm::config::Config`), but binary-internal modules keep their `mod` declarations — far less churn.
 - *No library at all (rejected):* every consumer forks or duplicates the types they need. This is the status quo and the problem this ADR exists to solve.
 
 **Consequences:**
 - (+) Minimal disruption: no workspace, no new `Cargo.toml`, no git-subtree or path-dependency gymnastics.
 - (+) Single `cargo publish` — one version number, one registry entry.
-- (+) The binary continues to use `use crate::config::Config` internally; the library re-exports via `pub use`.
+- (+) The binary imports shared types from the library target (`use gcm::config::Config`); binary-internal modules stay as local `mod` declarations.
 - (−) Library versioning is tied to the binary — a breaking change in the library forces a binary version bump.
 - (−) The `[lib]` target shares the same `Cargo.toml` dependency set; optional features (`clap` as optional) need `[features]` wiring.
 - (−) Binary-internal modules (`cache`, `git`, `resolve`, `ui`) must be gated behind `#[cfg(not(feature = "library"))]` or kept as private implementation details.
@@ -97,7 +97,7 @@ Three facts frame the whole set:
 
 **Consequences:**
 - (+) The library has zero dependency on `cliclack` or `console`.
-- (+) The binary continues to use `use crate::config::Config` internally; the library re-exports via `pub use`.
+- (+) The binary imports `Config` from the library target (`use gcm::config::Config`); the wizard functions stay as local `mod` declarations in `main.rs`.
 - (−) The wizard functions live in the same file as the library types, gated behind `#[cfg(not(feature = "library"))]`. This is a minor readability cost.
 - (→) **Planned evolution:** split `config.rs` into `config/mod.rs` (library types + pure functions) and `config/wizard.rs` (binary-only wizard) when the library surface stabilizes.
 
@@ -105,11 +105,11 @@ Three facts frame the whole set:
 
 ## Decision 4 — `clap` dependency: optional feature on the library
 
-**Decision:** The library has an optional `clap` feature. When enabled, `SecretScanMode` and `ProviderId` derive `clap::ValueEnum` via `#[cfg_attr(feature = "clap", derive(ValueEnum))]`. When disabled, they derive only `Serialize`/`Deserialize`/`Debug`/`Clone`/`Copy`/`PartialEq`/`Eq`.
+**Decision:** The library has an optional `clap` feature. When enabled, `SecretScanMode`, `ProviderId`, and `AutoPolicy` derive `clap::ValueEnum` via `#[cfg_attr(feature = "clap", derive(ValueEnum))]`. When disabled, they derive only `Serialize`/`Deserialize`/`Debug`/`Clone`/`Copy`/`PartialEq`/`Eq`.
 
 **Drivers:**
-1. **Two types derive `clap::ValueEnum`** — `SecretScanMode` at `src/privacy/mod.rs:13` and `ProviderId` at `src/provider/mod.rs:330`. Both are needed by the library, but `clap` is a CLI-only concern.
-2. **A non-CLI consumer should not depend on `clap`** — a background service or async consumer that imports `gcm-core` should not have `clap` in its dependency tree.
+1. **Three types derive `clap::ValueEnum`** — `SecretScanMode` at `src/privacy/mod.rs:13`, `ProviderId` at `src/provider/mod.rs:330`, and `AutoPolicy` at `src/config.rs:138`. All three are needed by the library, but `clap` is a CLI-only concern.
+2. **A non-CLI consumer should not depend on `clap`** — a background service or async consumer that imports the library should not have `clap` in its dependency tree.
 3. **The `cfg_attr` pattern is idiomatic Rust** — used throughout the ecosystem (e.g., `serde`'s `#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]`).
 
 **Alternatives considered:**
@@ -120,7 +120,7 @@ Three facts frame the whole set:
 - (+) Non-CLI consumers have zero `clap` dependency.
 - (+) The binary enables the `clap` feature and gets `ValueEnum` derives for free.
 - (+) The `cfg_attr` pattern is well-understood and used throughout the Rust ecosystem.
-- (−) Every `ValueEnum` derive needs `#[cfg_attr(feature = "clap", derive(ValueEnum))]` — two sites to maintain.
+- (−) Every `ValueEnum` derive needs `#[cfg_attr(feature = "clap", derive(ValueEnum))]` — three sites to maintain.
 - (−) The test matrix expands: `cargo test --no-default-features` must pass.
 
 ---
@@ -166,11 +166,11 @@ Three facts frame the whole set:
 
 ## Decision 7 — Registry: path-only for now
 
-**Decision:** The library is consumed by path dependency only (`gcm-core = { path = "../gcm" }` or similar). It is not published to crates.io until at least one external consumer exists.
+**Decision:** The library is consumed by path dependency only (`gcm = { path = "../gcm" }` or similar). It is not published to crates.io until at least one external consumer exists.
 
 **Drivers:**
 1. **No external consumers exist yet** — the only consumers are lok and remem-ai, both in the same monorepo/organization. Publishing to crates.io adds maintenance burden (version bumps, changelog, semver policy) with no benefit.
-2. **Path dependencies are sufficient for in-org consumers** — lok can depend on `gcm-core` via a path or git dependency. Publishing is only needed when a consumer outside the organization wants to use it.
+2. **Path dependencies are sufficient for in-org consumers** — lok can depend on the library via a path or git dependency. Publishing is only needed when a consumer outside the organization wants to use it.
 
 **Alternatives considered:**
 - *Publish to crates.io (rejected):* premature. No consumers outside the organization exist. Publishing adds semver maintenance, CI publish steps, and version bump overhead.
@@ -185,10 +185,10 @@ Three facts frame the whole set:
 
 ## Library Surface (Summary)
 
-After extraction, the library (`gcm-core` via `[lib]` in the existing package) exports:
+After extraction, the library (via `[lib]` in the existing package) exports:
 
 ```
-gcm-core (via [lib] target):
+gcm (via [lib] target):
   config::Config
   config::ProviderConfig
   config::ConflictConfig
@@ -217,7 +217,7 @@ Binary-only (not in library):
 ## Consequences
 
 1. **The library is publishable independently** — it has no dependency on `cliclack`, `console`, or `clap` (unless the consumer opts in via the `clap` feature).
-2. **The binary is unchanged** — all `use crate::X` imports continue to work. The `[lib]` target is additive.
+2. **The binary imports shared types from the library target** — the binary's shared-type imports (`Config`, `ProviderId`, `SecretScanMode`) change from `use crate::X` to `use gcm::X` to ensure type identity. Binary-internal modules (`cache`, `git`, `resolve`, `ui`) keep their `mod` declarations in `main.rs` and are omitted from `lib.rs`. The `[lib]` target is additive.
 3. **The extraction is incremental** — start with a small re-export surface, grow as more types are extracted. The first extraction slice (CLO-595: secret scanner) only needs `SecretScanMode` and `Config`.
 4. **The ADR is the design artifact** — the implementation tasks (CLO-595+) reference this ADR for the boundary decisions.
 

@@ -20,7 +20,7 @@ gcm is an 18,830-line Rust CLI with a single `[[bin]]` target and no `src/lib.rs
 - Lock the crate shape: `[lib]` target inside the existing package (not a workspace).
 - Lock the sync/async seam: gcm stays sync; only non-transport types cross the boundary.
 - Lock the config seam: data types + pure functions in the library; wizard in the binary.
-- Answer the `clap` question once for both `SecretScanMode` and `ProviderId`.
+- Answer the `clap` question once for `SecretScanMode`, `ProviderId`, and `AutoPolicy`.
 - Confirm the `Provider` trait and the wizard stay in the binary, with conditions for revisiting.
 - Decide registry: path-only for now (no crates.io publish).
 
@@ -38,7 +38,7 @@ gcm is an 18,830-line Rust CLI with a single `[[bin]]` target and no `src/lib.rs
 
 ```
 gcm (existing package, one Cargo.toml)
-├── [lib] target (gcm-core)
+├── [lib] target
 │   ├── config: Config, ProviderConfig, ConflictConfig, AutoPolicy
 │   │          load, save, apply_to_env, config_path, needs_onboarding
 │   ├── provider: ProviderId, AuthMethod
@@ -53,7 +53,7 @@ gcm (existing package, one Cargo.toml)
 
 ### Data flow
 
-The library exports pure types and functions. The binary imports them via `use gcm::config::Config` (not `mod config;` — see Assumptions §A1). Consumers (lok, remem-ai) depend on the library via path dependency. No transport, no async, no `cliclack`/`console` in the library build.
+The library exports pure types and functions. The binary imports them via `use gcm::config::Config` (not `mod config;` in both targets — see Assumptions §A1). Consumers (lok, remem-ai) depend on the library via path dependency. No transport, no async, no `cliclack`/`console` in the library build.
 
 ### Cargo.toml changes (implementation phase)
 
@@ -64,7 +64,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["cli"]
-cli = ["dep:clap", "dep:cliclack", "dep:console"]
+cli = ["clap", "dep:cliclack", "dep:console"]
 clap = ["dep:clap"]
 
 [dependencies]
@@ -95,7 +95,7 @@ pub mod privacy {
 }
 ```
 
-The binary continues to declare `mod config;` etc. in `main.rs`, but the `[lib]` target in `lib.rs` re-exports the public types. The binary imports from the library crate (`use gcm::config::Config`) to ensure type identity (see Assumptions §A1).
+The binary declares `mod config;` etc. in `main.rs` for binary-internal modules only. Shared types are imported from the library crate (`use gcm::config::Config`) to ensure type identity (see Assumptions §A1). The `[lib]` target in `lib.rs` re-exports the public types.
 
 Type signatures for the exported types (unchanged from current code):
 
