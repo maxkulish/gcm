@@ -1,0 +1,308 @@
+task_id: clo-594
+task_type: development
+classification_reason: >-
+  Title describes an ADR recording architectural decisions (crate shape, sync/async, config boundary) — a development
+  task that produces an ADR document and no code moves. Issue has HITL label.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks:
+    - CLO-595
+  blocked_by:
+    - CLO-593
+  branch_suggested: kmamemo/clo-594-lock-the-gcm-library-boundary-the-syncasync-seam-and-the
+  priority: High
+  branch_actual: feat/clo-594-lock
+workflow:
+  current_phase: pr
+  status: active
+  created_at: '2026-07-27T07:53:49.988Z'
+  updated_at: '2026-07-27T08:31:53.516Z'
+phases:
+  discovery:
+    status: complete
+    approaches_identified: 3
+    approved: true
+    baseline_score: 4
+    discovery_debt: []
+    discovery_report: docs/discovery/clo-594.md
+    prd_created: false
+    prd_exists: true
+    prd_file: ''
+    problem_framed: true
+    approach_chosen: In-package [lib] target with optional clap feature
+  design:
+    status: complete
+    design_doc: docs/designs/clo-594-library-boundary.md
+    discovery_context_used: true
+    draft_ready: true
+    assumptions:
+      - confidence: high
+        text: >-
+          In a single-package [lib]+[[bin]] setup, the binary must import shared types from the library crate (use
+          gcm::config::Config), not declare mod config; in both targets — otherwise the compiler treats them as distinct
+          types.
+        verification: Gemini design review flagged this; implementation in CLO-595 will verify via cargo check
+      - confidence: high
+        text: >-
+          cliclack and console must be optional=true in Cargo.toml and gated behind a cli feature — otherwise every
+          library consumer inherits them.
+        verification: Gemini review flagged this; CLO-595 will verify with cargo tree --no-default-features
+      - confidence: high
+        text: 'Binary-internal modules do not need #[cfg(not(feature=library))] — omitting them from lib.rs is sufficient.'
+        verification: Gemini review flagged this; verified by Rust module system semantics
+      - confidence: medium
+        text: 'The save function''s 0600 permission logic must use #[cfg(unix)] to avoid breaking Windows builds.'
+        verification: Gemini review flagged this; CLO-595 implementation will add the cfg gate
+      - confidence: medium
+        text: >-
+          GcmError contains binary-specific variants; the library may need a lightweight error type or feature-gated
+          variants.
+        verification: Gemini review flagged this; deferred to CLO-595 — first extraction only exports SecretScanMode
+      - confidence: high
+        text: >-
+          SecretScanMode is the primary export for CLO-595; the scanner's check/filter/redact functions stay in the
+          binary for now.
+        verification: >-
+          CLO-595 scope confirms; .pi/lessons/clo-531-resolve-lessons.md L1 established secret scan must apply to all
+          egress paths
+      - confidence: high
+        text: >-
+          Path-only consumption (no crates.io publish) is sufficient because both consumers are in the same
+          organization.
+        verification: CLO-593 and CLO-595 both use path/git dependencies; revisit when external consumer requests publish
+    assumptions_surfaced: true
+    applied_suggestions:
+      - >-
+        A1: Binary must import library types via use gcm::config::Config (not mod config; in both targets) for type
+        identity
+      - 'A2: cliclack and console must be optional=true under a cli feature'
+      - 'A3: Binary-internal modules don''t need cfg gating — omit from lib.rs'
+      - 'A4: save function needs #[cfg(unix)] for 0600 permissions'
+      - 'A5: GcmError decoupling deferred — first extraction exports SecretScanMode only'
+    flagged_suggestions: []
+    review_completed: true
+    review_gemini: docs/reviews/clo-594-review-gemini.md
+    review_synthesis: docs/reviews/clo-594-review-synthesis.md
+    review_verdict: approve_with_changes
+    human_review_completed: true
+    finalized: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-594-library-boundary.md
+    approved: true
+  implement:
+    status: complete
+    commits:
+      - 63ecb47
+    assumption_outcomes:
+      - evidence: untested — no code moves under CLO-594; will be verified in CLO-595
+        outcome: untested
+        text: >-
+          In a single-package [lib]+[[bin]] setup, the binary must import shared types from the library crate (use
+          gcm::config::Config), not declare mod config; in both targets — otherwise the compiler treats them as distinct
+          types.
+      - evidence: untested — no code moves under CLO-594; will be verified in CLO-595
+        outcome: untested
+        text: >-
+          cliclack and console must be optional=true in Cargo.toml and gated behind a cli feature — otherwise every
+          library consumer inherits them.
+      - evidence: untested — no code moves under CLO-594; verified by Rust module system semantics
+        outcome: untested
+        text: 'Binary-internal modules do not need #[cfg(not(feature=library))] — omitting them from lib.rs is sufficient.'
+      - evidence: untested — no code moves under CLO-594; will be verified in CLO-595
+        outcome: untested
+        text: 'The save function''s 0600 permission logic must use #[cfg(unix)] to avoid breaking Windows builds.'
+      - evidence: untested — no code moves under CLO-594; deferred to CLO-595
+        outcome: untested
+        text: >-
+          GcmError contains binary-specific variants; the library may need a lightweight error type or feature-gated
+          variants.
+      - evidence: untested — no code moves under CLO-594; CLO-595 scope confirms
+        outcome: untested
+        text: >-
+          SecretScanMode is the primary export for CLO-595; the scanner's check/filter/redact functions stay in the
+          binary for now.
+      - evidence: untested — no code moves under CLO-594; both consumers use path deps
+        outcome: untested
+        text: >-
+          Path-only consumption (no crates.io publish) is sufficient because both consumers are in the same
+          organization.
+    assumptions_revalidated: true
+    codex_report: docs/reviews/clo-594-codex-validation.md
+    codex_validated: true
+    codex_verdict: FAIL
+    gemini_validation_report: docs/reviews/clo-594-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-594-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+  pr:
+    status: complete
+    pr_number: 42
+    pr_url: https://github.com/maxkulish/gcm/pull/42
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-07-27T08:31:17Z'
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-27T08:31:49Z'
+    pre_merge_refetch_passed: true
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-27T07:53:49.988Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-594 as development
+  - timestamp: '2026-07-27T07:54:02.433Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: Title 'Lock the gcm library boundary...' describes an ADR recording architectural
+      decisions (crate shape, sync/async, config boundary) — a development task that produces an ADR document and no
+      code moves. Issue has HITL label.
+  - timestamp: '2026-07-27T07:54:53.260Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-594 --start. Added to Active Work (Phase 6:
+      Library Extraction), ROADMAP status In Progress. WIP limit OK (1/3). Task blocked by CLO-593 per Linear but not
+      listed in local DEPENDENCIES.md.
+  - timestamp: '2026-07-27T07:54:55.737Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-07-27T07:55:05.274Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-594-lock already exists (checked out from main @ bf8e395). Recorded as branch_actual.
+  - timestamp: '2026-07-27T07:56:13.619Z'
+    action: discovery_approved
+    phase: discovery
+    details: >-
+      Approach: In-package [lib] target with optional clap feature. Baseline 4/10. 3 approaches considered (in-package
+      lib, workspace split, feature-gated hybrid).
+  - timestamp: '2026-07-27T07:56:17.619Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-07-27T07:57:05.914Z'
+    action: design_started
+    phase: design
+    details: Starting design phase. Task is an ADR (documentation) — no subtasks, but references multiple distinct components.
+  - timestamp: '2026-07-27T07:58:06.106Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      ADR-002 created at docs/adrs/002-library-boundary.md. 7 decisions locked: crate shape, sync/async, config seam,
+      clap feature, Provider trait, wizard, registry.
+  - timestamp: '2026-07-27T08:01:52.146Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Design doc created at docs/designs/clo-594-library-boundary.md (8-section structure). ADR-002 at
+      docs/adrs/002-library-boundary.md is the deliverable. Gemini review completed; Ollama failed (model retired).
+  - timestamp: '2026-07-27T08:02:00.877Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: >-
+      7 assumptions surfaced (high: 5, medium: 2). See design doc § Assumptions. Key: binary must import library types
+      for type identity (A1), cliclack/console must be optional deps (A2), GcmError may need decoupling (A5).
+  - timestamp: '2026-07-27T08:02:29.061Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: approve_with_changes. 5 applied (type identity, optional deps, module gating, platform
+      permissions, error decoupling), 0 flagged. Ollama failed (model glm-5:cloud retired 2026-07-15).
+  - timestamp: '2026-07-27T08:03:19.708Z'
+    action: design_human_review_complete
+    phase: design
+    details: Plannotator annotate session closed with no annotations.
+  - timestamp: '2026-07-27T08:03:41.777Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Design approved by user. ADR-002 status set to Accepted. Design doc at docs/designs/clo-594-library-boundary.md.
+      Ready for plan phase.
+  - timestamp: '2026-07-27T08:03:44.512Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-07-27T08:04:21.008Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      Plan with 4 sub-tasks at docs/plans/clo-594-library-boundary.md. ADR-only task: verify ACs, verify no code
+      changes, commit docs, create PR.
+  - timestamp: '2026-07-27T08:04:24.326Z'
+    action: plan_approved
+    phase: plan
+    details: Plan approved. 4 sub-tasks queued (verify ACs, verify no code, commit docs, create PR).
+  - timestamp: '2026-07-27T08:04:26.601Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+  - timestamp: '2026-07-27T08:05:31.140Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST1+ST2 landed: ADR-002 acceptance criteria verified (all 4 ACs met). No .rs file changes (git diff empty). Commit
+      63ecb47.
+  - timestamp: '2026-07-27T08:06:20.076Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      7 assumptions reviewed. held: 0, violated: 0, untested: 7. All assumptions are implementation-phase concerns for
+      CLO-595; this ADR-only task produces no code to test them against.
+  - timestamp: '2026-07-27T08:06:24.221Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All sub-tasks landed. ADR-002 accepted, all 4 issue ACs verified. fmt+clippy+test green. 1 commit (63ecb47). No
+      code changes (docs-only).
+  - timestamp: '2026-07-27T08:13:34.083Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: FAIL (3 findings: type identity contradiction, AutoPolicy missing, gcm-core name wrong). Gemini: PASS (3
+      LOW/informational). Synthesis: PASS_WITH_NOTES. 3 Must-Fix items applied in 1 fix iteration (commit c8aebbe). No
+      code changes — all fixes are docs edits.
+  - timestamp: '2026-07-27T08:14:13.688Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-27T08:16:37.418Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: 'Pre-merge gate green: fmt + clippy + test all pass (475 tests, 0 failures).'
+  - timestamp: '2026-07-27T08:17:05.996Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #42 opened: https://github.com/maxkulish/gcm/pull/42'
+  - timestamp: '2026-07-27T08:20:36.685Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required checks passing: build/test (ubuntu-latest) pass, build/test (macos-latest) pass.'
+  - timestamp: '2026-07-27T08:31:22.004Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
+      inline comments expected.
+  - timestamp: '2026-07-27T08:31:36.074Z'
+    action: review_addressed
+    phase: pr
+    details: 0 threads resolved; 0 replies posted; bots not installed, zero inline comments; unresolved-thread re-check clean.
+  - timestamp: '2026-07-27T08:31:53.516Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
+task_title: Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
+task_url: https://linear.app/cloud-ai/issue/CLO-594/lock-the-gcm-library-boundary-the-syncasync-seam-and-the-config-shape

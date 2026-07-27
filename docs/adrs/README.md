@@ -17,6 +17,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | ADR | Title | Status | Date | Linear |
 |-----|-------|--------|------|--------|
 | [001](001-foundational-architecture-decisions.md) | Foundational Architecture Decisions for the gcm Rust Rewrite | Accepted | 2026-06-19 | CLO-485 |
+| [002](002-library-boundary.md) | gcm Library Boundary — Crate Shape, Sync/Async Seam, and Config Boundary | Accepted | 2026-07-27 | CLO-594 |
 
 ## Creating a New ADR
 
