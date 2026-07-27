@@ -22,10 +22,10 @@ linear:
   priority: High
   branch_actual: feat/clo-594-lock
 workflow:
-  current_phase: pr
+  current_phase: complete
   status: active
   created_at: '2026-07-27T07:53:49.988Z'
-  updated_at: '2026-07-27T08:31:53.516Z'
+  updated_at: '2026-07-27T08:32:50.691Z'
 phases:
   discovery:
     status: complete
@@ -154,8 +154,12 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-07-27T08:31:49Z'
     pre_merge_refetch_passed: true
+    merge_commit: 4bf4e1537d5c00a06868a469d81c4817048d4b4d
+    merged_at: '2026-07-27T08:32:25Z'
   complete:
     status: pending
+    merge_commit: 4bf4e1537d5c00a06868a469d81c4817048d4b4d
+    merged_at: '2026-07-27T08:32:25Z'
 history:
   - timestamp: '2026-07-27T07:53:49.988Z'
     action: workflow_started
@@ -304,5 +308,17 @@ history:
     action: pre_merge_refetch_passed
     phase: pr
     details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
+  - timestamp: '2026-07-27T08:32:08.307Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-07-27T08:32:47.186Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #42 merged. Merge commit 4bf4e1537d5c00a06868a469d81c4817048d4b4d.'
+  - timestamp: '2026-07-27T08:32:50.691Z'
+    action: pr_merged
+    phase: pr
+    details: Merge commit 4bf4e1537d5c00a06868a469d81c4817048d4b4d
 task_title: Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
 task_url: https://linear.app/cloud-ai/issue/CLO-594/lock-the-gcm-library-boundary-the-syncasync-seam-and-the-config-shape
