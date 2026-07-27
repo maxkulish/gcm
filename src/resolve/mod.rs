@@ -19,8 +19,9 @@ use crate::config::{AutoPolicy, ConflictConfig};
 use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
 use crate::output;
-use crate::privacy::{Privacy, SecretScanMode};
+use crate::privacy::Privacy;
 use crate::provider::{ConflictHunk, Provider, Resolution, ResolveContext};
+use gcm::privacy::SecretScanMode;
 
 use crate::git::FinishOutcome;
 use classify::{classify, HunkResolution};

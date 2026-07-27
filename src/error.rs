@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::provider::ProviderError;
+use gcm::privacy::ScanError;
 
 /// Top-level runtime error. CLI usage errors are handled by clap (exit 2);
 /// every variant here maps to exit code 1. User abort is not an error and is
@@ -148,6 +149,16 @@ impl From<ProviderError> for GcmError {
     }
 }
 
+impl From<ScanError> for GcmError {
+    fn from(e: ScanError) -> Self {
+        match e {
+            ScanError::SecretDetected { count } => Self::SecretDetected { count },
+            ScanError::InvalidMode { .. } => Self::Config(e.to_string()),
+            ScanError::RulePack { message } => Self::Config(message),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +243,20 @@ mod tests {
             install_hint: "hint".to_string()
         }
         .leaves_staged());
+    }
+
+    #[test]
+    fn scan_error_maps_to_gcm_error() {
+        assert!(matches!(
+            GcmError::from(gcm::privacy::ScanError::SecretDetected { count: 1 }),
+            GcmError::SecretDetected { count: 1 }
+        ));
+
+        assert!(matches!(
+            GcmError::from(gcm::privacy::ScanError::InvalidMode {
+                value: "panic".to_string()
+            }),
+            GcmError::Config(message) if message.contains("unknown GCM_SECRET_SCAN")
+        ));
     }
 }
