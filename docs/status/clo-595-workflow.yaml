@@ -1,0 +1,213 @@
+task_id: clo-595
+task_type: development
+classification_reason: No explicit **Type:**/label signals and title is not operationally-scoped; treat as a development task.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks:
+    - CLO-596
+  blocked_by:
+    - CLO-594
+  priority: High
+  branch_suggested: kmamemo/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by
+  branch_actual: feat/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by
+workflow:
+  current_phase: implement
+  status: active
+  created_at: '2026-07-27T19:28:26.207Z'
+  updated_at: '2026-07-27T19:47:26.919Z'
+phases:
+  discovery:
+    status: complete
+    approved: true
+    problem_framed: true
+    prd_exists: true
+    prd_file: docs/prds/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates.md
+    prd_created: true
+    discovery_report: docs/discovery/clo-595.md
+    discovery_debt: []
+    baseline_score: 4
+    approaches_identified: 3
+    approach_chosen: 'Approach A: in-package [lib] target with scanner-focused exports'
+  design:
+    status: complete
+    design_doc: docs/designs/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates.md
+    draft_ready: true
+    discovery_context_used: true
+    draft_source: lok-design-draft
+    assumptions_surfaced: true
+    assumptions:
+      - text: >-
+          `src/privacy/{detect,entropy,rules}.rs` reference only `regex`, `serde`, `toml`, `std`, and each other, so
+          they can move into lib without body edits.
+        confidence: high
+        verification: Verified by import inspection in source files.
+      - text: >-
+          Integration tests under `tests/` link the `[lib]` target as an external crate would; adding
+          `tests/library_api.rs` is sufficient for the first external-consumer validation check.
+        confidence: high
+        verification: >-
+          Will be verified by compiling and adding a new integration test named `library_api` with only `gcm::privacy`
+          and `std` types.
+      - text: >-
+          `required-features = ["cli"]` on the `[[bin]]` target is sufficient to keep `clap`/`cliclack`/`ureq` out of
+          the library build without explicit `#[cfg]` in each binary module.
+        confidence: medium
+        verification: Will be verified with `cargo build --no-default-features` and `cargo tree --no-default-features -e normal`.
+      - text: >-
+          Moving `ureq`, `sha2`, `which`, and `url` into the `cli` feature is safe because their callsites are
+          binary-only.
+        confidence: medium
+        verification: Will be verified via default-feature builds and existing integration tests after moving modules.
+      - text: >-
+          `default-run = "gcm"` works with a `required-features` bin and preserves contributor workflows under default
+          settings.
+        confidence: medium
+        verification: Will be confirmed by `cargo run -- --version` and release/install smoke checks.
+      - text: >-
+          No external crates currently depend on gcm today, so making `SecretScanMode::parse` public and removing direct
+          `resolve` process-env access does not break existing consumers.
+        confidence: high
+        verification: Verified by Linear dependency checks and repository scan in task scope; no downstream importers were found.
+      - text: >-
+          The acceptance baseline is 475 tests under default features; implementation should maintain or exceed this
+          count at merge.
+        confidence: high
+        verification: Will be recorded by comparing current `cargo test` counts before/after implementation starts.
+      - text: >-
+          A single `ScanError` enum is sufficient now for scan-mode parse, rule-pack, and abort failures, but
+          CLO-596/CLO-597 may require follow-up adjustments.
+        confidence: low
+        verification: Revisit after CLO-596/CLO-597 define additional error surfaces in adjacent tickets.
+    review_completed: true
+    review_gemini: docs/reviews/clo-595-design-gemini.md
+    review_synthesis: docs/reviews/clo-595-design-synthesis.md
+    review_verdict: approve
+    applied_suggestions: []
+    flagged_suggestions: []
+    human_review_completed: true
+    finalized: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates.md
+    approved: true
+  implement:
+    status: pending
+    commits:
+      - cfb1fa9
+      - b4726d9
+      - c06eed4
+      - 0aad03b
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-27T19:28:26.207Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-595 as development
+  - timestamp: '2026-07-27T19:28:36.524Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: No explicit **Type:**/label signals and title is not operationally-scoped; treat as a
+      development task.
+  - timestamp: '2026-07-27T19:29:04.843Z'
+    action: linear_status_updated
+    phase: init
+    details: Linear issue CLO-595 moved from Backlog to Todo
+  - timestamp: '2026-07-27T19:29:10.249Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-07-27T19:29:28.135Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by checked out from main
+  - timestamp: '2026-07-27T19:30:46.367Z'
+    action: discovery_approved
+    phase: discovery
+    details: 'Approach: In-package library target with scanner-focused exports. Baseline 4/10. 3 approaches considered (A/B/C).'
+  - timestamp: '2026-07-27T19:30:48.159Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-07-27T19:40:51.021Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft generated by lok design-draft and accepted by user for design entry; file at
+      docs/designs/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates.md
+  - timestamp: '2026-07-27T19:40:53.186Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: 8 assumptions surfaced (high:3, medium:4, low:1). See design doc § Assumptions.
+  - timestamp: '2026-07-27T19:40:54.738Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Design approval confirmed by user; AI review was attempted via lok but skipped due workflow template variable
+      issue (`steps.health_check.output` expansion bug), so treated as approved by human confirmation.
+  - timestamp: '2026-07-27T19:40:56.979Z'
+    action: design_human_review_complete
+    phase: design
+    details: Plannotator annotate session closed with no annotations; user marked design approved.
+  - timestamp: '2026-07-27T19:41:05.081Z'
+    action: design_finalized
+    phase: design
+    details: Design approved and ready for plan phase; user completed final review and approved all open items.
+  - timestamp: '2026-07-27T19:41:07.706Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-07-27T19:41:53.009Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      Plan with 6 sub-tasks drafted at
+      docs/plans/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates.md
+  - timestamp: '2026-07-27T19:41:58.275Z'
+    action: plan_approved
+    phase: plan
+    details: 'Plan approved: 6 concrete sub-tasks with acceptance commands; pre-merge gate includes fmt+clippy+test.'
+  - timestamp: '2026-07-27T19:41:59.865Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+  - timestamp: '2026-07-27T19:47:14.659Z'
+    action: subtask_complete
+    phase: implement
+    details: 'ST1 landed: add [lib] crate target and CLI feature-gated dependency boundaries. Commit cfb1fa9'
+  - timestamp: '2026-07-27T19:47:18.080Z'
+    action: subtask_complete
+    phase: implement
+    details: 'ST2 landed: expose scanner API in dedicated privacy module and binary Privacy facade. Commit b4726d9'
+  - timestamp: '2026-07-27T19:47:19.735Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST3 landed: implement scanner surface API + tests in src/privacy/mod.rs (scan/resolve/ranges). Included in commit
+      b4726d9
+  - timestamp: '2026-07-27T19:47:23.504Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST4 landed: update callsites to shared gcm::privacy API in CLI, resolve, main module wiring, and error mapping.
+      Commit c06eed4
+  - timestamp: '2026-07-27T19:47:26.919Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST5 landed: added external-consumer integration test coverage and API-doc example for privacy surface. Commit
+      0aad03b
+task_title: Ship gcm's secret scanner as a library API consumable by other crates
+task_url: https://linear.app/cloud-ai/issue/clo-595/ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates
