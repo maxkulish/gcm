@@ -1,6 +1,6 @@
 # ADR-002: gcm Library Boundary — Crate Shape, Sync/Async Seam, and Config Boundary
 
-**Status:** Accepted
+**Status:** Accepted, surface amended 2026-07-27 (see [Amendment](#amendment-2026-07-27-library-surface-widened))
 **Date:** 2026-07-27
 **Linear Task:** [CLO-594](https://linear.app/cloud-ai/issue/CLO-594) — Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
 **Design Doc:** N/A (this ADR is the design artifact; driven by [discovery report](../discovery/clo-594.md))
@@ -62,7 +62,9 @@ Three facts frame the whole set:
 
 ## Decision 2 — Sync vs async: gcm stays sync; type boundary is the seam
 
-**Decision:** gcm's transport remains sync (`ureq`). Only non-transport types cross the library boundary. The shared surface is `struct`/`enum` definitions and pure functions that do I/O only through injected dependencies.
+**Decision:** gcm's transport remains sync (`ureq`). No async runtime, and no `Future`-returning method, crosses the library boundary. The shared surface is `struct`/`enum` definitions plus functions whose I/O is reachable through an injected dependency, so a caller can drive them without going through gcm's HTTP client.
+
+Transport *implementations* stay in the binary: that means the six provider backends, which speak each vendor's wire format behind the commit-shaped `Provider` trait. A sync helper that accepts an injectable fetcher is not a transport implementation and may cross. `fetch_supported_models_with` at `src/provider/models.rs` already takes `fetch: impl Fn(&HttpGet) -> Result<String, ProviderError>`, which is exactly the shape this allows, so the model registry qualifies (amended 2026-07-27).
 
 **Drivers:**
 1. **gcm's transport is sync `ureq`** — rewriting it to async would touch every provider backend (Groq, Google, OpenAI, Anthropic, Ollama, Vertex) and the `fetch_supported_models` live HTTP path at `src/provider/models.rs:39`. This is a large, risky refactor of a daily-use tool with no immediate benefit.
@@ -108,7 +110,7 @@ Three facts frame the whole set:
 **Decision:** The library has an optional `clap` feature. When enabled, `SecretScanMode`, `ProviderId`, and `AutoPolicy` derive `clap::ValueEnum` via `#[cfg_attr(feature = "clap", derive(ValueEnum))]`. When disabled, they derive only `Serialize`/`Deserialize`/`Debug`/`Clone`/`Copy`/`PartialEq`/`Eq`.
 
 **Drivers:**
-1. **Three types derive `clap::ValueEnum`** — `SecretScanMode` at `src/privacy/mod.rs:13`, `ProviderId` at `src/provider/mod.rs:330`, and `AutoPolicy` at `src/config.rs:138`. All three are needed by the library, but `clap` is a CLI-only concern.
+1. **Three types derive `clap::ValueEnum`.** `SecretScanMode` at `src/privacy/mod.rs:13`, `ProviderId` at `src/provider/mod.rs:333`, and `AutoPolicy` at `src/config.rs:140`. All three are needed by the library, but `clap` is a CLI-only concern.
 2. **A non-CLI consumer should not depend on `clap`** — a background service or async consumer that imports the library should not have `clap` in its dependency tree.
 3. **The `cfg_attr` pattern is idiomatic Rust** — used throughout the ecosystem (e.g., `serde`'s `#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]`).
 
@@ -189,6 +191,8 @@ After extraction, the library (via `[lib]` in the existing package) exports:
 
 ```
 gcm (via [lib] target):
+
+  # Config types and pure functions
   config::Config
   config::ProviderConfig
   config::ConflictConfig
@@ -198,10 +202,38 @@ gcm (via [lib] target):
   config::apply_to_env
   config::config_path
   config::needs_onboarding
+
+  # Secret scanner (CLO-595)
+  privacy::SecretScanMode              # resolved via an env_lookup closure, not process env
+  privacy::rules::RuleEngine
+  privacy::rules::CompiledRule
+  privacy::rules::vendored             # compiles the embedded rules.toml corpus
+  privacy::detect::secret_ranges
+  privacy::detect::redact_secrets
+  privacy::detect::merge_ranges
+  privacy::entropy::Charset
+  privacy::entropy::shannon_entropy
+  privacy::entropy::normalized_entropy
+
+  # Provider identity and model registry (CLO-596)
   provider::ProviderId
   provider::AuthMethod
-  privacy::SecretScanMode
+  provider::ModelSource
+  provider::resolve_model_with_source
+  provider::ProviderError               # transport error, needed by the registry
+  provider::ErrorKind
+  provider::models::fetch_supported_models
+  provider::models::ModelFetchOutcome
+  provider::models::FetchSource
+
+  # Source-attributed status resolution (CLO-597)
+  status::StatusReport
+  status::PathsStatus
+  status::ProviderStatus
+  status::<resolution entry point taking a config value plus env_lookup>
 ```
+
+`src/privacy/rules.rs` embeds `rules.toml` through `include_str!`, so the corpus moves with the module.
 
 The binary (`main.rs`) retains:
 
@@ -210,15 +242,21 @@ Binary-only (not in library):
   config::run_wizard
   config::run_provider_wizard
   config::non_tty_instructions
+  privacy::Privacy                      # diff/git-shaped facade over the scanner
   provider::Provider trait + all backends (Groq, Google, OpenAI, Anthropic, Ollama, Vertex)
-  cache, cli, debug, diff, git, output, paths, plan, resolve, status, ui
+  provider::select                      # returns Box<dyn Provider>
+  provider::ConflictHunk
+  provider::ResolveContext
+  provider::Resolution
+  status::run_status_subcommand         # the Cli-shaped entry point
+  cache, cli, debug, diff, git, output, paths, plan, resolve, ui
 ```
 
 ## Consequences
 
 1. **The library is publishable independently** — it has no dependency on `cliclack`, `console`, or `clap` (unless the consumer opts in via the `clap` feature).
 2. **The binary imports shared types from the library target** — the binary's shared-type imports (`Config`, `ProviderId`, `SecretScanMode`) change from `use crate::X` to `use gcm::X` to ensure type identity. Binary-internal modules (`cache`, `git`, `resolve`, `ui`) keep their `mod` declarations in `main.rs` and are omitted from `lib.rs`. The `[lib]` target is additive.
-3. **The extraction is incremental** — start with a small re-export surface, grow as more types are extracted. The first extraction slice (CLO-595: secret scanner) only needs `SecretScanMode` and `Config`.
+3. **The extraction is incremental.** Start with a small re-export surface, grow as more types are extracted. The first extraction slice (CLO-595: secret scanner) needs `SecretScanMode` plus the scanner itself: `RuleEngine`, `vendored`, `secret_ranges`, `redact_secrets` and the entropy helpers. A consumer given only the mode enum has nothing to scan with.
 4. **The ADR is the design artifact** — the implementation tasks (CLO-595+) reference this ADR for the boundary decisions.
 
 ## Implementation Notes (from Gemini design review)
@@ -229,7 +267,21 @@ The following items were identified by the Gemini 3.5 Flash design review (2026-
 2. **Optional dependencies:** `cliclack` and `console` must be `optional = true` in `Cargo.toml` and gated behind a `cli` feature (enabled by default for the binary). Without this, every library consumer inherits them as non-optional dependencies.
 3. **Module gating is unnecessary:** Binary-internal modules (`cache`, `git`, `resolve`, `ui`) do not need `#[cfg(not(feature = "library"))]` — omitting them from `lib.rs` is sufficient to exclude them from the library build.
 4. **Platform-conditional permissions:** The `save` function's `0600` permission logic must use `#[cfg(unix)]` conditional compilation to avoid breaking Windows builds.
-5. **Error type decoupling:** `GcmError` contains binary-specific variants (`Git`, `Provider`, `OnboardingRequired`). The first extraction (CLO-595) only exports `SecretScanMode` (no `GcmError` return), so this is deferred. If a later extraction exports functions that return `GcmError`, the binary-specific variants must be feature-gated or a library-specific error type must be defined.
+5. **Error type decoupling:** `GcmError` contains binary-specific variants (`Git`, `Provider`, `OnboardingRequired`). The scanner functions CLO-595 exports do not return it (`secret_ranges` yields `Vec<Range<usize>>`, `redact_secrets` yields `String`, `vendored` yields `Result<_, String>`), so the decoupling is deferred rather than avoided. It comes due at the abort path: `Privacy::scan_text` signals a detection through `GcmError::SecretDetected { count }` at `src/privacy/mod.rs:93`, so CLO-595 must define a library-side error for that one case and have the binary map it back. Later extractions returning `GcmError` need the binary-specific variants feature-gated or a library error type defined.
+
+## Amendment 2026-07-27: library surface widened
+
+The seven decisions above are unchanged. What changed is the **Library Surface** section, which as first written locked a boundary narrower than the three extraction tickets it exists to unblock.
+
+Three gaps, found by reading the surface list against each ticket's acceptance criteria:
+
+1. **The scanner was missing.** The surface listed `privacy::SecretScanMode` alone, and the Consequences section stated CLO-595 "only needs `SecretScanMode` and `Config`". But `SecretScanMode` is the `off`/`redact`/`abort` enum; the scanner is `secret_ranges`, `redact_secrets`, `merge_ranges`, `RuleEngine`, `vendored` and the entropy helpers. CLO-595's acceptance criteria require an external consumer to compile a rule engine and scan text, which the original surface could not do. This is the gap that blocked the next ticket, so it drove the amendment.
+2. **`status` was listed as binary-only**, which is precisely what CLO-597 exists to expose. The binary-side `run_status_subcommand` stays; the resolution path and report structs cross.
+3. **The model registry was absent**, and Decision 2's "only non-transport types cross the boundary" read as ruling it out. Decision 2 is now explicit that an injectable-fetcher helper is not a transport implementation, which is the distinction that lets CLO-596 proceed while the six provider backends stay behind.
+
+Also corrected: `ProviderId` cited at `mod.rs:330` is at `:333`, `AutoPolicy` cited at `config.rs:138` is at `:140`, and Implementation Note 5 understated the error work by overlooking `GcmError::SecretDetected` on the abort path.
+
+The alternative considered was re-scoping CLO-596 and CLO-597 down to the original surface. Rejected: it would ship a library carrying types but neither of the two behaviours the downstream consumer named, source attribution and the model registry, leaving the extraction with little reason to exist beyond the scanner.
 
 ## References
 

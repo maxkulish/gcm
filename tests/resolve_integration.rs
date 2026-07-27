@@ -82,6 +82,12 @@ fn mock_ollama_server(response_body: &str) -> (String, thread::JoinHandle<()>) {
         loop {
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    // The listener is non-blocking so the accept loop can time out. On
+                    // BSD/macOS the accepted socket inherits O_NONBLOCK from it (Linux
+                    // does not), which makes set_read_timeout a no-op and lets read()
+                    // and write_all() return WouldBlock before the request arrives.
+                    // Restore blocking so the timeout below is what bounds the wait.
+                    let _ = stream.set_nonblocking(false);
                     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
                     let mut buf = [0u8; 4096];
                     let _ = stream.read(&mut buf);
@@ -116,6 +122,9 @@ fn mock_ollama_server_multiple(responses: Vec<String>) -> (String, thread::JoinH
             loop {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // See mock_ollama_server: the accepted socket inherits
+                        // O_NONBLOCK from the non-blocking listener on BSD/macOS.
+                        let _ = stream.set_nonblocking(false);
                         let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
                         let mut buf = [0u8; 4096];
                         let _ = stream.read(&mut buf);

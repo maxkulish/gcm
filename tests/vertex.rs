@@ -105,6 +105,12 @@ fn mock_server(body: String) -> (String, thread::JoinHandle<String>) {
         loop {
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    // The listener is non-blocking so the accept loop can time out. On
+                    // BSD/macOS the accepted socket inherits O_NONBLOCK from it (Linux
+                    // does not), which makes set_read_timeout a no-op and lets read()
+                    // return WouldBlock before the request arrives. Restore blocking so
+                    // the timeout below is what actually bounds the wait.
+                    let _ = stream.set_nonblocking(false);
                     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
                     let mut buf = [0u8; 8192];
                     let n = stream.read(&mut buf).unwrap_or(0);
