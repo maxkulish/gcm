@@ -22,10 +22,10 @@ linear:
   priority: High
   branch_actual: feat/clo-594-lock
 workflow:
-  current_phase: pr
+  current_phase: complete
   status: active
   created_at: '2026-07-27T07:53:49.988Z'
-  updated_at: '2026-07-27T08:31:53.516Z'
+  updated_at: '2026-07-27T08:34:22.580Z'
 phases:
   discovery:
     status: complete
@@ -154,8 +154,20 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-07-27T08:31:49Z'
     pre_merge_refetch_passed: true
+    merge_commit: 4bf4e1537d5c00a06868a469d81c4817048d4b4d
+    merged_at: '2026-07-27T08:32:25Z'
   complete:
     status: pending
+    merge_commit: 4bf4e1537d5c00a06868a469d81c4817048d4b4d
+    merged_at: '2026-07-27T08:32:25Z'
+    aggregation_files_updated: true
+    lessons_file: .pi/lessons/clo-594-library-boundary-lessons.md
+    lessons_learned:
+      - 'L1 - ADR must state type identity consistently: binary imports from library target, not both crate:: and gcm::'
+      - >-
+        L2 - dep:clap in Cargo features activates the optional dep but NOT the clap feature; use cli = ["clap", ...] not
+        ["dep:clap", ...]
+      - L3 - Package name in path dependency must match [package] name, not an invented library name
 history:
   - timestamp: '2026-07-27T07:53:49.988Z'
     action: workflow_started
@@ -304,5 +316,29 @@ history:
     action: pre_merge_refetch_passed
     phase: pr
     details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
+  - timestamp: '2026-07-27T08:32:08.307Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-07-27T08:32:47.186Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #42 merged. Merge commit 4bf4e1537d5c00a06868a469d81c4817048d4b4d.'
+  - timestamp: '2026-07-27T08:32:50.691Z'
+    action: pr_merged
+    phase: pr
+    details: Merge commit 4bf4e1537d5c00a06868a469d81c4817048d4b4d
+  - timestamp: '2026-07-27T08:33:53.927Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced. CLO-594 moved to Recently Completed, Phase 6 marked Complete,
+      CLO-595 added to Unblocked & Ready.
+  - timestamp: '2026-07-27T08:34:22.580Z'
+    action: lessons_extracted
+    phase: complete
+    details: >-
+      3 lessons recorded. File: .pi/lessons/clo-594-library-boundary-lessons.md. L1: type identity in [lib]+[[bin]], L2:
+      dep:clap vs clap feature, L3: package name in path dependency.
 task_title: Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
 task_url: https://linear.app/cloud-ai/issue/CLO-594/lock-the-gcm-library-boundary-the-syncasync-seam-and-the-config-shape
