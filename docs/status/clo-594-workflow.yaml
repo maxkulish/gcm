@@ -25,7 +25,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-27T07:53:49.988Z'
-  updated_at: '2026-07-27T08:16:37.418Z'
+  updated_at: '2026-07-27T08:31:53.516Z'
 phases:
   discovery:
     status: complete
@@ -145,7 +145,15 @@ phases:
     validation_synthesis_report: docs/reviews/clo-594-validation-synthesis.md
     validation_synthesis_verdict: PASS_WITH_NOTES
   pr:
-    status: in_progress
+    status: complete
+    pr_number: 42
+    pr_url: https://github.com/maxkulish/gcm/pull/42
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-07-27T08:31:17Z'
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-27T08:31:49Z'
+    pre_merge_refetch_passed: true
   complete:
     status: pending
 history:
@@ -274,5 +282,27 @@ history:
     action: pre_flight_checks_passed
     phase: pr
     details: 'Pre-merge gate green: fmt + clippy + test all pass (475 tests, 0 failures).'
+  - timestamp: '2026-07-27T08:17:05.996Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #42 opened: https://github.com/maxkulish/gcm/pull/42'
+  - timestamp: '2026-07-27T08:20:36.685Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required checks passing: build/test (ubuntu-latest) pass, build/test (macos-latest) pass.'
+  - timestamp: '2026-07-27T08:31:22.004Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
+      inline comments expected.
+  - timestamp: '2026-07-27T08:31:36.074Z'
+    action: review_addressed
+    phase: pr
+    details: 0 threads resolved; 0 replies posted; bots not installed, zero inline comments; unresolved-thread re-check clean.
+  - timestamp: '2026-07-27T08:31:53.516Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
 task_title: Lock the gcm library boundary, the sync/async seam and the config shape (ADR)
 task_url: https://linear.app/cloud-ai/issue/CLO-594/lock-the-gcm-library-boundary-the-syncasync-seam-and-the-config-shape
