@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-27 (CLO-594 started — library boundary ADR)
+**Last Updated**: 2026-07-27 (CLO-594 merged — library boundary ADR; CLO-595 ready)
 
 ## Summary
 
@@ -12,16 +12,22 @@
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 3 | In Progress |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
-| Phase 6: Library Extraction | 1 | 0 | In Progress |
+| Phase 6: Library Extraction | 5 | 1 | In Progress |
 | Maintenance (cross-cutting) | 3 | 3 | Complete |
 
 ## Phase 6: Library Extraction
 
-Source: [CLO-594](https://linear.app/cloud-ai/issue/CLO-594) — Lock the gcm library boundary, the sync/async seam and the config shape (ADR). First step before any code extraction: decide crate shape, sync vs async, and the config boundary.
+Source: [CLO-594](https://linear.app/cloud-ai/issue/CLO-594) — Lock the gcm library boundary, the sync/async seam and the config shape (ADR). First step before any code extraction: decide crate shape, sync vs async, and the config boundary. Boundary now recorded in [ADR-002](adrs/002-library-boundary.md); the four slices below consume it in order, each gated on the full suite staying green.
+
+Upstream: lok's [CLO-593](https://linear.app/cloud-ai/issue/CLO-593) extracted its async `Backend` first, which is what let ADR-002 settle gcm's sync/async question against a real trait rather than in the abstract.
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
-| CLO-594 | Lock the gcm library boundary, the sync/async seam and the config shape (ADR) | In Progress | CLO-593 |
+| CLO-594 | Lock the gcm library boundary, the sync/async seam and the config shape (ADR) | Done | CLO-593 |
+| CLO-595 | Ship gcm's secret scanner as a library API consumable by other crates | Ready | CLO-594 |
+| CLO-596 | Expose provider identity and the live model registry through the gcm library | Backlog | CLO-595 |
+| CLO-597 | Expose source-attributed status resolution through the gcm library | Backlog | CLO-596 |
+| CLO-598 | Verify the gcm library from an out-of-tree consumer and lock its public surface | Backlog | CLO-597 |
 
 ## Phase 1: Foundations
 
