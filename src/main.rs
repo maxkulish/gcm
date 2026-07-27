@@ -8,6 +8,7 @@ mod git;
 mod output;
 mod paths;
 mod plan;
+#[path = "privacy/facade.rs"]
 mod privacy;
 mod provider;
 mod resolve;
