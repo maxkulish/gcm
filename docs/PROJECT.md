@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-22 (CLO-564 merged — PR #41; live Vertex discovery shipped, releasing v0.5.2)
+**Last Updated**: 2026-07-27 (CLO-594 started — library boundary ADR)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -89,7 +89,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — |
+| [CLO-594](https://linear.app/cloud-ai/issue/CLO-594) | Lock the gcm library boundary, the sync/async seam and the config shape (ADR) | In Progress | Phase 6 | CLO-593 |
 
 ## Up Next (Ready - no open blockers)
 

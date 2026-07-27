@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-22 (CLO-564 merged — PR #41; Maintenance complete)
+**Last Updated**: 2026-07-27 (CLO-594 started — library boundary ADR)
 
 ## Summary
 
@@ -12,7 +12,16 @@
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 3 | In Progress |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
+| Phase 6: Library Extraction | 1 | 0 | In Progress |
 | Maintenance (cross-cutting) | 3 | 3 | Complete |
+
+## Phase 6: Library Extraction
+
+Source: [CLO-594](https://linear.app/cloud-ai/issue/CLO-594) — Lock the gcm library boundary, the sync/async seam and the config shape (ADR). First step before any code extraction: decide crate shape, sync vs async, and the config boundary.
+
+| Task | Title | Status | Dependencies |
+|------|-------|--------|--------------|
+| CLO-594 | Lock the gcm library boundary, the sync/async seam and the config shape (ADR) | In Progress | CLO-593 |
 
 ## Phase 1: Foundations
 
