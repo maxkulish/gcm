@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T10:12:29.528Z'
+  updated_at: '2026-07-28T10:13:26.207Z'
 phases:
   discovery:
     status: complete
@@ -112,6 +112,7 @@ phases:
       - 63006bc
       - 64f7631
       - b968cf7
+      - 17b314b
   pr:
     status: pending
   complete:
@@ -206,6 +207,12 @@ history:
     phase: implement
     details: >-
       ST3 landed: move http.rs behind library boundary with cfg gating. Commit b968cf7. cargo build
+      --no-default-features and cargo test green.
+  - timestamp: '2026-07-28T10:13:26.207Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST4 landed: move models.rs behind library boundary with cfg gating. Commit 17b314b. cargo build
       --no-default-features and cargo test green.
 task_title: Expose provider identity and the live model registry through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm

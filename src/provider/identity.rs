@@ -92,11 +92,13 @@ pub enum ErrorKind {
     Config(String),
 }
 
+#[cfg(feature = "cli")]
 /// Which `kind`s are worth retrying (FR-22): only transient 429 / 5xx.
 pub(crate) fn is_retryable(kind: &ErrorKind) -> bool {
     matches!(kind, ErrorKind::RateLimit { .. } | ErrorKind::Server(_))
 }
 
+#[cfg(feature = "cli")]
 /// The server's `Retry-After` hint, when the error carries one (429 only).
 pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
     match kind {
@@ -105,6 +107,7 @@ pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
     }
 }
 
+#[cfg(feature = "cli")]
 /// Read a non-empty, parseable `u64` env var, else `None` (shared by submodules).
 pub(crate) fn env_u64(name: &str) -> Option<u64> {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
@@ -139,6 +142,11 @@ pub enum AuthMethod {
     KeylessAdc,
 }
 
+/// OpenAI supported model family (CLO-545). Kept in identity so the library's
+/// model registry can filter/dedupe OpenAI models without depending on the
+/// binary-only `openai` backend module.
+pub(crate) const OPENAI_SUPPORTED_MODELS: &[&str] = &["gpt-5.6-terra", "gpt-5.6-luna"];
+
 impl ProviderId {
     /// The provider's API key env var, or `None` for key-free Ollama and Vertex.
     /// Centralizes the per-backend key mapping so config onboarding (CLO-496)
@@ -159,7 +167,7 @@ impl ProviderId {
         match self {
             ProviderId::Groq => "openai/gpt-oss-120b",
             ProviderId::Google => "gemini-3.5-flash-lite",
-            ProviderId::Openai => "gpt-5.6-terra",
+            ProviderId::Openai => OPENAI_SUPPORTED_MODELS[0],
             ProviderId::Anthropic => "claude-haiku-4-5",
             // Local, user-pulled model (FR-56; owner default). `:cloud` variants
             // (e.g. deepseek-v4-flash:cloud) work via --model but are NOT zero-egress.

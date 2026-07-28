@@ -13,5 +13,7 @@
 
 pub mod privacy;
 
+pub mod provider;
+
 #[doc(hidden)]
 pub mod debug;

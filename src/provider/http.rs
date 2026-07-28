@@ -5,11 +5,15 @@
 
 #[cfg(feature = "cli")]
 use std::io::Read;
+#[cfg(feature = "cli")]
 use std::time::Duration;
 
 use serde_json::Value;
 
-use super::{env_u64, is_retryable, retry_after_hint, ErrorKind, ProviderError};
+#[cfg(feature = "cli")]
+use super::identity::ErrorKind;
+#[cfg(feature = "cli")]
+use super::identity::{env_u64, is_retryable, retry_after_hint, ProviderError};
 
 /// Default client timeout. Bumped 30 -> 60s (CLO-489 round-2 review pt 2):
 /// reasoning models / large diffs routinely take 45-90s to first token, and a
@@ -206,6 +210,7 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
     Err(wrap(kind))
 }
 
+#[cfg(feature = "cli")]
 /// Classify a non-2xx HTTP status into a typed [`ErrorKind`] (pure; unit-tested).
 /// 504 (Gateway Timeout) is a `Server` error, NOT the client-side `Timeout`.
 fn classify_status(
@@ -229,6 +234,7 @@ fn classify_status(
     }
 }
 
+#[cfg(feature = "cli")]
 /// Parse a `Retry-After` header value (integer seconds only; HTTP-date or
 /// unparseable/empty -> `None`).
 fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
@@ -277,6 +283,7 @@ struct RetryConfig {
     max: Duration,
 }
 
+#[cfg(feature = "cli")]
 impl RetryConfig {
     fn from_env() -> Self {
         RetryConfig {
@@ -295,6 +302,7 @@ impl RetryConfig {
 
 /// Backoff before the next attempt: honor a `Retry-After` hint (capped at
 /// `cfg.max`), else exponential `base * 2^attempt` capped at `cfg.max`.
+#[cfg(feature = "cli")]
 fn backoff_delay(attempt: u32, hint: Option<Duration>, cfg: &RetryConfig) -> Duration {
     if let Some(d) = hint {
         return d.min(cfg.max);

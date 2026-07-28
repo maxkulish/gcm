@@ -10,6 +10,7 @@ mod paths;
 mod plan;
 #[path = "privacy/facade.rs"]
 mod privacy;
+#[path = "provider/facade.rs"]
 mod provider;
 mod resolve;
 mod status;
