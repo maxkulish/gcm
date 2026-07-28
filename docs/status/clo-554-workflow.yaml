@@ -152,7 +152,20 @@ phases:
           unused pub fn (dead_code) purely for symmetry. Spec decomposition item 2
           is the thing that was slightly wrong here, not the code.
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/47
+    pr_number: 47
+    base_moved_mid_flight: >-
+      CLO-595 (secret scanner as a library API, PR #45/#46) merged into main while
+      CLO-554 was in the validation gate, adding src/lib.rs and a [lib] target and
+      touching src/cli.rs, src/error.rs, src/privacy/ and src/resolve/mod.rs.
+      Rebased onto post-CLO-595 main: source files auto-merged; the three
+      aggregation docs conflicted and were hand-resolved (both sides had edited
+      the Last Updated lines, Active Work, and Unblocked & Ready). Re-verified
+      after the rebase - make check green, 514 cargo tests (the lib split moved 39
+      privacy tests into the new lib target), acceptance 264/0. CLO-554's unit
+      tests stay in the bin target, so `cargo test --bin gcm` remains correct.
+    revalidated_after_rebase: true
   complete:
     status: pending
 history:
@@ -193,6 +206,18 @@ history:
     action: pushed_to_remote
     phase: implement
     details: 'Branch feat/clo-554-resolve-until-clean pushed to origin (new branch)'
+  - timestamp: '2026-07-28T09:40:00.000Z'
+    action: pushed_to_remote
+    phase: pr
+    details: >-
+      Rebased onto post-CLO-595 main (base moved during the validation gate) and
+      force-pushed with --force-with-lease. Source auto-merged; PROJECT.md,
+      DEPENDENCIES.md and ROADMAP.md hand-resolved. Full re-verification after the
+      rebase: make check green, 514 cargo tests, acceptance 264 PASS / 0 FAIL.
+  - timestamp: '2026-07-28T09:46:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #47 created against post-CLO-595 main; Linear comment posted and CLO-554 moved to In Review'
   - timestamp: '2026-07-28T00:40:00.000Z'
     action: spec_approved
     phase: spec
