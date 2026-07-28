@@ -57,6 +57,44 @@ fn prompt_choice(prompt: &str) -> Result<PromptChoice, GcmError> {
     prompt_choice_from(&mut lock, prompt)
 }
 
+/// Ask a bare yes/no question on stderr, reading from `reader`. Shares the
+/// [`PROMPT_ATTEMPTS`] budget and the safety contract of
+/// [`prompt_choice_from`]: only an explicit `y`/`yes` returns true, and bare
+/// Enter, EOF, `no`, and unrecognized input (including `e`, which has no
+/// meaning here) all decline.
+fn prompt_yes_no_from(reader: &mut impl BufRead, prompt: &str) -> Result<bool, GcmError> {
+    for _ in 0..PROMPT_ATTEMPTS {
+        eprint!("{prompt}");
+        std::io::stderr().flush().ok();
+        let mut response = String::new();
+        let read = reader
+            .read_line(&mut response)
+            .map_err(|_| GcmError::NonInteractive)?;
+        if read == 0 {
+            return Ok(false);
+        }
+        match parse_choice(&response) {
+            Some(PromptChoice::Yes) => return Ok(true),
+            Some(PromptChoice::No) => return Ok(false),
+            // `edit` parses but means nothing for a continue/stop question.
+            Some(PromptChoice::Edit) | None => eprintln!("Please answer y(es) or n(o)."),
+        }
+    }
+    Ok(false)
+}
+
+/// The round gate for `gcm resolve`'s resolve-until-clean loop (CLO-554).
+///
+/// `summary` describes the stop the loop is about to spend provider calls on -
+/// the commit and its conflicted file count - so the answer is informed. Asked
+/// on stderr, keeping stdout a pure JSON envelope under `--json`.
+pub fn confirm_round(summary: &str, prompt: &str) -> Result<bool, GcmError> {
+    eprintln!("{summary}");
+    let stdin = std::io::stdin();
+    let mut lock = stdin.lock();
+    prompt_yes_no_from(&mut lock, prompt)
+}
+
 /// Result of the confirmation step.
 pub enum Decision {
     /// Commit with this (possibly edited) message.
@@ -245,6 +283,44 @@ mod tests {
 
     fn choose(input: &str) -> PromptChoice {
         prompt_choice_from(&mut Cursor::new(input.as_bytes()), "test? [y/N/e(dit)] ").unwrap()
+    }
+
+    fn gate(input: &str) -> bool {
+        prompt_yes_no_from(&mut Cursor::new(input.as_bytes()), "continue? [y/N] ").unwrap()
+    }
+
+    #[test]
+    fn round_gate_accepts_only_explicit_yes() {
+        for s in ["y\n", "Y\n", "yes\n", "YES\n", " y \n"] {
+            assert!(gate(s), "input {s:?} should continue the loop");
+        }
+    }
+
+    #[test]
+    fn round_gate_declines_on_enter_eof_and_no() {
+        // Bare Enter, an exhausted reader (Ctrl-D), and explicit no all stop
+        // the loop - a round gate must never spend on an ambiguous answer.
+        for s in ["\n", "", "n\n", "no\n", "NO\n"] {
+            assert!(!gate(s), "input {s:?} should stop the loop");
+        }
+    }
+
+    #[test]
+    fn round_gate_declines_on_edit_and_garbage() {
+        // `e` parses as Edit for a file prompt but is meaningless here, so it
+        // reprompts like garbage does and then resolves to No.
+        for s in ["e\n", "edit\n", "maybe\n", "sure\n"] {
+            assert!(!gate(s), "input {s:?} should stop the loop");
+        }
+    }
+
+    #[test]
+    fn round_gate_reprompt_budget_is_bounded_then_declines() {
+        // Three unrecognized answers exhaust PROMPT_ATTEMPTS -> No, even
+        // though a Yes follows on the fourth line.
+        assert!(!gate("what\nhuh\n???\ny\n"));
+        // Within budget, a Yes after two bad answers still lands.
+        assert!(gate("what\nhuh\ny\n"));
     }
 
     #[test]

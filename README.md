@@ -366,13 +366,34 @@ The pipeline is layered so the LLM only sees what genuinely needs judgement:
    never block your confirmed work: it is staged, the finish is skipped, and the
    remaining paths are listed with the exact command to continue.
 
-A rebase that stops on its **next** conflicted commit after continuing ends the run with
-a message to re-run `gcm resolve` (one conflict stop per run).
+#### Multi-commit rebases: resolve until clean
+
+A rebase or cherry-pick sequence usually conflicts more than once. When continuing stops
+on the **next** conflicted commit, gcm keeps going instead of handing the job back: each
+stop is a fresh **round** with its own propose/confirm/apply transaction. Accepting round
+1 does not pre-authorize round 2.
+
+Two boundaries keep that from quietly spending your provider budget:
+
+- **A round gate.** Before each round after the first, gcm names the commit it is about to
+  work on and its conflicted file count, then asks `[y/N]`. Answering no (or Enter, or
+  Ctrl-D) stops the loop having spent nothing on that round. `--yes` skips the gate.
+- **A round cap.** `--max-rounds` (default 10) bounds how far one invocation goes.
+  `--max-rounds 1` stops after a single conflict, the behavior before this loop existed.
+
+Every exit path leaves the rounds already committed intact and names the way out. Note
+that `git rebase --abort` discards **all** of them, not just the current stop - gcm says
+so explicitly whenever it stops mid-sequence.
+
+With commit signing enabled, each round's continue may raise a passphrase prompt or a
+hardware-token touch - once per round, not once per run.
 
 ```sh
 gcm resolve                                       # confirm each file; Yes to all finishes the merge
 gcm resolve --dry-run                             # preview resolutions; write nothing
 gcm resolve --yes                                 # non-interactive: accept validated resolutions
+gcm resolve --max-rounds 3                        # drive at most 3 conflict stops in one run
+gcm resolve --max-rounds 1                        # one conflict stop, then hand back
 gcm resolve --no-finish                           # apply + stage, but skip the finishing commit
 gcm resolve --no-mergiraf                         # skip the structural pre-merge stage
 gcm resolve --conflict-validate-cmd "cargo check" # gate each resolution on a build/test
@@ -404,6 +425,7 @@ the matching `--conflict-*` flags (which take precedence).
 | `validate_cmd` / `--conflict-validate-cmd` | (none) | Shell command run against each resolved file; a failure retries once, then escalates |
 | `sensitive_paths` / `--conflict-sensitive-paths` | (none) | Glob patterns whose files always require manual review |
 | `mergiraf` / `--no-mergiraf` | `true` | Use `mergiraf` for structural pre-resolution when it is on `PATH` |
+| `max_rounds` / `--max-rounds` | `10` | How many conflict stops one run drives a rebase/cherry-pick sequence through. `1` stops after the first. `0` is rejected |
 
 ```toml
 [conflict]
@@ -412,6 +434,7 @@ auto_policy = "trivial"
 validate_cmd = "cargo check"
 sensitive_paths = ["migrations/*", "**/secrets.rs"]
 mergiraf = true
+max_rounds = 10
 ```
 
 `.gcmignore` and `--secret-scan` apply to conflict resolution exactly as they do to the

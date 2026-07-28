@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-28 (CLO-595 merged — secret scanner exposed as library API; CLO-596 unblocked)
+**Last Updated**: 2026-07-28 (CLO-595 merged — secret scanner library API; CLO-554 in review — Phase 4 resolve-until-clean loop)
 
 ## Summary
 
@@ -75,7 +75,7 @@ New feature area: LLM-assisted git merge/rebase/cherry-pick conflict resolution,
 | CLO-531 | `gcm resolve` LLM-assisted resolver (Phase 1: local markers) | Done | CLO-489, CLO-487, CLO-496/516, CLO-490/514 (all Done, related) |
 | CLO-533 | `gcm resolve` remote MR/PR conflict orchestration (Phase 2) | Done | CLO-531 |
 | CLO-555 | Rework `gcm resolve` into an ownership transaction (apply, stage, signed finish) | Done | CLO-531, CLO-533 (both Done); design: docs/hotfix/2026-07-12-resolve-stage-and-finish.md |
-| CLO-554 | Add resolve-until-clean rebase loop to `gcm resolve` | Backlog | CLO-555 (Done 2026-07-13) |
+| CLO-554 | Add resolve-until-clean rebase loop to `gcm resolve` | In Progress | CLO-555 (Done 2026-07-13) |
 
 ## Phase 5: Provider expansion
 

@@ -104,6 +104,11 @@ pub struct ConflictConfig {
     /// Whether to use mergiraf if on PATH (default true).
     #[serde(default = "default_mergiraf")]
     pub mergiraf: bool,
+    /// Maximum conflict rounds a single `gcm resolve` drives a rebase or
+    /// cherry-pick sequence through (CLO-554, default 10). `1` reproduces the
+    /// pre-loop behavior of stopping after one conflict. `0` is rejected.
+    #[serde(default = "default_max_rounds")]
+    pub max_rounds: u32,
 }
 
 fn default_conflict_temperature() -> f64 {
@@ -118,6 +123,15 @@ fn default_mergiraf() -> bool {
     true
 }
 
+fn default_max_rounds() -> u32 {
+    10
+}
+
+/// Shared wording for a zero round cap, used by the clap parser and the config
+/// validator so both surfaces say the same thing.
+pub const MAX_ROUNDS_ZERO: &str =
+    "max_rounds must be at least 1 (1 resolves a single conflict stop, the pre-CLO-554 behavior)";
+
 /// Must mirror the per-field serde defaults above. A derived `Default` does
 /// not (bool -> false, f64 -> 0.0): the parent field's `#[serde(default)]`
 /// routes through THIS impl whenever config.toml has no `[conflict]` section
@@ -131,6 +145,7 @@ impl Default for ConflictConfig {
             sensitive_paths: Vec::new(),
             auto_policy: default_auto_policy(),
             mergiraf: default_mergiraf(),
+            max_rounds: default_max_rounds(),
         }
     }
 }
@@ -1620,8 +1635,41 @@ mod tests {
         assert!(cfg.conflict.mergiraf, "mergiraf defaults to enabled");
         assert_eq!(cfg.conflict.temperature, 0.1);
         assert_eq!(cfg.conflict.auto_policy, AutoPolicy::Trivial);
+        assert_eq!(cfg.conflict.max_rounds, 10, "round cap defaults to 10");
         // And the manual Default impl must agree with the serde defaults.
         assert_eq!(cfg.conflict, ConflictConfig::default());
+    }
+
+    #[test]
+    fn partial_conflict_section_keeps_max_rounds_default() {
+        // A `[conflict]` table written before CLO-554 has no max_rounds key;
+        // the per-field serde default must fill it rather than zeroing it,
+        // which would deadlock the loop driver on an impossible cap.
+        let text = "version = 2\n\
+                    default = \"ollama\"\n\
+                    \n\
+                    [[providers]]\n\
+                    id = \"ollama\"\n\
+                    \n\
+                    [conflict]\n\
+                    temperature = 0.3\n";
+        let cfg = parse_config(text).unwrap();
+        assert_eq!(cfg.conflict.temperature, 0.3);
+        assert_eq!(cfg.conflict.max_rounds, 10);
+    }
+
+    #[test]
+    fn explicit_max_rounds_is_honored() {
+        let text = "version = 2\n\
+                    default = \"ollama\"\n\
+                    \n\
+                    [[providers]]\n\
+                    id = \"ollama\"\n\
+                    \n\
+                    [conflict]\n\
+                    max_rounds = 3\n";
+        let cfg = parse_config(text).unwrap();
+        assert_eq!(cfg.conflict.max_rounds, 3);
     }
 
     #[test]

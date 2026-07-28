@@ -359,12 +359,21 @@ impl Repo {
         self.has_head_ref("MERGE_HEAD")
     }
 
-    /// True if a rebase is in progress (`.git/REBASE_HEAD` exists).
+    /// True if a rebase is in progress, decided by git's sequencer directory
+    /// (`.git/rebase-merge` or `.git/rebase-apply`) - the same signal
+    /// `git status` uses.
+    ///
+    /// `REBASE_HEAD` is deliberately NOT the test: git leaves that ref behind
+    /// after a rebase finishes, so keying on it reports a completed rebase as
+    /// still running. That mattered only once something drove a rebase to
+    /// completion through gcm (CLO-554's loop); before that every rebase run
+    /// ended while the ref was legitimately live.
     pub fn is_rebasing(&self) -> bool {
-        self.has_head_ref("REBASE_HEAD")
+        self.has_git_path("rebase-merge") || self.has_git_path("rebase-apply")
     }
 
     /// True if a cherry-pick is in progress (`.git/CHERRY_PICK_HEAD` exists).
+    /// Unlike `REBASE_HEAD`, git does clear this on a successful continue.
     pub fn is_cherry_picking(&self) -> bool {
         self.has_head_ref("CHERRY_PICK_HEAD")
     }
@@ -380,6 +389,45 @@ impl Repo {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
+    }
+
+    /// Whether a path inside the git dir exists. `--git-path` resolves the
+    /// location correctly for linked worktrees, where `.git` is a file.
+    fn has_git_path(&self, name: &str) -> bool {
+        self.capture(&["rev-parse", "--git-path", name])
+            .map(|p| self.root.join(p.trim()).exists())
+            .unwrap_or(false)
+    }
+
+    /// Short sha of the current HEAD. Used to name the commit a rebase step
+    /// just produced, which `FinishOutcome::StoppedOnNextConflict` does not
+    /// carry (it reports the stop, not the commit before it).
+    pub fn head_short_sha(&self) -> Result<String, GcmError> {
+        Ok(self
+            .capture(&["rev-parse", "--short", "HEAD"])?
+            .trim()
+            .to_string())
+    }
+
+    /// The sequencing operation currently stopped on a conflict, as
+    /// (operation name, short sha of the commit being applied). Only rebase and
+    /// cherry-pick sequence, so a merge - which has exactly one stop and carries
+    /// no per-step head - yields `None`, as does a clean tree.
+    ///
+    /// The dispatch order mirrors [`Self::finish_conflict_op`]: a stopped rebase
+    /// or cherry-pick can carry auxiliary merge state, so the sequencing refs are
+    /// checked first.
+    pub fn conflict_op_head(&self) -> Option<(&'static str, String)> {
+        let (op, name) = if self.is_rebasing() {
+            ("rebase", "REBASE_HEAD")
+        } else if self.is_cherry_picking() {
+            ("cherry-pick", "CHERRY_PICK_HEAD")
+        } else {
+            return None;
+        };
+        let sha = self.capture(&["rev-parse", "--short", name]).ok()?;
+        let sha = sha.trim();
+        (!sha.is_empty()).then(|| (op, sha.to_string()))
     }
 
     /// Enumerate unmerged (conflicted) file paths via `git diff --name-only --diff-filter=U -z`.
@@ -1111,6 +1159,124 @@ mod tests {
         assert!(
             !repo.unmerged_files().unwrap().is_empty(),
             "next commit's conflict is present"
+        );
+    }
+
+    #[test]
+    fn finish_rebase_completing_the_sequence_reports_completed() {
+        // Regression: git leaves REBASE_HEAD behind after the rebase finishes,
+        // so the old REBASE_HEAD-based is_rebasing() reported a completed
+        // rebase as still in progress and finish_conflict_op classified the
+        // success as Failed. Nothing drove a rebase to completion before the
+        // CLO-554 loop, which is why this stayed latent.
+        if !signing_available() {
+            eprintln!("skipping finish_rebase_completing: commit signing unavailable here");
+            return;
+        }
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "f1\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "c1"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "moved\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "move main"]);
+        run_git(root, &["checkout", "-q", "feature"]);
+        run_git(root, &["rebase", "@{-1}"]); // stops on the only conflict
+        assert!(repo.is_rebasing(), "precondition: rebase stopped");
+        std::fs::write(root.join("f.txt"), "r1\n").unwrap();
+        run_git(root, &["add", "f.txt"]);
+
+        // This continue finishes the whole sequence.
+        let outcome = repo.finish_conflict_op().unwrap();
+        assert!(
+            matches!(outcome, FinishOutcome::Completed { .. }),
+            "expected Completed, got {outcome:?}"
+        );
+        assert!(
+            !repo.is_rebasing(),
+            "a finished rebase is not in progress, even though REBASE_HEAD lingers"
+        );
+        assert!(!repo.has_conflict_state());
+        assert!(repo.conflict_op_head().is_none());
+    }
+
+    #[test]
+    fn conflict_op_head_names_the_stopped_rebase_commit() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "f1\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "c1"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "moved\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "move main"]);
+        run_git(root, &["checkout", "-q", "feature"]);
+        run_git(root, &["rebase", "@{-1}"]); // stops on c1
+
+        let (op, sha) = repo.conflict_op_head().expect("stopped rebase has a head");
+        assert_eq!(op, "rebase");
+        // The sha names the commit being applied (c1), not HEAD.
+        let c1 = String::from_utf8_lossy(
+            &run_git(root, &["rev-parse", "--short", "REBASE_HEAD"]).stdout,
+        )
+        .trim()
+        .to_string();
+        assert_eq!(sha, c1);
+        assert!(!sha.is_empty());
+    }
+
+    #[test]
+    fn conflict_op_head_names_the_stopped_cherry_pick_commit() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "feature\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "feature"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "main side\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "main side"]);
+        run_git(root, &["cherry-pick", "feature"]); // conflict
+
+        let (op, sha) = repo
+            .conflict_op_head()
+            .expect("stopped cherry-pick has a head");
+        assert_eq!(op, "cherry-pick");
+        assert!(!sha.is_empty());
+    }
+
+    #[test]
+    fn conflict_op_head_is_none_for_merge_and_clean_tree() {
+        let (dir, repo) = temp_repo();
+        let root = dir.path();
+        std::fs::write(root.join("f.txt"), "base\n").unwrap();
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "base"]);
+        assert!(
+            repo.conflict_op_head().is_none(),
+            "clean tree has no op head"
+        );
+
+        run_git(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("f.txt"), "feature\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "feature"]);
+        run_git(root, &["checkout", "-q", "-"]);
+        std::fs::write(root.join("f.txt"), "main side\n").unwrap();
+        run_git(root, &["commit", "-q", "-am", "main side"]);
+        run_git(root, &["merge", "feature"]); // conflict
+        assert!(repo.is_merging(), "precondition: merge conflicted");
+        assert!(
+            repo.conflict_op_head().is_none(),
+            "a merge has one stop and no per-step head"
         );
     }
 

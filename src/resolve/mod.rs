@@ -128,13 +128,204 @@ pub enum ResolveMode {
 /// Entry point for `gcm resolve`.
 pub fn run_resolve(args: &Cli) -> Result<(), GcmError> {
     let repo = Repo::discover()?.ok_or(GcmError::NotARepo)?;
-    let report = run_resolve_in_repo(&repo, args, ResolveMode::Local)?;
+    let report = run_resolve_loop(&repo, args)?;
     if args.json {
         report::emit(&report);
     } else {
         print_human_report(&report);
     }
     Ok(())
+}
+
+/// The sequencing head of a stopped rebase/cherry-pick: (operation, short sha).
+type OpHead = (&'static str, String);
+
+/// Drive a rebase or cherry-pick sequence to completion, one transaction per
+/// conflict stop (CLO-554).
+///
+/// The engine itself stays single-round: this is the only place that reads
+/// `StoppedOnConflict` as "keep going" rather than "we are done". Between
+/// rounds it enforces the two boundaries that keep provider spend honest - the
+/// round cap, and (interactively) a gate the user answers *before* the next
+/// round's propose phase issues any LLM call.
+///
+/// A merge never sequences, so it runs exactly one round and leaves the
+/// envelope byte-identical to the pre-loop output.
+fn run_resolve_loop(repo: &Repo, args: &Cli) -> Result<ResolveReport, GcmError> {
+    // Read the cap up front. This also validates a config-supplied 0 before the
+    // first round touches the working tree (clap already rejected a flag 0).
+    let max_rounds = resolve_conflict_config(args)?.max_rounds;
+
+    let mut rounds: Vec<report::RoundReport> = Vec::new();
+    let mut head: Option<OpHead> = repo.conflict_op_head();
+    // Where the operation is parked when the loop exits mid-sequence.
+    let mut stopped_on: Option<String> = None;
+
+    let (mut envelope, terminal) = loop {
+        let round_no = rounds.len() + 1;
+        print_round_banner(repo, round_no, max_rounds, head.as_ref())?;
+
+        let round = run_resolve_in_repo(repo, args, ResolveMode::Local)?;
+        print_round_summary(repo, round_no, &round);
+
+        rounds.push(report::RoundReport {
+            round: round_no,
+            commit: head.as_ref().map(|(_, sha)| sha.clone()),
+            status: round.status,
+            files: round.files.clone(),
+            staged: round.staged.clone(),
+            finish: round.finish.clone(),
+        });
+
+        let stopped_again = matches!(
+            round.finish.as_ref().map(|f| f.result),
+            Some(FinishResult::StoppedOnConflict)
+        );
+
+        if !stopped_again {
+            // The round itself ended the run: nothing left to continue onto.
+            let terminal = match round.status {
+                ResolveStatus::Aborted => report::LoopTerminal::Aborted,
+                ResolveStatus::Partial => report::LoopTerminal::Partial,
+                _ => report::LoopTerminal::Completed,
+            };
+            break (round, terminal);
+        }
+
+        if rounds.len() as u32 >= max_rounds {
+            stopped_on = repo.conflict_op_head().map(|(_, sha)| sha);
+            break (round, report::LoopTerminal::CapReached);
+        }
+
+        // Describe the next stop with the best information available now, then
+        // ask. Under --yes the gate is skipped entirely; a non-TTY run without
+        // --yes never reaches here, having already failed round 1's terminal
+        // check (ADR-001 #10).
+        if !args.yes && !gate_next_round(repo, round_no + 1, max_rounds)? {
+            stopped_on = repo.conflict_op_head().map(|(_, sha)| sha);
+            break (round, report::LoopTerminal::Declined);
+        }
+
+        // Authoritative read: taken AFTER the gate is answered, so a repo the
+        // user changed from another terminal while the prompt sat open is seen
+        // rather than papered over by the pre-prompt value.
+        let next_head = repo.conflict_op_head();
+        if !advanced(head.as_ref(), next_head.as_ref()) {
+            eprintln!(
+                "gcm resolve: the {} did not advance past {} - stopping instead of resolving the same commit again.",
+                head.as_ref().map(|(op, _)| *op).unwrap_or("operation"),
+                head.as_ref().map(|(_, sha)| sha.as_str()).unwrap_or("HEAD")
+            );
+            stopped_on = next_head.map(|(_, sha)| sha).or(stopped_on);
+            break (round, report::LoopTerminal::NoProgress);
+        }
+        head = next_head;
+    };
+
+    // The loop block appears only when the driver actually did something a
+    // single-round run would not have: ran more than once, or stopped at its
+    // own boundary. Everything else emits the pre-CLO-554 envelope unchanged.
+    let engaged = rounds.len() > 1
+        || matches!(
+            terminal,
+            report::LoopTerminal::CapReached | report::LoopTerminal::Declined
+        );
+    if engaged {
+        envelope.loop_report = Some(report::LoopReport {
+            rounds_run: rounds.len(),
+            max_rounds,
+            terminal,
+            stopped_on,
+            rounds,
+        });
+    }
+    Ok(envelope)
+}
+
+/// Whether the sequencing operation moved on between rounds.
+///
+/// Pure so the stall case is testable without provoking a wedged rebase. A head
+/// that vanished, or that still names the same commit, means the round changed
+/// nothing - spending another round on it would loop forever.
+fn advanced(prev: Option<&OpHead>, now: Option<&OpHead>) -> bool {
+    match (prev, now) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some((_, p)), Some((_, n))) => p != n,
+    }
+}
+
+/// Round banner, printed before the propose phase spends anything. Suppressed
+/// when there is nothing conflicted, so a no-op or error run reads as it did
+/// before the loop existed.
+fn print_round_banner(
+    repo: &Repo,
+    round: usize,
+    cap: u32,
+    head: Option<&OpHead>,
+) -> Result<(), GcmError> {
+    let files = repo.unmerged_files()?.len();
+    if files == 0 {
+        return Ok(());
+    }
+    let noun = if files == 1 { "file" } else { "files" };
+    match head {
+        Some((op, sha)) => eprintln!(
+            "gcm resolve: round {round} (cap {cap}) - {op} applying {sha}, {files} conflicted {noun}"
+        ),
+        None => eprintln!("gcm resolve: round {round} (cap {cap}) - {files} conflicted {noun}"),
+    }
+    Ok(())
+}
+
+/// Per-round spend and outcome, so a long loop stays legible as it runs.
+fn print_round_summary(repo: &Repo, round: usize, r: &ResolveReport) {
+    let (total, auto, llm, escalated) = r.files.iter().fold((0, 0, 0, 0), |a, f| {
+        (
+            a.0 + f.hunks_total,
+            a.1 + f.hunks_auto,
+            a.2 + f.hunks_llm,
+            a.3 + f.hunks_escalated,
+        )
+    });
+    let tail = match r.finish.as_ref() {
+        Some(f) if f.result == FinishResult::Completed => {
+            let op = f.op.as_deref().unwrap_or("operation");
+            let sha = f.commit.as_deref().unwrap_or("HEAD");
+            format!(" - {op} completed ({sha})")
+        }
+        Some(f) if f.result == FinishResult::StoppedOnConflict => {
+            // The finish report carries no sha for this outcome; HEAD is the
+            // step this round just committed.
+            let op = f.op.as_deref().unwrap_or("operation");
+            match repo.head_short_sha() {
+                Ok(sha) => format!(" - {op} step committed ({sha})"),
+                Err(_) => format!(" - {op} step committed"),
+            }
+        }
+        _ => String::new(),
+    };
+    eprintln!(
+        "gcm resolve: round {round} done - {total} hunks ({auto} auto, {llm} LLM, {escalated} escalated){tail}"
+    );
+}
+
+/// The round gate: name the stop about to be worked on, then ask. Answering No
+/// (or Enter, or EOF) leaves the operation exactly where it is, having spent
+/// nothing on it.
+fn gate_next_round(repo: &Repo, round: usize, cap: u32) -> Result<bool, GcmError> {
+    let files = repo.unmerged_files()?.len();
+    let noun = if files == 1 { "file" } else { "files" };
+    let summary = match repo.conflict_op_head() {
+        Some((op, sha)) => {
+            format!("gcm resolve: {op} stopped again on {sha}, {files} conflicted {noun}.")
+        }
+        None => format!("gcm resolve: stopped again, {files} conflicted {noun}."),
+    };
+    crate::ui::confirm_round(
+        &summary,
+        &format!("Resolve round {round} (cap {cap}) with the provider? [y/N] "),
+    )
 }
 
 /// Core resolution engine used by both the local and remote paths.
@@ -163,6 +354,7 @@ pub fn run_resolve_in_repo(
                 finish: None,
                 restored: false,
                 remote: None,
+                loop_report: None,
             });
         }
     } else {
@@ -182,7 +374,7 @@ pub fn run_resolve_in_repo(
         crate::config::apply_to_env(&cfg);
     }
 
-    let conflict = resolve_conflict_config(args);
+    let conflict = resolve_conflict_config(args)?;
 
     let binary = repo.binary_unmerged_files()?;
     let binary_set: HashSet<String> = binary.into_iter().collect();
@@ -503,10 +695,19 @@ fn report_for(files: Vec<FileReport>) -> ResolveReport {
         finish: None,
         restored: false,
         remote: None,
+        loop_report: None,
     }
 }
 
-fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
+/// Merge CLI overrides over the config file for the `[conflict]` table.
+///
+/// Returns `Result` because the round cap is validated here: clap rejects
+/// `--max-rounds 0` at parse time, but a `max_rounds = 0` in config.toml only
+/// becomes visible once the file is loaded, and `config::load` deliberately
+/// swallows file-level problems (`Option`, not `Result`). This runs before the
+/// first working-tree mutation, so rejecting here still leaves the repo
+/// untouched.
+fn resolve_conflict_config(args: &Cli) -> Result<ConflictConfig, GcmError> {
     // Capture CLI overrides (all Options / bool) so we know which fields the
     // user explicitly provided. Options take precedence over config.
     let cli = if let Some(Commands::Resolve {
@@ -515,6 +716,7 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
         conflict_auto_policy,
         conflict_sensitive_paths,
         no_mergiraf,
+        max_rounds,
         no_finish: _,
         pr: _,
         mr: _,
@@ -528,6 +730,7 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
             sensitive_paths: conflict_sensitive_paths.clone(),
             auto_policy: *conflict_auto_policy,
             no_mergiraf: *no_mergiraf,
+            max_rounds: *max_rounds,
         })
     } else {
         None
@@ -540,6 +743,9 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
             sensitive_paths: c.sensitive_paths.clone().unwrap_or_default(),
             auto_policy: c.auto_policy.unwrap_or(AutoPolicy::Trivial),
             mergiraf: !c.no_mergiraf,
+            max_rounds: c
+                .max_rounds
+                .unwrap_or_else(|| ConflictConfig::default().max_rounds),
         },
         None => ConflictConfig::default(),
     };
@@ -568,6 +774,9 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
                 } else {
                     cfg.mergiraf = loaded.conflict.mergiraf;
                 }
+                if c.max_rounds.is_none() {
+                    cfg.max_rounds = loaded.conflict.max_rounds;
+                }
             }
             None => {
                 cfg.temperature = loaded.conflict.temperature;
@@ -575,15 +784,25 @@ fn resolve_conflict_config(args: &Cli) -> ConflictConfig {
                 cfg.sensitive_paths = loaded.conflict.sensitive_paths.clone();
                 cfg.auto_policy = loaded.conflict.auto_policy;
                 cfg.mergiraf = loaded.conflict.mergiraf;
+                cfg.max_rounds = loaded.conflict.max_rounds;
             }
         }
     }
 
-    cfg
+    // A config-supplied 0 never reached clap's range check.
+    if cfg.max_rounds == 0 {
+        return Err(GcmError::Config(format!(
+            "config.toml: [conflict] {}",
+            crate::config::MAX_ROUNDS_ZERO
+        )));
+    }
+
+    Ok(cfg)
 }
 
 #[derive(Debug, Clone)]
 struct ConflictCli {
+    max_rounds: Option<u32>,
     temperature: Option<f64>,
     validate_cmd: Option<String>,
     sensitive_paths: Option<Vec<String>>,
@@ -1030,7 +1249,146 @@ fn glob_match(pattern: &str, path: &str) -> bool {
     dp[pat.len()][txt.len()]
 }
 
+/// Rounds that put a commit on the branch: both a completed finish and a
+/// stop-on-next-conflict committed the step they were given. A round whose
+/// finish was skipped or never attempted (an escalation, or the round the user
+/// rejected) committed nothing.
+fn committed_rounds(lr: &report::LoopReport) -> usize {
+    lr.rounds
+        .iter()
+        .filter(|r| {
+            matches!(
+                r.finish.as_ref().map(|f| f.result),
+                Some(FinishResult::Completed) | Some(FinishResult::StoppedOnConflict)
+            )
+        })
+        .count()
+}
+
+/// The sequencing operation the loop was driving. Only rebase and cherry-pick
+/// reach the loop, and every round that finished names its op, so the scan
+/// finds one unless the very first round was rejected before finishing.
+fn loop_op(lr: &report::LoopReport) -> &str {
+    lr.rounds
+        .iter()
+        .rev()
+        .find_map(|r| r.finish.as_ref().and_then(|f| f.op.as_deref()))
+        .unwrap_or("rebase")
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 {
+        ""
+    } else {
+        "s"
+    }
+}
+
+/// "Round 1 stays committed." / "Rounds 1-3 stay committed." - the rounds a
+/// mid-loop stop does NOT undo, named so the user knows what is at stake before
+/// reaching for `--abort`.
+fn kept_rounds_line(kept: usize) -> String {
+    if kept == 1 {
+        "Round 1 stays committed.".to_string()
+    } else {
+        format!("Rounds 1-{kept} stay committed.")
+    }
+}
+
+/// The exact ways out of a still-stopped sequence. Naming `--abort` without
+/// naming what it destroys would be the dangerous half of the truth: it
+/// discards the rounds already committed, not just the current stop.
+fn print_recovery(lr: &report::LoopReport, op: &str) {
+    match lr.stopped_on.as_deref() {
+        Some(sha) => println!("The {op} is still stopped on {sha}."),
+        None => println!("The {op} is still stopped."),
+    }
+    println!(
+        "Re-run 'gcm resolve' to continue, or resolve by hand and 'git add' then 'git {op} --continue'."
+    );
+    let kept = committed_rounds(lr);
+    if kept > 0 {
+        println!(
+            "'git {op} --abort' would discard the {kept} round{} already committed.",
+            plural(kept)
+        );
+    }
+}
+
+/// Headlines for a run the loop driver actually engaged on. A single-round run
+/// carries no loop block and keeps the pre-CLO-554 wording verbatim.
+fn print_loop_headline(report: &ResolveReport, lr: &report::LoopReport) {
+    let op = loop_op(lr);
+    let n = lr.rounds_run;
+    match lr.terminal {
+        report::LoopTerminal::Completed => {
+            let sha = report
+                .finish
+                .as_ref()
+                .and_then(|f| f.commit.as_deref())
+                .unwrap_or("HEAD");
+            println!("All conflicts resolved - {op} completed ({sha}) across {n} rounds.");
+        }
+        report::LoopTerminal::CapReached => {
+            // Keeps the legacy substring: with --max-rounds 1 this is exactly
+            // the situation the pre-loop build reported.
+            println!(
+                "All conflicts resolved here - the {op} continued and stopped on the next conflicted commit."
+            );
+            println!(
+                "Round cap reached ({n} of {}). Raise --max-rounds to go further in one run.",
+                lr.max_rounds
+            );
+            print_recovery(lr, op);
+        }
+        report::LoopTerminal::Declined => {
+            println!(
+                "Stopped after {n} round{} at your request - nothing was spent on the next one.",
+                plural(n)
+            );
+            print_recovery(lr, op);
+        }
+        report::LoopTerminal::Aborted => {
+            let kept = committed_rounds(lr);
+            println!("Aborted - round {n} restored, nothing changed in it.");
+            if kept > 0 {
+                println!("{}", kept_rounds_line(kept));
+            }
+            print_recovery(lr, op);
+        }
+        report::LoopTerminal::NoProgress => {
+            let where_ = lr.stopped_on.as_deref().unwrap_or("its current commit");
+            println!(
+                "Stopped after {n} round{} - the {op} did not advance past {where_}.",
+                plural(n)
+            );
+            print_recovery(lr, op);
+        }
+        report::LoopTerminal::Partial => {
+            let kept = committed_rounds(lr);
+            println!("Some files resolved; others were skipped or escalated.");
+            if kept > 0 {
+                println!("{}", kept_rounds_line(kept));
+            }
+        }
+    }
+}
+
 fn print_human_report(report: &ResolveReport) {
+    if let Some(lr) = report.loop_report.as_ref() {
+        print_loop_headline(report, lr);
+        print_file_lines(report);
+        // The escalation trailer still applies: a Partial loop leaves the same
+        // unmerged paths a Partial single round would.
+        print_escalation_trailer(report);
+        return;
+    }
+    print_single_round_headline(report);
+    print_file_lines(report);
+    print_escalation_trailer(report);
+}
+
+fn print_single_round_headline(report: &ResolveReport) {
     let finish = report.finish.as_ref();
     match &report.status {
         ResolveStatus::Resolved => match finish {
@@ -1065,14 +1423,21 @@ fn print_human_report(report: &ResolveReport) {
         ResolveStatus::Aborted => println!("Aborted - working tree restored, nothing changed."),
         ResolveStatus::Error => println!("Resolution failed."),
     }
+}
+
+fn print_file_lines(report: &ResolveReport) {
     for f in &report.files {
         println!(
             "  {}: {} total, {} auto, {} LLM, {} escalated ({:?})",
             f.path, f.hunks_total, f.hunks_auto, f.hunks_llm, f.hunks_escalated, f.action
         );
     }
-    // Escalation trailer (local runs only - `finish` is set only there): name
-    // what remains and the exact way out.
+}
+
+/// Escalation trailer (local runs only - `finish` is set only there): name
+/// what remains and the exact way out.
+fn print_escalation_trailer(report: &ResolveReport) {
+    let finish = report.finish.as_ref();
     if report.status == ResolveStatus::Partial && finish.is_some() {
         let remaining: Vec<&str> = report
             .files
@@ -1096,6 +1461,45 @@ fn print_human_report(report: &ResolveReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn head(op: &'static str, sha: &str) -> OpHead {
+        (op, sha.to_string())
+    }
+
+    #[test]
+    fn advanced_detects_a_moving_sequence() {
+        let a = head("rebase", "a1b2c3d");
+        let b = head("rebase", "b2c3d4e");
+        assert!(advanced(Some(&a), Some(&b)), "a new commit means progress");
+    }
+
+    #[test]
+    fn advanced_rejects_a_stalled_sequence() {
+        let a = head("rebase", "a1b2c3d");
+        let same = head("rebase", "a1b2c3d");
+        assert!(
+            !advanced(Some(&a), Some(&same)),
+            "the same commit twice is a stall, not a round worth spending on"
+        );
+    }
+
+    #[test]
+    fn advanced_rejects_a_vanished_head() {
+        // The finish claimed StoppedOnConflict, so a sequencing head must
+        // exist. Its absence means the postcondition classification and the
+        // repo disagree - stop rather than propose blind.
+        let a = head("cherry-pick", "a1b2c3d");
+        assert!(!advanced(Some(&a), None));
+        assert!(!advanced(None, None));
+    }
+
+    #[test]
+    fn advanced_accepts_the_first_sequencing_head() {
+        // Round 1 of a merge-then-rebase mix: no previous head, now there is
+        // one. That is forward motion.
+        let b = head("rebase", "b2c3d4e");
+        assert!(advanced(None, Some(&b)));
+    }
 
     #[test]
     fn snapshot_restore_is_byte_exact() {
