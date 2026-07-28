@@ -20,10 +20,10 @@ linear:
   branch_suggested: kmamemo/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by
   branch_actual: feat/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: active
   created_at: '2026-07-27T19:28:26.207Z'
-  updated_at: '2026-07-28T07:42:37.991Z'
+  updated_at: '2026-07-28T07:44:51.347Z'
 phases:
   discovery:
     status: complete
@@ -189,7 +189,7 @@ phases:
         completion_tokens: 0
         task_label: pre-pr-validation-synthesis
   pr:
-    status: pending
+    status: in_progress
   complete:
     status: pending
 history:
@@ -322,5 +322,16 @@ history:
       Codex: PASS_WITH_NOTES. Gemini: PASS_WITH_NOTES. Synthesis: PASS_WITH_NOTES. One fix iteration applied: removed
       stale allow(dead_code) attributes, strengthened range/test assertions, stripped PRD trailing whitespace, committed
       facade cleanup and review reports. Pre-merge gate green (489 tests).
+  - timestamp: '2026-07-28T07:43:24.957Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-28T07:44:51.347Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-merge gate green with single-threaded execution. One flaky parallel test
+      (provider::models::tests::transport_auth_headers_and_parsing) passes in isolation and single-threaded; not related
+      to CLO-595 changes (no diff in src/provider/models.rs).
 task_title: Ship gcm's secret scanner as a library API consumable by other crates
 task_url: https://linear.app/cloud-ai/issue/clo-595/ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates
