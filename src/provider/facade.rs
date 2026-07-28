@@ -1,0 +1,577 @@
+//! Provider abstraction (CLO-489, FR-11): one synchronous trait (ADR-001
+//! Decision 2 - blocking client, no async) that every LLM backend implements,
+//! plus a flag/env registry (FR-12, precedence flag > env > default).
+//!
+//! This module is the **binary facade** for the provider subsystem. Shared
+//! identity and registry types are imported from `gcm::provider` and re-exported
+//! here so the rest of the binary keeps `use crate::provider::...`. The library
+//! surface lives in `src/provider/mod.rs` and is exposed via `gcm::provider::*`.
+//!
+//! Backends: [`groq`] and [`openai`] share the OpenAI-compatible chat shape;
+//! [`gemini`] uses Google's divergent `generateContent`/`responseSchema` shape;
+//! [`ollama`] (CLO-495) is the local, key-free zero-egress backend - native
+//! `/api/chat` with a JSON-Schema `format`. Shared HTTP transport + retry/backoff
+//! (CLO-488) lives in [`http`].
+
+mod anthropic;
+mod gemini;
+mod groq;
+pub(crate) mod ollama;
+mod openai;
+mod vertex;
+
+pub use gcm::provider::http;
+#[doc(hidden)]
+pub use gcm::provider::identity::OPENAI_SUPPORTED_MODELS;
+#[cfg(feature = "cli")]
+pub use gcm::provider::models::fetch_supported_models;
+pub use gcm::provider::models::FetchSource;
+pub use gcm::provider::{
+    resolve_model_with_source, AuthMethod, ErrorKind, ModelSource, ProviderError, ProviderId,
+};
+
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
+use crate::plan::Plan;
+
+/// One LLM provider (FR-11). Synchronous (ADR-001 Decision 2). Both calls are
+/// required: the structured grouping plan and the single commit message (tracer,
+/// grouping fallback, and per-group message regeneration on an advanced cache hit).
+pub trait Provider {
+    /// Stable display name for messages/debug (e.g. "Groq" / "Google" / "OpenAI").
+    fn name(&self) -> &'static str;
+    /// Structured grouping plan; defensively parsed into a typed [`Plan`].
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError>;
+    /// A single conventional-commit message for the gathered diff.
+    fn generate_message(&self, diff: &GatheredDiff) -> Result<String, ProviderError>;
+    /// Provider-qualified model id folded into the cache freshness fingerprint
+    /// (FR-27); resolvable with **no** API key (e.g. "groq:openai/gpt-oss-120b").
+    fn cache_model_id(&self) -> String;
+    /// Per-provider diff budget (FR-13a), env-overridable.
+    fn diff_budget(&self) -> DiffBudget;
+    /// Resolve conflict hunks that could not be resolved deterministically.
+    /// Sends base/ours/theirs at function granularity with a 3-way prompt.
+    /// Returns the resolved replacement for each hunk, in input order.
+    fn resolve_hunks(&self, ctx: &ResolveContext) -> Result<Vec<Resolution>, ProviderError>;
+}
+
+/// A conflict hunk as seen by providers (CLO-531). Kept provider-local to
+/// avoid a module-cycle with the higher-level `resolve::markers::Hunk`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictHunk {
+    /// The common ancestor text (`|||||||` block). `None` for plain diff3.
+    pub base: Option<String>,
+    /// The "ours" / current branch text (`<<<<<<<` block).
+    pub ours: String,
+    /// The "theirs" / incoming branch text (`>>>>>>>` block).
+    pub theirs: String,
+}
+
+/// Context for conflict resolution (CLO-531).
+#[derive(Debug, Clone)]
+pub struct ResolveContext {
+    pub path: String,
+    pub hunks: Vec<ConflictHunk>,
+    /// A short style excerpt from the file (context lines around the conflict).
+    pub style_context: String,
+    /// LLM temperature for resolution (default 0.1).
+    pub temperature: f64,
+}
+
+/// One provider-resolved hunk replacement (CLO-531).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolution {
+    pub hunk_index: usize,
+    pub replacement: String,
+}
+
+impl Default for ResolveContext {
+    fn default() -> Self {
+        ResolveContext {
+            path: String::new(),
+            hunks: Vec::new(),
+            style_context: String::new(),
+            temperature: 0.1,
+        }
+    }
+}
+
+/// 3-way conflict resolution system prompt (CLO-531). Restates the exact JSON
+/// shape so providers without strict schema enforcement (Ollama cloud) still
+/// produce parseable output.
+pub(super) const RESOLVE_SYSTEM_PROMPT: &str = "\
+You are a careful code merge assistant. Resolve the given git conflict hunks.
+
+For each hunk you receive:
+- BASE: the common ancestor text
+- OURS: the current branch text
+- THEIRS: the incoming branch text
+- STYLE_CONTEXT: nearby lines showing indentation and naming conventions
+
+Rules:
+1. Preserve the file's existing style (indentation, quotes, naming).
+2. Combine BOTH branches' intent. Do not drop one side's changes unless they are purely duplicate.
+3. Use ONLY symbols/imports already present in BASE, OURS, or THEIRS.
+4. Do NOT invent new modules, dependencies, or functions.
+5. Do NOT include conflict markers (<<<<<<<, =======, >>>>>>>, |||||||) in the output.
+6. Return the minimal correct replacement text for each hunk.
+
+Output ONLY a single JSON object with no markdown fences. The exact shape is:
+{\n  \"resolutions\": [\n    { \"hunk_index\": 0, \"replacement\": \"resolved text here\" },\n    { \"hunk_index\": 1, \"replacement\": \"resolved text here\" }\n  ]\n}\n\nThe top-level key MUST be \"resolutions\" (an array). Every entry MUST have exactly \"hunk_index\" (integer) and \"replacement\" (string).";
+
+/// The resolution response JSON schema, used by providers that support strict
+/// structured output.
+pub(super) fn resolve_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "resolutions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "hunk_index": { "type": "integer" },
+                        "replacement": { "type": "string" }
+                    },
+                    "required": ["hunk_index", "replacement"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["resolutions"],
+        "additionalProperties": false
+    })
+}
+
+/// The Gemini `generationConfig.responseSchema` variant (CLO-534): OpenAPI-3.0
+/// subset with uppercase types, no `additionalProperties`, and field ordering
+/// hints. Mirrors [`crate::plan::gemini_schema`].
+pub(super) fn gemini_resolve_schema() -> serde_json::Value {
+    json!({
+        "type": "OBJECT",
+        "properties": {
+            "resolutions": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "hunk_index": { "type": "INTEGER" },
+                        "replacement": { "type": "STRING" }
+                    },
+                    "required": ["hunk_index", "replacement"],
+                    "propertyOrdering": ["hunk_index", "replacement"]
+                }
+            }
+        },
+        "required": ["resolutions"]
+    })
+}
+
+/// Build the user content for a resolve call (CLO-531).
+pub(super) fn resolve_user_content(ctx: &ResolveContext) -> String {
+    let mut s = format!(
+        "File: {}\nStyle context:\n{}\n\nResolve these hunks:\n",
+        ctx.path, ctx.style_context
+    );
+    for (i, h) in ctx.hunks.iter().enumerate() {
+        s.push_str(&format!("\nHunk {}:\n", i));
+        if let Some(base) = &h.base {
+            s.push_str(&format!("BASE:\n{}\n", base));
+        }
+        s.push_str(&format!("OURS:\n{}\n", h.ours));
+        s.push_str(&format!("THEIRS:\n{}\n", h.theirs));
+    }
+    s
+}
+
+/// Defensively parse a provider's resolution JSON. Returns resolutions in the
+/// order requested; missing indices are omitted, and out-of-range indices are
+/// dropped. The provider name is used for error attribution only.
+pub(super) fn parse_resolutions(
+    provider: &'static str,
+    raw: &str,
+    expected_count: usize,
+) -> Result<Vec<Resolution>, ProviderError> {
+    let text = strip_think(raw).trim().to_string();
+    if text.is_empty() {
+        return Err(ProviderError {
+            provider,
+            kind: ErrorKind::EmptyResponse,
+        });
+    }
+    #[derive(Deserialize)]
+    struct ResolveBody {
+        resolutions: Vec<ResolutionEntry>,
+    }
+    #[derive(Deserialize)]
+    struct ResolutionEntry {
+        hunk_index: usize,
+        replacement: String,
+    }
+    let body: ResolveBody = serde_json::from_str(&text).map_err(|e| ProviderError {
+        provider,
+        kind: ErrorKind::Deserialize(format!("resolution parse error: {e}")),
+    })?;
+    let mut out: Vec<Resolution> = body
+        .resolutions
+        .into_iter()
+        .filter(|r| r.hunk_index < expected_count)
+        .map(|r| Resolution {
+            hunk_index: r.hunk_index,
+            replacement: r.replacement,
+        })
+        .collect();
+    // Sort by index so callers can zip with input hunks.
+    out.sort_by_key(|r| r.hunk_index);
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Provider selection (FR-12) and model resolution (FR-14)
+// ---------------------------------------------------------------------------
+
+/// Resolve and construct the selected provider (FR-12/FR-14). Pure w.r.t. the API
+/// key (keys are read lazily inside `generate_*`), so the cache path and
+/// `--dry-run` resolve a provider without a key.
+pub fn select(
+    cli_provider: Option<ProviderId>,
+    cli_model: Option<&str>,
+) -> Result<Box<dyn Provider>, ProviderError> {
+    let id = resolve_provider_id(cli_provider)?;
+    let model = resolve_model(id, cli_model);
+    Ok(match id {
+        ProviderId::Groq => Box::new(groq::Groq::new(model)),
+        ProviderId::Google => Box::new(gemini::Gemini::new(model)),
+        ProviderId::Openai => {
+            // Design A (CLO-545): gcm sends a GPT-5.6-only payload, so reject any
+            // non-GPT-5.6 OpenAI model here - the single construction point for both
+            // the commit path and `gcm resolve` - rather than 400 downstream.
+            openai::validate_model(&model)?;
+            Box::new(openai::OpenAi::new(model))
+        }
+        ProviderId::Anthropic => Box::new(anthropic::Anthropic::new(model)),
+        ProviderId::Ollama => {
+            // Privacy defense-in-depth (FR-56/FR-48): a cloud-tagged model is proxied
+            // off-machine by the local daemon, so warn that it is NOT zero-egress.
+            if ollama::is_cloud_model(&model) {
+                eprintln!(
+                    "note: Ollama model '{model}' routes through Ollama Cloud; the diff is NOT zero-egress."
+                );
+            }
+            Box::new(ollama::Ollama::new(model))
+        }
+        ProviderId::Vertex => Box::new(vertex::Vertex::new(model)),
+    })
+}
+
+/// Non-blocking Vertex ADC readiness probe for the `gcm provider` wizard (CLO-537).
+/// `Ok(())` if an access token can be acquired now, else a short human reason. Never
+/// on the hot path.
+pub(crate) fn vertex_adc_probe() -> Result<(), String> {
+    vertex::probe_adc()
+}
+
+/// Resolve the Vertex ADC access token for wizard model discovery (CLO-564):
+/// `GCM_VERTEX_TOKEN` wins, else a bounded gcloud shell-out. The wizard passes
+/// the token to `fetch_supported_models` as the discovery key; on `Err` it
+/// passes `None` and discovery degrades to the static list.
+pub(crate) fn vertex_access_token() -> Result<String, String> {
+    vertex::resolve_access_token().map_err(|e| e.to_string())
+}
+
+fn resolve_provider_id(cli: Option<ProviderId>) -> Result<ProviderId, ProviderError> {
+    let env = std::env::var("GCM_PROVIDER").ok();
+    pick_provider_id(cli, env.as_deref())
+}
+
+/// Precedence flag > env > default(groq). An empty/whitespace `GCM_PROVIDER` is
+/// treated as unset (round-2 review pt 4); a non-empty unknown name is a fatal
+/// config error listing the valid names.
+pub(crate) fn pick_provider_id(
+    cli: Option<ProviderId>,
+    env_raw: Option<&str>,
+) -> Result<ProviderId, ProviderError> {
+    if let Some(id) = cli {
+        return Ok(id);
+    }
+    match env_raw {
+        None => Ok(ProviderId::Groq),
+        Some(raw) => {
+            let t = raw.trim();
+            if t.is_empty() {
+                return Ok(ProviderId::Groq);
+            }
+            ProviderId::parse(t).ok_or_else(|| {
+                ProviderError::new(
+                    "gcm",
+                    ErrorKind::Config(format!(
+                        "unknown provider '{t}'. Set --provider/GCM_PROVIDER to one of: groq, google, vertex, openai, anthropic, ollama."
+                    )),
+                )
+            })
+        }
+    }
+}
+
+fn resolve_model(id: ProviderId, cli: Option<&str>) -> String {
+    resolve_model_with_source(id, cli, |v| std::env::var(v).ok()).0
+}
+
+// ---------------------------------------------------------------------------
+// Shared OpenAI-compatible chat helpers (Groq + OpenAI) and the universal
+// `<think>` backstop (all providers).
+// ---------------------------------------------------------------------------
+
+/// Single-commit-message system prompt (shared by every provider).
+pub(super) const SYSTEM_PROMPT: &str = "\
+Analyze this git diff and generate a concise, conventional commit message.
+Use format: <type>(<scope>): <description>
+Types: feat, fix, docs, style, refactor, test, chore
+Keep the first line under 72 characters.
+Add a blank line and bullet points for details if there are multiple significant changes.
+Do NOT include any explanation - output ONLY the commit message.";
+
+/// Grouping-plan system prompt (shared by every provider). The structured-output
+/// schema (`format`/`response_format`) is sent alongside this prompt, but some
+/// providers do not enforce it - notably Ollama cloud (`:cloud`/`-cloud`)
+/// passthrough models, where `format` is a no-op (CLO-517). So the prompt itself
+/// restates the exact JSON shape and gives an example; the schema and this prompt
+/// must be kept in sync (see `plan::schema`).
+pub(super) const GROUPING_SYSTEM_PROMPT: &str = "\
+Analyze these git changes. Group related files into logical commits by semantic relevance.
+
+Output ONLY a single JSON object, no prose or markdown fences. The shape is EXACTLY:
+{
+  \"groups\": [
+    { \"files\": [\"path/one.rs\", \"path/two.rs\"], \"summary\": \"one-line description\", \"commit_message\": \"feat(scope): full conventional commit\" },
+    { \"files\": [\"path/three.rs\"], \"summary\": \"one-line description\", \"commit_message\": null }
+  ]
+}
+
+The top-level key MUST be \"groups\" (an array). Do NOT use \"commits\". Each group object MUST
+have exactly these keys: \"files\" (array of exact path strings), \"summary\" (string), and
+\"commit_message\" (string for groups[0], null for every other group).
+
+Rules:
+- Every file from the file list must appear in exactly one group.
+- Prefer fewer groups (1-3) unless changes are truly unrelated.
+- commit_message: a full conventional-commit message for groups[0] ONLY; null for every other group.
+- Conventional format <type>(<scope>): <description>, first line under 72 chars; add a blank line
+  and bullet points for details when there are multiple significant changes.
+- For renamed files, use the NEW path in your file list.
+- summary: a one-line description of each group.";
+
+/// The grouping-plan user content (shared by every provider's plan call).
+pub(super) fn grouping_user_content(ctx: &GroupingContext) -> String {
+    format!(
+        "Changed files (JSON array of exact paths - group by these):\n{}\n\n\
+         Git status (JSON array of \"XY path\"):\n{}\n\nDiff stats:\n{}\n\nFull diff:\n{}",
+        ctx.file_list, ctx.status, ctx.stat, ctx.body
+    )
+}
+
+/// The single-message user content (shared by every provider's message call).
+pub(super) fn message_user_content(diff: &GatheredDiff) -> String {
+    format!("Diff stats:\n{}\n\nFull diff:\n{}", diff.stat, diff.body)
+}
+
+#[derive(Deserialize)]
+struct ChatResponse {
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    message: ChatMessage,
+}
+
+#[derive(Deserialize)]
+struct ChatMessage {
+    content: Option<String>,
+}
+
+/// Extract the first choice's message content from an OpenAI-compatible
+/// chat-completions body (`<think>` stripped, trimmed). Empty content yields an
+/// empty string; the caller decides whether empty is an error.
+fn extract_openai_content(provider: &'static str, raw: &str) -> Result<String, ProviderError> {
+    let parsed: ChatResponse = serde_json::from_str(raw)
+        .map_err(|e| ProviderError::new(provider, ErrorKind::Deserialize(e.to_string())))?;
+    let content = parsed
+        .choices
+        .into_iter()
+        .next()
+        .and_then(|c| c.message.content)
+        .unwrap_or_default();
+    Ok(strip_think(&content).trim().to_string())
+}
+
+/// Remove any `<think>...</think>` spans (reasoning models that only hide rather
+/// than disable CoT, FR-17/FR-20). Drops an unterminated trailing `<think>` too.
+/// The universal backstop applied to every provider's response.
+fn strip_think(input: &str) -> String {
+    let mut out = String::new();
+    let mut rest = input;
+    while let Some(start) = rest.find("<think>") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find("</think>") {
+            Some(end) => rest = &rest[start + end + "</think>".len()..],
+            None => {
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_provider_id_precedence() {
+        // flag wins over env
+        assert_eq!(
+            pick_provider_id(Some(ProviderId::Openai), Some("google")).unwrap(),
+            ProviderId::Openai
+        );
+        // env when no flag
+        assert_eq!(
+            pick_provider_id(None, Some("google")).unwrap(),
+            ProviderId::Google
+        );
+        // default groq when neither
+        assert_eq!(pick_provider_id(None, None).unwrap(), ProviderId::Groq);
+        // empty/whitespace env -> default (not an error)
+        assert_eq!(pick_provider_id(None, Some("")).unwrap(), ProviderId::Groq);
+        assert_eq!(
+            pick_provider_id(None, Some("   ")).unwrap(),
+            ProviderId::Groq
+        );
+    }
+
+    #[test]
+    fn pick_provider_id_unknown_is_config_error() {
+        let err = pick_provider_id(None, Some("bogus")).unwrap_err();
+        assert!(matches!(err.kind, ErrorKind::Config(_)));
+        assert!(err.to_string().contains("bogus"));
+        assert!(err.to_string().contains("groq"));
+        assert!(err.to_string().contains("anthropic"));
+        assert!(err.to_string().contains("ollama"));
+    }
+
+    #[test]
+    fn select_ollama_is_key_free() {
+        // CLO-495 eval row 4: selecting Ollama constructs a provider with no key
+        // read and no panic; the default model resolves and qualifies the cache id.
+        let p = select(Some(ProviderId::Ollama), None).unwrap();
+        assert_eq!(p.name(), "Ollama");
+        assert_eq!(p.cache_model_id(), "ollama:gemma4:e4b-mlx");
+    }
+
+    #[test]
+    fn select_openai_validates_gpt_5_6_family() {
+        // Design A (CLO-545): the OpenAI gate lives in `select`, so it guards both the
+        // commit path and `gcm resolve` (both construct via `select`). Passing cli
+        // provider + model bypasses env, keeping this hermetic; `select` reads no key.
+        // This is the sole intentional legacy-string fixture in `src/` (the AC9
+        // breaking-change regression scenario; the AC5/AC8 sweep exemption).
+        assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-terra")).is_ok());
+        assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-luna")).is_ok());
+        // `Box<dyn Provider>` is not `Debug`, so match rather than `unwrap_err`.
+        match select(Some(ProviderId::Openai), Some("gpt-5.4-mini")) {
+            Err(e) => {
+                assert_eq!(e.provider, "OpenAI");
+                assert!(matches!(e.kind, ErrorKind::Config(_)));
+            }
+            Ok(_) => panic!("gpt-5.4-mini must be rejected by the GPT-5.6 gate"),
+        }
+    }
+
+    #[test]
+    fn strips_think_block() {
+        assert_eq!(
+            strip_think("<think>reasoning</think>feat: add thing").trim(),
+            "feat: add thing"
+        );
+        assert_eq!(
+            strip_think("docs: x\n<think>oops never closed").trim(),
+            "docs: x"
+        );
+        assert_eq!(strip_think("chore: clean"), "chore: clean");
+    }
+
+    #[test]
+    fn extract_openai_content_strips_think_and_trims() {
+        let raw = r#"{"choices":[{"message":{"content":"<think>hmm</think>  feat: a  "}}]}"#;
+        assert_eq!(extract_openai_content("Groq", raw).unwrap(), "feat: a");
+        // no choices -> empty string (caller maps to EmptyResponse)
+        let empty = r#"{"choices":[]}"#;
+        assert_eq!(extract_openai_content("Groq", empty).unwrap(), "");
+    }
+
+    #[test]
+    fn resolve_schema_is_object_with_required_resolutions() {
+        let schema = resolve_schema();
+        assert_eq!(schema["type"], json!("object"));
+        assert!(schema["properties"]["resolutions"].is_object());
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("resolutions")));
+        assert_eq!(schema["additionalProperties"], json!(false));
+        let item = &schema["properties"]["resolutions"]["items"];
+        assert_eq!(item["additionalProperties"], json!(false));
+    }
+
+    #[test]
+    fn gemini_resolve_schema_is_openapi_subset() {
+        let s = gemini_resolve_schema();
+        assert_eq!(s["type"], json!("OBJECT"));
+        assert!(s.get("additionalProperties").is_none());
+        assert_eq!(s["required"], json!(["resolutions"]));
+        let item = &s["properties"]["resolutions"]["items"];
+        assert_eq!(item["type"], json!("OBJECT"));
+        assert!(item.get("additionalProperties").is_none());
+        assert_eq!(item["properties"]["hunk_index"]["type"], json!("INTEGER"));
+        assert_eq!(item["properties"]["replacement"]["type"], json!("STRING"));
+        assert_eq!(item["required"], json!(["hunk_index", "replacement"]));
+    }
+
+    #[test]
+    fn parse_resolutions_sorts_and_filters() {
+        let raw = r#"{"resolutions":[{"hunk_index":1,"replacement":"b"},{"hunk_index":0,"replacement":"a"},{"hunk_index":5,"replacement":"out"}]}"#;
+        let res = parse_resolutions("Test", raw, 3).unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].hunk_index, 0);
+        assert_eq!(res[0].replacement, "a");
+        assert_eq!(res[1].hunk_index, 1);
+    }
+
+    #[test]
+    fn parse_resolutions_errors_on_invalid_json() {
+        assert!(parse_resolutions("Test", "not json", 1).is_err());
+    }
+
+    #[test]
+    fn resolve_user_content_includes_all_sides() {
+        let ctx = ResolveContext {
+            path: "src/lib.rs".to_string(),
+            hunks: vec![ConflictHunk {
+                base: Some("base\n".to_string()),
+                ours: "ours\n".to_string(),
+                theirs: "theirs\n".to_string(),
+            }],
+            style_context: "ctx".to_string(),
+            temperature: 0.1,
+        };
+        let text = resolve_user_content(&ctx);
+        assert!(text.contains("BASE:"));
+        assert!(text.contains("OURS:"));
+        assert!(text.contains("THEIRS:"));
+        assert!(text.contains("src/lib.rs"));
+    }
+}

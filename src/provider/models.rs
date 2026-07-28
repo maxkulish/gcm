@@ -13,7 +13,10 @@
 
 use serde_json::Value;
 
-use super::http::{self, HttpGet};
+#[cfg(feature = "cli")]
+use super::http;
+use super::http::HttpGet;
+use super::identity::OPENAI_SUPPORTED_MODELS;
 use super::ProviderId;
 
 /// Where a model list came from, so the wizard can message accurately.
@@ -36,6 +39,11 @@ pub struct ModelFetchOutcome {
 /// yet; for Vertex it is the ADC access token resolved by the wizard, CLO-564);
 /// `endpoint` is an explicit base URL (Ollama, from the wizard); `project` is
 /// Vertex-only - the `x-goog-user-project` quota header.
+///
+/// Available only with the `cli` feature because the default fetcher uses the
+/// `ureq` HTTP transport. The always-available library surface is
+/// [`fetch_supported_models_with`].
+#[cfg(feature = "cli")]
 pub fn fetch_supported_models(
     id: ProviderId,
     key: Option<&str>,
@@ -45,7 +53,12 @@ pub fn fetch_supported_models(
     fetch_supported_models_with(id, key, endpoint, project, http::get_json)
 }
 
-fn fetch_supported_models_with(
+/// Fetch models using a caller-supplied fetcher. This is the library surface:
+/// it never touches the network itself and compiles without the `cli` feature.
+/// The fetcher receives an [`HttpGet`] and returns the raw response body or a
+/// [`super::ProviderError`]. On any failure a usable static fallback list is
+/// returned with a warning.
+pub fn fetch_supported_models_with(
     id: ProviderId,
     key: Option<&str>,
     endpoint: Option<&str>,
@@ -336,7 +349,7 @@ fn parse_models(id: ProviderId, body: &str) -> Vec<String> {
 }
 
 /// Whether a model id is a chat/text-generation model gcm can use (D7.1).
-/// OpenAI is filtered to the runtime-validated [`super::openai::SUPPORTED_MODELS`]
+/// OpenAI is filtered to the runtime-validated [`OPENAI_SUPPORTED_MODELS`]
 /// family - the `provider::select` gate (CLO-545) rejects everything else, so a
 /// wider discovery list would only offer selectable-but-broken configs. Groq keeps
 /// a name exclude-list (open catalog, no runtime gate; new chat families aren't
@@ -345,7 +358,7 @@ fn parse_models(id: ProviderId, body: &str) -> Vec<String> {
 /// image/tts/music/robotics/agent ids (CLO-547). Anthropic/Ollama pass through.
 fn keep_chat_model(id: ProviderId, model: &str) -> bool {
     match id {
-        ProviderId::Openai => super::openai::SUPPORTED_MODELS.contains(&model),
+        ProviderId::Openai => OPENAI_SUPPORTED_MODELS.contains(&model),
         ProviderId::Groq => {
             const EXCLUDE: &[&str] = &[
                 "whisper",
@@ -402,7 +415,7 @@ fn static_fallback_models(id: ProviderId) -> Vec<String> {
             "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
         ],
-        ProviderId::Openai => &super::openai::SUPPORTED_MODELS,
+        ProviderId::Openai => OPENAI_SUPPORTED_MODELS,
         ProviderId::Anthropic => &["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"],
         ProviderId::Google | ProviderId::Vertex => &[
             "gemini-3.5-flash-lite",
@@ -443,7 +456,7 @@ fn provider_name(id: ProviderId) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
@@ -550,7 +563,7 @@ mod tests {
     fn keep_chat_model_openai_is_exactly_the_gate_family() {
         // Adding a model to SUPPORTED_MODELS widens both the runtime gate and
         // discovery automatically - assert the coupling by iterating the source.
-        for m in crate::provider::openai::SUPPORTED_MODELS {
+        for m in crate::provider::identity::OPENAI_SUPPORTED_MODELS {
             assert!(keep_chat_model(ProviderId::Openai, m), "{m} must pass");
         }
         // Chat-capable but gate-rejected ids are excluded from discovery too.

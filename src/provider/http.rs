@@ -3,30 +3,40 @@
 //! `groq.rs`, retyped to the provider-agnostic [`ProviderError`]. Pure
 //! classification/policy helpers are unit-tested without a network.
 
+#[cfg(feature = "cli")]
 use std::io::Read;
+#[cfg(feature = "cli")]
 use std::time::Duration;
 
 use serde_json::Value;
 
-use super::{env_u64, is_retryable, retry_after_hint, ErrorKind, ProviderError};
+#[cfg(feature = "cli")]
+use super::identity::{env_u64, is_retryable, retry_after_hint, ErrorKind, ProviderError};
 
 /// Default client timeout. Bumped 30 -> 60s (CLO-489 round-2 review pt 2):
 /// reasoning models / large diffs routinely take 45-90s to first token, and a
 /// 30s global timeout reliably killed them. Override: `GCM_HTTP_TIMEOUT_SECS`.
+#[cfg(feature = "cli")]
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
 /// Cap on the error-response body read for the `BadRequest` detail (CLO-488): a
 /// non-2xx can be a large HTML error page, so never read it unbounded.
+#[cfg(feature = "cli")]
 const MAX_ERROR_BODY_BYTES: u64 = 4096;
 /// Retry budget defaults (FR-22). Overridable via `GCM_RETRY_MAX` /
 /// `GCM_RETRY_BASE_MS` / `GCM_RETRY_MAX_MS`.
+#[cfg(feature = "cli")]
 const DEFAULT_MAX_RETRIES: u32 = 3;
+#[cfg(feature = "cli")]
 const DEFAULT_RETRY_BASE: Duration = Duration::from_millis(500);
+#[cfg(feature = "cli")]
 const DEFAULT_RETRY_MAX: Duration = Duration::from_secs(8);
 /// Short timeout for the interactive model-list fetch (CLO-516): the `gcm provider`
 /// wizard spinner must not hang on a flaky network - one light retry then fall back
 /// to the static list. Deliberately separate from the 60s generation timeout.
+#[cfg(feature = "cli")]
 const MODEL_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg(feature = "cli")]
 fn timeout_secs() -> u64 {
     env_u64("GCM_HTTP_TIMEOUT_SECS")
         .filter(|&v| v > 0)
@@ -37,7 +47,7 @@ fn timeout_secs() -> u64 {
 /// `(header_name, header_value)` pair passed straight to `ureq` - Groq/OpenAI send
 /// `Some(("Authorization", "Bearer <key>"))`, Gemini `Some(("x-goog-api-key", key))`,
 /// and the local Ollama provider (CLO-495) sends `None` (no key, no auth header).
-pub(super) struct HttpRequest<'a> {
+pub struct HttpRequest<'a> {
     pub provider: &'static str,
     /// API-key env var, surfaced in an `Auth` (401/403) error message (FR-18).
     /// Meaningful only when `auth` is `Some`; a no-auth backend passes `""`.
@@ -53,13 +63,14 @@ pub(super) struct HttpRequest<'a> {
 /// POST a JSON payload and return the raw 2xx body, retrying transient failures
 /// (429/5xx) with bounded backoff (FR-22). Response parsing is the caller's
 /// concern and is not retried.
-pub(super) fn post_json(req: &HttpRequest) -> Result<String, ProviderError> {
+#[cfg(feature = "cli")]
+pub fn post_json(req: &HttpRequest) -> Result<String, ProviderError> {
     let cfg = RetryConfig::from_env();
     retry_with(&cfg, std::thread::sleep, || send_once(req))
 }
 
 /// A model-list discovery GET (CLO-516): like [`HttpRequest`] but no payload.
-pub(super) struct HttpGet {
+pub struct HttpGet {
     pub provider: &'static str,
     /// API-key env var, surfaced in an `Auth` (401/403) error; `""` for no-auth.
     pub auth_env_var: &'static str,
@@ -71,7 +82,8 @@ pub(super) struct HttpGet {
 /// GET a JSON body for model-list discovery. Short timeout + a single light retry
 /// on transient failures so the wizard spinner can't hang; the caller falls back
 /// to a static list on any `Err`.
-pub(super) fn get_json(req: &HttpGet) -> Result<String, ProviderError> {
+#[cfg(feature = "cli")]
+pub fn get_json(req: &HttpGet) -> Result<String, ProviderError> {
     let cfg = RetryConfig {
         max_retries: 1,
         base: Duration::from_millis(200),
@@ -82,6 +94,7 @@ pub(super) fn get_json(req: &HttpGet) -> Result<String, ProviderError> {
 
 /// One GET attempt (mirrors [`send_once`] but with no request body and the short
 /// [`MODEL_FETCH_TIMEOUT`]). Non-2xx is classified into a typed [`ErrorKind`].
+#[cfg(feature = "cli")]
 fn get_once(req: &HttpGet) -> Result<String, ProviderError> {
     let provider = req.provider;
     let wrap = |kind| ProviderError { provider, kind };
@@ -133,6 +146,7 @@ fn get_once(req: &HttpGet) -> Result<String, ProviderError> {
 /// One HTTP attempt. Non-2xx responses are inspected (status + `Retry-After` +
 /// a capped error body) and classified into a typed [`ErrorKind`] (FR-21);
 /// pre-response transport failures map via [`map_ureq_error`].
+#[cfg(feature = "cli")]
 fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
     let provider = req.provider;
     let wrap = |kind| ProviderError { provider, kind };
@@ -194,6 +208,7 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
     Err(wrap(kind))
 }
 
+#[cfg(feature = "cli")]
 /// Classify a non-2xx HTTP status into a typed [`ErrorKind`] (pure; unit-tested).
 /// 504 (Gateway Timeout) is a `Server` error, NOT the client-side `Timeout`.
 fn classify_status(
@@ -217,6 +232,7 @@ fn classify_status(
     }
 }
 
+#[cfg(feature = "cli")]
 /// Parse a `Retry-After` header value (integer seconds only; HTTP-date or
 /// unparseable/empty -> `None`).
 fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
@@ -229,7 +245,7 @@ fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
 
 /// Pull an actionable detail from a 400/blocked body: JSON `error.message` when
 /// present, else the raw body trimmed/truncated to 200 chars; `None` if empty.
-pub(super) fn bad_request_detail(body: &str) -> Option<String> {
+pub fn bad_request_detail(body: &str) -> Option<String> {
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return None;
@@ -249,7 +265,7 @@ pub(super) fn bad_request_detail(body: &str) -> Option<String> {
 }
 
 /// Truncate to at most `max` characters (char-safe).
-pub(super) fn truncate(s: &str, max: usize) -> String {
+pub fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
     } else {
@@ -258,12 +274,14 @@ pub(super) fn truncate(s: &str, max: usize) -> String {
 }
 
 /// Bounded exponential-backoff config for transient failures (FR-22).
+#[cfg(feature = "cli")]
 struct RetryConfig {
     max_retries: u32,
     base: Duration,
     max: Duration,
 }
 
+#[cfg(feature = "cli")]
 impl RetryConfig {
     fn from_env() -> Self {
         RetryConfig {
@@ -282,6 +300,7 @@ impl RetryConfig {
 
 /// Backoff before the next attempt: honor a `Retry-After` hint (capped at
 /// `cfg.max`), else exponential `base * 2^attempt` capped at `cfg.max`.
+#[cfg(feature = "cli")]
 fn backoff_delay(attempt: u32, hint: Option<Duration>, cfg: &RetryConfig) -> Duration {
     if let Some(d) = hint {
         return d.min(cfg.max);
@@ -292,6 +311,7 @@ fn backoff_delay(attempt: u32, hint: Option<Duration>, cfg: &RetryConfig) -> Dur
 
 /// Run `op`, retrying transient failures with bounded backoff. The sleeper is
 /// injected (`FnMut`) so tests record delays with no real sleep and no network.
+#[cfg(feature = "cli")]
 fn retry_with<T>(
     cfg: &RetryConfig,
     mut sleep: impl FnMut(Duration),
@@ -319,6 +339,7 @@ fn retry_with<T>(
     }
 }
 
+#[cfg(feature = "cli")]
 fn map_ureq_error(err: ureq::Error) -> ErrorKind {
     match err {
         ureq::Error::StatusCode(code) => ErrorKind::Http(code),
@@ -329,7 +350,7 @@ fn map_ureq_error(err: ureq::Error) -> ErrorKind {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
 

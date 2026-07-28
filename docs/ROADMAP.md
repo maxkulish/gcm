@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-28 (CLO-554 merged — Phase 4 `gcm resolve` complete)
+**Last Updated**: 2026-07-28 (CLO-596 in review; CLO-554 merged — Phase 4 `gcm resolve` complete)
 
 ## Summary
 
@@ -25,7 +25,7 @@ Upstream: lok's [CLO-593](https://linear.app/cloud-ai/issue/CLO-593) extracted i
 |------|-------|--------|--------------|
 | CLO-594 | Lock the gcm library boundary, the sync/async seam and the config shape (ADR) | Done | CLO-593 |
 | CLO-595 | Ship gcm's secret scanner as a library API consumable by other crates | Done | CLO-594 |
-| CLO-596 | Expose provider identity and the live model registry through the gcm library | Ready | CLO-595 |
+| CLO-596 | Expose provider identity and the live model registry through the gcm library | In Progress | CLO-595 |
 | CLO-597 | Expose source-attributed status resolution through the gcm library | Backlog | CLO-596 |
 | CLO-598 | Verify the gcm library from an out-of-tree consumer and lock its public surface | Backlog | CLO-597 |
 

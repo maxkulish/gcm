@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-28 (CLO-554 merged — resolve-until-clean rebase loop, PR #47)
+**Last Updated**: 2026-07-28 (CLO-596 in review; CLO-554 merged — resolve-until-clean rebase loop, PR #47; CLO-595 merged — secret scanner exposed as library API)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
