@@ -1564,6 +1564,82 @@ else
   skip "AC-R2 needs expect (EOF handling is unit-tested at the parser level)"
 fi
 
+# A 2-commit feature branch rebased onto a moved mainline, conflicting TWICE.
+# Each feature commit touches a DIFFERENT file: the mock serves one canned
+# resolution for every request, so if both rounds resolved the same file the
+# second round's patch would come out empty and git would stop on "the previous
+# cherry-pick is now empty" rather than completing.
+new_rebase_conflict_repo() {
+  d="$(new_repo)"
+  ( cd "$d" &&
+    printf 'base\n' > a.txt && printf 'base\n' > b.txt && git add -A &&
+    git -c commit.gpgsign=false commit -qm base &&
+    git checkout -q -b feature &&
+    printf 'f1\n' > a.txt && git -c commit.gpgsign=false commit -qam c1 &&
+    printf 'f2\n' > b.txt && git -c commit.gpgsign=false commit -qam c2 &&
+    git checkout -q - &&
+    printf 'moved-a\n' > a.txt && printf 'moved-b\n' > b.txt &&
+    git -c commit.gpgsign=false commit -qam "move main" &&
+    git checkout -q feature &&
+    git rebase - >/dev/null 2>&1 || true ) >/dev/null 2>&1
+  echo "$d"
+}
+
+rebase_running() { [ -d "$1/.git/rebase-merge" ] || [ -d "$1/.git/rebase-apply" ]; }
+
+note "AC-R3 (CLO-554): round gate declined stops the loop, keeps round 1 committed"
+if command -v expect >/dev/null 2>&1 && [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_rebase_conflict_repo)"
+  printf '%s' '{"resolutions":[{"hunk_index":0,"replacement":"llm resolved"}]}' > "$PLAN_FILE"
+  # Accept round 1's file, then answer the round gate with a bare Enter.
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 60
+    spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN) resolve"
+    expect {
+      -re {Resolve round}  { send "\r";  exp_continue }
+      -re {\[y/N/e}        { send "y\r"; exp_continue }
+      timeout { exit 3 }
+      eof
+    }
+    catch wait result
+    exit [lindex $result 3]
+  ' >/tmp/gcm-r3 2>&1; rc=$?
+  [ $rc -eq 0 ] && ok "declined gate -> exit 0" || bad "gate decline exit (rc=$rc; $(tail -3 /tmp/gcm-r3))"
+  grep -q "Resolve round 2" /tmp/gcm-r3 && ok "gate names the next round before spending" || bad "gate prompt missing"
+  grep -q "at your request" /tmp/gcm-r3 && ok "decline headline printed" || bad "decline headline missing ($(tail -3 /tmp/gcm-r3))"
+  git -C "$d" log --oneline | grep -q "c1" && ok "round 1 stays committed" || bad "round 1 lost"
+  rebase_running "$d" && ok "rebase left stopped for the user" || bad "rebase state lost on decline"
+  grep -q -- "--abort" /tmp/gcm-r3 && ok "recovery names git rebase --abort" || bad "abort option not named"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-R3 needs expect + working signing (gate parser is unit-tested)"
+fi
+
+note "AC-R4 (CLO-554): accepting each gate drives the whole rebase in one run"
+if command -v expect >/dev/null 2>&1 && [ "$SIGNING_OK" -eq 1 ]; then
+  d="$(new_rebase_conflict_repo)"
+  printf '%s' '{"resolutions":[{"hunk_index":0,"replacement":"llm resolved"}]}' > "$PLAN_FILE"
+  GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_BIN="$BIN" GCM_DIR="$d" expect -c '
+    set timeout 60
+    spawn -noecho sh -c "cd $env(GCM_DIR) && $env(GCM_BIN) resolve"
+    expect {
+      -re {Resolve round}  { send "y\r"; exp_continue }
+      -re {\[y/N/e}        { send "y\r"; exp_continue }
+      timeout { exit 3 }
+      eof
+    }
+    catch wait result
+    exit [lindex $result 3]
+  ' >/tmp/gcm-r4 2>&1; rc=$?
+  [ $rc -eq 0 ] && ok "accepted gates -> exit 0" || bad "gate accept exit (rc=$rc; $(tail -3 /tmp/gcm-r4))"
+  rebase_running "$d" && bad "rebase still in progress after accepting every round" || ok "rebase completed in one invocation"
+  [ -z "$(git -C "$d" ls-files -u)" ] && ok "nothing left unmerged" || bad "unmerged entries remain"
+  grep -q "across 2 rounds" /tmp/gcm-r4 && ok "headline names the round count" || bad "round count missing ($(tail -3 /tmp/gcm-r4))"
+  : > "$PLAN_FILE"; rm -rf "$d"
+else
+  skip "AC-R4 needs expect + working signing (loop completion is covered by cargo test)"
+fi
+
 stop_mock
 
 # --- optional real-network smoke test --------------------------------------

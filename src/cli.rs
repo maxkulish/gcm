@@ -135,6 +135,12 @@ pub enum Commands {
         #[arg(long)]
         no_mergiraf: bool,
 
+        /// Maximum conflict rounds to drive a rebase/cherry-pick sequence
+        /// through in one run (overrides [conflict].max_rounds, default 10).
+        /// `1` stops after a single conflict, the pre-CLO-554 behavior.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        max_rounds: Option<u32>,
+
         /// Apply and stage confirmed resolutions but skip the finishing
         /// commit/continue (debugging escape hatch).
         #[arg(long)]

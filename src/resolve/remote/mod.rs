@@ -238,5 +238,8 @@ fn dry_run_report(remote_ref: &RemoteRef) -> ResolveReport {
             commented: false,
             scratch_path: None,
         }),
+        // The remote path resolves a merge in a scratch repo; it never
+        // sequences, so it never enters the CLO-554 loop driver.
+        loop_report: None,
     }
 }
