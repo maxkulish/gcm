@@ -18,18 +18,94 @@ linear:
   blocked_by: []
   branch_suggested: kmamemo/clo-596-expose-provider-identity-and-the-live-model-registry-through
   priority: Medium
+  branch_actual: feat/clo-596-provider-id
 workflow:
-  current_phase: discovery
+  current_phase: implement
   status: active
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T09:37:19.898Z'
+  updated_at: '2026-07-28T10:02:06.567Z'
 phases:
   discovery:
-    status: pending
+    status: complete
+    approach_chosen: file-level split with binary facade
+    approaches_identified: 3
+    approved: true
+    baseline_score: 6
+    discovery_debt:
+      - Resolve debug_log availability for http.rs in library build
+      - Decide cfg gating for fetch_supported_models default vs ureq
+      - Implement ProviderId parse without clap::ValueEnum for no-default-features build
+    discovery_report: docs/discovery/clo-596.md
+    prd_created: true
+    prd_exists: true
+    prd_file: docs/prds/clo-596-expose-provider-identity-and-registry.md
+    problem_framed: true
   design:
-    status: pending
+    status: complete
+    design_doc: docs/designs/clo-596-expose-provider-identity-and-registry.md
+    discovery_context_used: true
+    draft_ready: true
+    draft_source: manual
+    assumptions:
+      - confidence: high
+        text: 'src/debug.rs has no use crate:: imports and can be compiled in the library crate without changes.'
+        verification: Verified by grep during discovery (grep 'use crate::' src/debug.rs returned no results).
+      - confidence: high
+        text: >-
+          The cli feature in Cargo.toml already includes 'clap' (not just 'dep:clap'), so cfg_attr(feature='clap') fires
+          under default features.
+        verification: 'Verified by reading Cargo.toml line 18: cli=[''clap'',''dep:cliclack'',...]. Per lesson L2.'
+      - confidence: high
+        text: >-
+          The binary's existing use crate::provider::ProviderId callsites resolve to the facade's pub use
+          gcm::provider::ProviderId re-export without changes, maintaining type identity.
+        verification: 'Structural: re-exports are transparent in Rust. Per lesson L1, the key is re-exporting, not re-declaring.'
+      - confidence: high
+        text: >-
+          ProviderId::parse can be hand-rolled to match clap::ValueEnum::from_str's alias behavior (gemini to Google,
+          google-vertex to Vertex) without behavioral change.
+        verification: The aliases are a fixed 2-item mapping; the CLI --provider flag uses clap's derive, not ProviderId::parse.
+      - confidence: high
+        text: >-
+          status.rs's use of crate::provider::ollama (is_cloud_model, normalize_host, DEFAULT_BASE_URL) continues to
+          work because the facade declares pub(crate) mod ollama.
+        verification: status.rs is binary-only in this ticket; the facade is the binary's provider module.
+      - confidence: high
+        text: >-
+          http.rs's crate::debug_log! calls resolve correctly in the library because src/debug.rs is compiled as pub mod
+          debug in lib.rs.
+        verification: '#[macro_export] makes the macro available at the library crate root.'
+      - confidence: high
+        text: >-
+          ureq-using functions in http.rs can be gated behind cfg(feature='cli') without breaking the library build,
+          since fetch_supported_models_with (the pure surface) does not call them.
+        verification: >-
+          fetch_supported_models_with takes an injected fetcher; only the convenience wrapper fetch_supported_models
+          calls http::get_json.
+    assumptions_surfaced: true
+    applied_suggestions: []
+    flagged_suggestions:
+      - id: doc-hidden-emphasis
+        reason: >-
+          Documentation note only - not a design change. Add brief comment in implementation explaining doc(hidden)
+          rationale for http module.
+    review_completed: true
+    review_gemini: docs/reviews/clo-596-design-gemini.md
+    review_synthesis: docs/reviews/clo-596-design-synthesis.md
+    review_verdict: approve
+    token_usage:
+      - recorded_at: '2026-07-28T09:51:53.327Z'
+        provider: gemini
+        model: gemini-2.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: design-review-gemini
+    human_review_completed: true
+    finalized: true
   plan:
-    status: pending
+    status: complete
+    plan_file: docs/plans/clo-596-expose-provider-identity-and-registry.md
+    approved: true
   implement:
     status: pending
   pr:
@@ -55,5 +131,61 @@ history:
     action: phase_transition
     phase: init
     details: Transitioned from init to discovery
+  - timestamp: '2026-07-28T09:37:50.711Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-596-provider-id checked out from main (already existed at main tip)
+  - timestamp: '2026-07-28T09:40:31.967Z'
+    action: discovery_approved
+    phase: discovery
+    details: 'Approach: file-level split with binary facade. Baseline 6/10. 3 approaches considered.'
+  - timestamp: '2026-07-28T09:40:39.916Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-07-28T09:47:26.648Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft generated manually (lok timed out) at docs/designs/clo-596-expose-provider-identity-and-registry.md. 8
+      sections present, 480 lines.
+  - timestamp: '2026-07-28T09:47:33.291Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: '7 assumptions surfaced (high: 7, medium: 0, low: 0). See design doc § Assumptions.'
+  - timestamp: '2026-07-28T09:51:53.327Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: approve. 0 applied, 1 flagged (doc note on doc(hidden) pattern). Gemini review via opencode
+      gemini-2.5-flash.
+  - timestamp: '2026-07-28T09:52:27.774Z'
+    action: design_human_review_complete
+    phase: design
+    details: Plannotator annotate session closed with no annotations. Human reviewer approved the design.
+  - timestamp: '2026-07-28T09:52:35.950Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Design ready for plan phase. All open questions resolved. 24 test items in test plan. API signatures compile
+      mentally.
+  - timestamp: '2026-07-28T09:52:38.619Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-07-28T10:02:02.059Z'
+    action: plan_created
+    phase: plan
+    details: Plan with 7 sub-tasks at docs/plans/clo-596-expose-provider-identity-and-registry.md.
+  - timestamp: '2026-07-28T10:02:04.888Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Plan approved. 7 sub-tasks queued. Pre-merge gate: cargo fmt --check && cargo clippy --all-targets -- -D warnings
+      && cargo test.
+  - timestamp: '2026-07-28T10:02:06.567Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
 task_title: Expose provider identity and the live model registry through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm

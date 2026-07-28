@@ -12,3 +12,6 @@
 //! ```
 
 pub mod privacy;
+
+#[doc(hidden)]
+pub mod debug;
