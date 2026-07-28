@@ -1,8 +1,8 @@
 use clap::Parser;
 
 use crate::config::AutoPolicy;
-use crate::privacy::SecretScanMode;
 use crate::provider::ProviderId;
+use gcm::privacy::SecretScanMode;
 
 /// Build-stamped version: crate version plus the git short SHA from build.rs (AC-1).
 pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("GCM_GIT_SHA"));

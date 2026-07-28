@@ -7,25 +7,35 @@ license = "MIT"
 repository = "https://github.com/maxkulish/gcm"
 default-run = "gcm"
 
+[lib]
+name = "gcm"
+path = "src/lib.rs"
+
 [[bin]]
 name = "gcm"
 path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["clap", "dep:cliclack", "dep:console", "dep:ureq", "dep:sha2", "dep:which", "dep:url"]
+clap = ["dep:clap"]
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-ureq = "3"
+clap = { version = "4", features = ["derive"], optional = true }
+ureq = { version = "3", optional = true }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 toml = "0.8"
 regex = "1"
 tempfile = "3"
-sha2 = "0.11.0"
-url = "2"
-which = "8"
+serde_json = "1"
+sha2 = { version = "0.11.0", optional = true }
+url = { version = "2", optional = true }
+which = { version = "8", optional = true }
 # Interactive `gcm provider` wizard (CLO-516); same crates + lean feature flags as
 # Goose's `goose configure`, so we get its diamond-marker UI / filter / spinner.
-cliclack = { version = "0.5", default-features = false }
-console = { version = "0.16", default-features = false, features = ["std"] }
+cliclack = { version = "0.5", default-features = false, optional = true }
+console = { version = "0.16", default-features = false, features = ["std"], optional = true }
 
 [profile.release]
 strip = true

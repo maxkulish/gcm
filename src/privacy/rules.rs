@@ -35,10 +35,9 @@ struct RawPack {
 /// A single compiled detection rule.
 #[derive(Debug)]
 pub struct CompiledRule {
-    #[allow(dead_code)] // surfaced in tests; reserved for debug logging of matched rule
+    // surfaced in tests; reserved for debug logging of matched rule
     pub id: String,
     pub regex: Regex,
-    #[allow(dead_code)]
     pub keywords: Vec<String>,
     pub entropy: Option<f64>,
     pub min_digits: Option<u32>,
@@ -91,12 +90,11 @@ impl RuleEngine {
             .map(move |i| &self.rules[i])
     }
 
-    #[allow(dead_code)] // used by tests to assert the corpus size
+    // used by tests to assert the corpus size
     pub fn len(&self) -> usize {
         self.rules.len()
     }
 
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
