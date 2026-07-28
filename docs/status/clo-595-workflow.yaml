@@ -206,6 +206,9 @@ phases:
     lessons_learned:
       - "L8 - Worktree removal after merge can strand the orchestrator cwd"
     lessons_file: ".pi/lessons/pr-review-failures.md"
+    docs_pr_url: "https://github.com/maxkulish/gcm/pull/46"
+    docs_pr_number: 46
+    docs_pr_merge_commit: "c6626d50b5de8879f6a16741658c6880024be662"
 history:
   - timestamp: '2026-07-27T19:28:26.207Z'
     action: workflow_started
