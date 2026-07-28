@@ -166,6 +166,9 @@ phases:
       privacy tests into the new lib target), acceptance 264/0. CLO-554's unit
       tests stay in the bin target, so `cargo test --bin gcm` remains correct.
     revalidated_after_rebase: true
+    ci_passed: true
+    ci_note: 'Both jobs green first run on 690d491 (ubuntu-latest 2m33s, macos-latest 3m12s); no flakes'
+    awaiting: 'Owner squash-merge on GitHub, then /pr:finalize'
   complete:
     status: pending
 history:
