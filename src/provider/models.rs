@@ -13,9 +13,9 @@
 
 use serde_json::Value;
 
-use super::http::HttpGet;
 #[cfg(feature = "cli")]
 use super::http;
+use super::http::HttpGet;
 use super::identity::OPENAI_SUPPORTED_MODELS;
 use super::ProviderId;
 
@@ -415,7 +415,7 @@ fn static_fallback_models(id: ProviderId) -> Vec<String> {
             "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
         ],
-        ProviderId::Openai => &OPENAI_SUPPORTED_MODELS,
+        ProviderId::Openai => OPENAI_SUPPORTED_MODELS,
         ProviderId::Anthropic => &["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"],
         ProviderId::Google | ProviderId::Vertex => &[
             "gemini-3.5-flash-lite",

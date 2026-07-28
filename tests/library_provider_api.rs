@@ -23,15 +23,10 @@ fn library_resolve_model_with_source_uses_env_lookup() {
 
 #[test]
 fn library_fetch_supported_models_with_uses_injected_fetcher() {
-    let outcome = fetch_supported_models_with(
-        ProviderId::Groq,
-        Some("sk-123"),
-        None,
-        None,
-        |_req| {
+    let outcome =
+        fetch_supported_models_with(ProviderId::Groq, Some("sk-123"), None, None, |_req| {
             Ok(r#"{"data":[{"id":"llama-3.3-70b-versatile"},{"id":"whisper-1"}]}"#.to_string())
-        },
-    );
+        });
     assert_eq!(outcome.models, vec!["llama-3.3-70b-versatile"]);
     assert!(matches!(outcome.source, FetchSource::Live));
     assert!(outcome.warning.is_none());
@@ -39,17 +34,17 @@ fn library_fetch_supported_models_with_uses_injected_fetcher() {
 
 #[test]
 fn library_fetch_supported_models_with_degrades_to_fallback_on_error() {
-    let outcome: ModelFetchOutcome = fetch_supported_models_with(
-        ProviderId::Groq,
-        Some("sk-123"),
-        None,
-        None,
-        |_req| Err(gcm::provider::ProviderError::new(
-            "Groq",
-            gcm::provider::ErrorKind::Http(503),
-        )),
+    let outcome: ModelFetchOutcome =
+        fetch_supported_models_with(ProviderId::Groq, Some("sk-123"), None, None, |_req| {
+            Err(gcm::provider::ProviderError::new(
+                "Groq",
+                gcm::provider::ErrorKind::Http(503),
+            ))
+        });
+    assert!(
+        !outcome.models.is_empty(),
+        "fallback list must be non-empty"
     );
-    assert!(!outcome.models.is_empty(), "fallback list must be non-empty");
     assert!(matches!(outcome.source, FetchSource::Fallback));
     assert!(outcome.warning.is_some());
 }

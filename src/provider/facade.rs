@@ -20,14 +20,13 @@ pub(crate) mod ollama;
 mod openai;
 mod vertex;
 
-pub use gcm::provider::{
-    AuthMethod, ErrorKind, ModelSource, ProviderError, ProviderId,
-    resolve_model_with_source,
-};
 pub use gcm::provider::http;
-pub use gcm::provider::models::FetchSource;
 #[cfg(feature = "cli")]
 pub use gcm::provider::models::fetch_supported_models;
+pub use gcm::provider::models::FetchSource;
+pub use gcm::provider::{
+    resolve_model_with_source, AuthMethod, ErrorKind, ModelSource, ProviderError, ProviderId,
+};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -55,7 +54,6 @@ pub trait Provider {
     /// Returns the resolved replacement for each hunk, in input order.
     fn resolve_hunks(&self, ctx: &ResolveContext) -> Result<Vec<Resolution>, ProviderError>;
 }
-
 
 /// A conflict hunk as seen by providers (CLO-531). Kept provider-local to
 /// avoid a module-cycle with the higher-level `resolve::markers::Hunk`.
@@ -232,7 +230,6 @@ pub(super) fn parse_resolutions(
 // Provider selection (FR-12) and model resolution (FR-14)
 // ---------------------------------------------------------------------------
 
-
 /// Resolve and construct the selected provider (FR-12/FR-14). Pure w.r.t. the API
 /// key (keys are read lazily inside `generate_*`), so the cache path and
 /// `--dry-run` resolve a provider without a key.
@@ -316,11 +313,9 @@ pub(crate) fn pick_provider_id(
     }
 }
 
-
 fn resolve_model(id: ProviderId, cli: Option<&str>) -> String {
     resolve_model_with_source(id, cli, |v| std::env::var(v).ok()).0
 }
-
 
 // ---------------------------------------------------------------------------
 // Shared OpenAI-compatible chat helpers (Groq + OpenAI) and the universal
@@ -433,7 +428,6 @@ fn strip_think(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[test]
     fn strips_think_block() {

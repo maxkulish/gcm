@@ -12,15 +12,21 @@
 //!
 //! See `docs/adrs/002-library-boundary.md` for the boundary rules.
 
-pub mod identity;
+/// Internal HTTP request/response helpers shared with the binary facade.
+/// Items are `pub` only because the binary facade is compiled as a separate
+/// crate target; external consumers should use the injectable
+/// `models::fetch_supported_models_with` API rather than reaching into this
+/// module. Hidden from public docs.
+#[doc(hidden)]
 pub mod http;
+
+pub mod identity;
 pub mod models;
 
 pub use identity::{
-    AuthMethod, ErrorKind, ModelSource, ProviderError, ProviderId,
-    resolve_model_with_source,
+    resolve_model_with_source, AuthMethod, ErrorKind, ModelSource, ProviderError, ProviderId,
 };
 
-pub use models::{FetchSource, ModelFetchOutcome, fetch_supported_models_with};
 #[cfg(feature = "cli")]
 pub use models::fetch_supported_models;
+pub use models::{fetch_supported_models_with, FetchSource, ModelFetchOutcome};

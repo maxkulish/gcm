@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T10:38:51.170Z'
+  updated_at: '2026-07-28T10:41:38.048Z'
 phases:
   discovery:
     status: complete
@@ -114,6 +114,7 @@ phases:
       - b968cf7
       - 17b314b
       - 46232f2
+      - 37b1b38
   pr:
     status: pending
   complete:
@@ -221,5 +222,11 @@ history:
     details: >-
       ST5 landed: split binary facade from library provider module. Commit 46232f2. cargo build --no-default-features
       and cargo test green.
+  - timestamp: '2026-07-28T10:41:38.048Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST6 landed: add library consumer integration test and gate cli-dependent tests. Commit 37b1b38. cargo test
+      --no-default-features and cargo test green.
 task_title: Expose provider identity and the live model registry through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm

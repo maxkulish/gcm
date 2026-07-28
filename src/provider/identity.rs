@@ -381,8 +381,7 @@ mod tests {
         assert_eq!(m, ProviderId::Groq.default_model());
         assert_eq!(s, ModelSource::Default);
         // empty env is skipped, falls to default
-        let (m, s) =
-            resolve_model_with_source(ProviderId::Groq, None, |_| Some("  ".to_string()));
+        let (m, s) = resolve_model_with_source(ProviderId::Groq, None, |_| Some("  ".to_string()));
         assert_eq!(m, ProviderId::Groq.default_model());
         assert_eq!(s, ModelSource::Default);
     }
