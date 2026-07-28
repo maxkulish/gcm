@@ -1,0 +1,59 @@
+task_id: clo-596
+task_type: development
+classification_reason: >-
+  Title is not a specification/operational signal, scope is code extraction with mechanical acceptance criteria across
+  provider identity and registry
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: gcm
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-596-expose-provider-identity-and-the-live-model-registry-through
+  priority: Medium
+workflow:
+  current_phase: discovery
+  status: active
+  created_at: '2026-07-28T09:36:23.412Z'
+  updated_at: '2026-07-28T09:37:19.898Z'
+phases:
+  discovery:
+    status: pending
+  design:
+    status: pending
+  plan:
+    status: pending
+  implement:
+    status: pending
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-28T09:36:23.412Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-596 as development
+  - timestamp: '2026-07-28T09:37:08.833Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: title is not a specification/operational signal, scope is code extraction with
+      mechanical acceptance criteria across provider identity and registry
+  - timestamp: '2026-07-28T09:37:18.366Z'
+    action: project_sync_start
+    phase: init
+    details: PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-596 --start
+  - timestamp: '2026-07-28T09:37:19.898Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+task_title: Expose provider identity and the live model registry through the gcm library
+task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm

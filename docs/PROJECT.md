@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-28 (CLO-595 merged — secret scanner exposed as library API; CLO-596 unblocked)
+**Last Updated**: 2026-07-28 (CLO-596 started; CLO-595 merged — secret scanner exposed as library API)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -89,7 +89,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None in progress | — | — | — |
+| [CLO-596](https://linear.app/cloud-ai/issue/CLO-596) | Expose provider identity and the live model registry through the gcm library | In Progress | Phase 6 | - |
 
 ## Up Next (Ready - no open blockers)
 
