@@ -456,7 +456,7 @@ fn provider_name(id: ProviderId) -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
     use std::io::{Read, Write};

@@ -11,9 +11,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 #[cfg(feature = "cli")]
-use super::identity::ErrorKind;
-#[cfg(feature = "cli")]
-use super::identity::{env_u64, is_retryable, retry_after_hint, ProviderError};
+use super::identity::{env_u64, is_retryable, retry_after_hint, ErrorKind, ProviderError};
 
 /// Default client timeout. Bumped 30 -> 60s (CLO-489 round-2 review pt 2):
 /// reasoning models / large diffs routinely take 45-90s to first token, and a
@@ -352,7 +350,7 @@ fn map_ureq_error(err: ureq::Error) -> ErrorKind {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
 

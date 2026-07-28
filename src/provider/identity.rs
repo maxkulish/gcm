@@ -92,13 +92,11 @@ pub enum ErrorKind {
     Config(String),
 }
 
-#[cfg(feature = "cli")]
 /// Which `kind`s are worth retrying (FR-22): only transient 429 / 5xx.
 pub(crate) fn is_retryable(kind: &ErrorKind) -> bool {
     matches!(kind, ErrorKind::RateLimit { .. } | ErrorKind::Server(_))
 }
 
-#[cfg(feature = "cli")]
 /// The server's `Retry-After` hint, when the error carries one (429 only).
 pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
     match kind {
@@ -107,7 +105,6 @@ pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
     }
 }
 
-#[cfg(feature = "cli")]
 /// Read a non-empty, parseable `u64` env var, else `None` (shared by submodules).
 pub(crate) fn env_u64(name: &str) -> Option<u64> {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
