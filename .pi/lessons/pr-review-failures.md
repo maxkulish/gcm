@@ -146,3 +146,31 @@ review absence is not meaningful while the PR is unmergeable.
 - After resolving conflicts and pushing, restart PR health, CI, and bot
   review gates. If the head SHA changed, restart the 10-minute bot wait
   from the new reviewable head, not from PR creation time.
+
+
+---
+
+## L8 - Worktree removal after merge can strand the orchestrator cwd
+
+**Source incident:** CLO-595 PR #45 merge completed from the main worktree
+(`/Users/mk/Code/gcm`), but the orchestrator session was bound to the feature
+worktree (`/Users/mk/Code/gcm--feat-clo-595-secret-scanner`). Removing that
+worktree while the session's cwd pointed to it left every subsequent `bash`
+invocation failing with \"Working directory does not exist\" before any command
+could run. All remaining phase work (aggregation-file sync, Linear close, lessons,
+workflow YAML finalisation) had to be performed through alternative execution
+paths.
+
+**Rule:** When a task is orchestrated from a feature worktree, finalise or
+migrate the session cwd to the main worktree *before* deleting the feature
+worktree. If the worktree must be removed earlier, use an execution context that
+does not depend on that path (e.g. a fresh shell with an explicit cwd) for all
+subsequent steps.
+
+**How to apply:**
+- In `complete.md` Step 2, switch back to the main worktree *and verify*
+  subsequent commands use it before removing the feature worktree.
+- Prefer running the `complete` phase from the main worktree if the code PR has
+  already merged; the feature worktree is only needed for pre-merge code edits.
+- If a tool becomes stranded, explicitly re-establish cwd with `cd <main-worktree>`
+  in a new process context rather than relying on inherited working directory.
