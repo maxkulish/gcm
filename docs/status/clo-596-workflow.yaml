@@ -23,7 +23,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T11:53:32.435Z'
+  updated_at: '2026-07-28T12:09:22.030Z'
 phases:
   discovery:
     status: complete
@@ -165,9 +165,15 @@ phases:
     validation_synthesis_report: docs/reviews/clo-596-validation-synthesis.md
     validation_synthesis_verdict: PASS_WITH_NOTES
   pr:
-    status: blocked
+    status: complete
     pr_number: 48
     pr_url: https://github.com/maxkulish/gcm/pull/48
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-07-28T12:18:32Z'
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-28T12:21:45Z'
+    pre_merge_refetch_passed: true
   complete:
     status: pending
 history:
@@ -338,5 +344,29 @@ history:
     details: >-
       PR #48 opened: https://github.com/maxkulish/gcm/pull/48. But PR health gate shows mergeable=CONFLICTING /
       mergeStateStatus=DIRTY. Resolving conflicts.
+  - timestamp: '2026-07-28T11:54:56.516Z'
+    action: workflow_unblocked
+    phase: pr
+    details: 'Merge conflicts resolved. PR #48 now mergeable=CLEAN / mergeable=MERGEABLE. Pushed e964747.'
+  - timestamp: '2026-07-28T11:58:09.984Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required checks passing: build/test ubuntu-latest and macos-latest both pass.'
+  - timestamp: '2026-07-28T12:08:58.780Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
+      inline comments expected.
+  - timestamp: '2026-07-28T12:09:06.925Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      0 review threads; 0 replies; /gemini review trailer not applicable (no comments). No bot reviewers installed.
+      Unresolved-thread re-check clean.
+  - timestamp: '2026-07-28T12:09:22.030Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
 task_title: Expose provider identity and the live model registry through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm
