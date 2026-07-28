@@ -1,0 +1,238 @@
+task_id: clo-554
+task_type: specification
+task_title: Add resolve-until-clean rebase loop to `gcm resolve`
+task_url: https://linear.app/cloud-ai/issue/CLO-554/add-resolve-until-clean-rebase-loop-to-gcm-resolve
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:
+      lean: spec
+      note: Loop wraps the existing run() in src/resolve/mod.rs:415-464; adds a flag in src/cli.rs:117, per-round rows in src/resolve/report.rs, a cap in config.rs - one subsystem
+    architecture_novelty:
+      lean: spec
+      note: No new dependency, data model, or process boundary; FinishOutcome::StoppedOnNextConflict (src/git.rs:24) already exists and is already classified at src/resolve/mod.rs:446 - the loop reads it as continue instead of terminal
+    prior_art:
+      lean: spec
+      note: CLO-555 built the transaction engine; docs/hotfix/2026-07-12-resolve-stage-and-finish.md:163 names this work as option C with its output contract already sketched
+    requirement_clarity:
+      lean: spec
+      note: Ticket carries owner-decided constraints (fresh confirm per round, provider-cost boundary, abort semantics), a 5-item scope list, 4 ACs, and a named test matrix
+    scope_signal:
+      lean: spec
+      note: Low priority, no estimate, ~5 items layered on an engine that already exists
+  rationale: The hard decisions were made at the CLO-555 hotfix review; what remains is a bounded loop over an engine that already reports the exact signal it needs.
+open_questions:
+  - 'JSON report is SCHEMA_VERSION = 1 (src/output.rs:13) and CLO-555 added staged/finish additively; per-round entries should follow the same additive pattern rather than bump the version. Resolve in spec.'
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: null
+  status_at_start: Backlog
+  status_at_complete: null
+  blocks: []
+  blocked_by: []
+  blocked_by_resolved:
+    - 'CLO-555 (resolve ownership transaction) - merged PR #35, 2026-07-13'
+  related: [CLO-555, CLO-533, CLO-531]
+  branch_suggested: kmamemo/clo-554-add-resolve-until-clean-rebase-loop-to-gcm-resolve
+  branch_actual: feat/clo-554-resolve-until-clean
+  priority: Low
+  labels: [HITL, Feature]
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-07-28T00:00:00.000Z'
+  updated_at: '2026-07-28T00:00:00.000Z'
+phases:
+  discovery:
+    status: skipped
+    approved: true
+    skip_reason: Specification task
+  design:
+    status: skipped
+    skip_reason: Specification task - using /spec instead of full design doc
+  plan:
+    status: skipped
+    skip_reason: Specification task - spec decomposition is the plan
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-07-28-clo-554-resolve-until-clean-loop.md
+    approved: true
+    approved_at: '2026-07-28T00:40:00.000Z'
+    approval_basis: 'Owner approved at the spec checkpoint after all 3 blocking and 16 lower-severity review findings were applied; both owner design decisions (round gate, max_rounds default 10) carried into the spec unchanged'
+    review_gemini: docs/reviews/clo-554-spec-review-gemini.md
+    review_ollama: docs/reviews/clo-554-spec-review-ollama.md
+    review_claude_fallback: docs/reviews/clo-554-spec-review-claude-fallback.md
+    review_synthesis: docs/reviews/clo-554-spec-review-synthesis.md
+    review_verdict: needs_revision
+    review_verdict_detail: 'Claude fallback (run 1): NEEDS_REVISION, 3 blocking + 9 lower findings. Gemini (run 2): APPROVE_WITH_SUGGESTIONS, 7 findings, zero constraint/decomposition violations. Consensus = strictest = needs_revision. Ollama failed both runs.'
+    review_completed: true
+    review_applied: true
+    review_runs: 2
+    review_infra_note: >-
+      Run 1: both external reviewers died on a shell quoting bug in
+      .lok/workflows/spec-review.toml - the Linear description is interpolated
+      inside single-quoted sed expressions, so an apostrophe ("helper's") closed
+      the quote and produced "unexpected EOF while looking for matching `''".
+      Claude fallback covered it. Run 2 with an apostrophe-free description got a
+      real Gemini review; Ollama/Codex still returned banner-only empty output.
+      The toml quoting bug is unfixed and will break any future review whose
+      description contains an apostrophe or a pipe.
+    applied_suggestions:
+      - 'BLOCKER: --max-rounds 1 contradiction across AC3/AC6/omission rule/Test 4 resolved - new AC4 pins identical git state + exit code + legacy headline, and states loop metadata is additionally emitted (explicit opt-in, not a compat break); AC7 scopes byte-identical JSON to runs passing no --max-rounds'
+      - 'BLOCKER: --max-rounds 0 rejection moved to clap value_parser!(u32).range(1..) - resolve_conflict_config returns ConflictConfig not Result (verified src/resolve/mod.rs:508) so it could not raise an error; config-side 0 specified as a GcmError::Config rejection'
+      - 'BLOCKER: added sub-task 7 for the mock-provider harness - mock_ollama_server_multiple has no request counter and a once-computed accept budget (verified tests/resolve_integration.rs:115-151), so AC2 zero-spend was unverifiable; now an Arc<AtomicUsize> counter plus a bounded join'
+      - 'Mid-loop abort headline pinned in AC5: today''s "Aborted - working tree restored, nothing changed" (src/resolve/mod.rs:1064) is false once a round is committed and pushes users toward a destructive git rebase --abort'
+      - 'AC8 added: envelope on non-completed terminals - top-level finish absent on mid-loop abort (Skip arm returns early, verified src/resolve/mod.rs:348-376), status resolved + stopped_on_conflict on a declined gate'
+      - 'AC6 banner corrected to "round i (cap N)" - "round i of N" implied the rebase needs N rounds when N is the ceiling'
+      - 'AC10 added: --dry-run and --no-finish each run exactly one round and omit loop (was prose-only in Constraints)'
+      - 'AC11 added: no-progress guard promoted from prose to a criterion (exit 0, terminal no_progress, stderr diagnostic) and restructured as a pure predicate so it is unit-testable without provoking a stalled rebase'
+      - 'Post-gate head re-read made a Must (Gemini): a user parked at the [y/N] gate can mutate the repo from another terminal, so the sha feeding the banner and the guard must be read after acceptance, not before the prompt'
+      - 'Test matrix grew 12 -> 17 rows: config-vs-CLI precedence, config max_rounds=0, cherry-pick sequence promoted from edge case to numbered test, single-round modes, no-progress predicate'
+      - 'README.md added to the file list (the [conflict] table at README.md:395-415 has no compiler forcing function); scope corrected 8 -> 9 files, 7 -> 8 sub-tasks'
+      - 'Section 1 savings claim trimmed: the loop saves process re-invocation and re-prompting only - config::load, apply_to_env, provider::select and resolve_conflict_config''s own config read all still run per round'
+      - 'Ctrl-C exposure documented in Section 1 and the edge cases (no signal handling exists; the loop widens a pre-existing window, recovery is re-running gcm resolve); signing pinentry-per-round documented as a README note'
+      - 'Fixture invariant stated for tests 1/3/4: one conflicted file with one Complex hunk per conflicting commit, so one queued mock response maps to exactly one round'
+    flagged_suggestions: []
+    design_decisions:
+      round_gate: 'Owner decision 2026-07-28: a [y/N] gate runs before each round after the first, showing the next stop commit + conflicted file count, so provider spend is authorized before it happens (per-file confirms alone come after the LLM calls). Skipped under --yes.'
+      max_rounds_default: 'Owner decision 2026-07-28: default 10; --max-rounds 1 reproduces today''s single-stop behavior; 0 rejected'
+      loop_seam: 'Loop driver lives in run_resolve (local entry), not run_resolve_in_repo, so the remote wrapper is untouched'
+      signal_not_op: 'Keyed on FinishResult::StoppedOnConflict rather than the op name, so cherry-pick sequences loop too'
+      json_additive: 'Additive `loop` object, SCHEMA_VERSION stays 1, omitted whenever the run behaves as today (byte-identical legacy JSON)'
+  implement:
+    status: complete
+    commits:
+      - 86de613
+    subtasks_completed: 8
+    bug_found_and_fixed:
+      title: 'Repo::is_rebasing reported a completed rebase as still in progress'
+      detail: >-
+        is_rebasing tested REBASE_HEAD, but git leaves that ref behind after a
+        rebase finishes. has_conflict_state() therefore stayed true and
+        finish_conflict_op classified a successful finish as
+        FinishOutcome::Failed, surfacing as FinishFailed with exit 1. Latent
+        because nothing drove a rebase to completion through gcm before - CLO-555
+        always ended while the ref was legitimately live. The loop fails on round
+        2 of every multi-commit rebase until this is fixed, so it is in scope.
+        Detection now uses git's own signal: the rebase-merge/rebase-apply
+        sequencer directory via rev-parse --git-path (worktree-safe).
+      regression_test: 'git::tests::finish_rebase_completing_the_sequence_reports_completed'
+      note: 'The integration test helper had the same REBASE_HEAD bug and was fixed alongside.'
+    spec_deviations:
+      - 'Unit tests run via `cargo test --bin gcm`, not `--lib` - gcm is a binary crate with no library target (that is CLO-595 work). Spec Evaluation column corrected.'
+      - 'Interactive tests (gate declined, mid-loop file rejection) could not be integration tests: needs_terminal_but_absent rejects a non-TTY run without --yes, and the harness pipes stdin. Covered instead at two levels - prompt contract by unit test, end-to-end by PTY acceptance cases AC-R3/AC-R4 (the CLO-555 AC-R1/AC-R2 pattern). AC2 zero-spend is ALSO proven hermetically on the cap boundary via the request counter.'
+      - 'AC4 split across two tests: --json suppresses the human headline, so the legacy-headline half and the loop-metadata half cannot be observed in one run.'
+      - 'LoopReport gained a skip-serialized `stopped_on` field (not in the original spec) so both the human recovery text and machine consumers can name the stop without shelling out to git.'
+      - 'PTY fixture uses two different files across the two conflicting commits: the acceptance mock serves one canned resolution for every request, so a same-file fixture would make round 2 an empty commit and stop git on "the previous cherry-pick is now empty".'
+    tests: '500 cargo tests (415 unit + 85 integration), 0 failures; acceptance 264 PASS / 0 FAIL / 1 SKIP'
+    checks: 'make check green (fmt-check + clippy --all-targets + full suite)'
+    codex_validated: false
+    codex_verdict: unavailable
+    codex_report: docs/reviews/clo-554-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-554-gemini-validation.md
+    gemini_verdict: pass_with_notes
+    validation_note: >-
+      Codex (gpt-5.4, high effort) read the diff for >15 min across two runs and
+      never emitted a report; terminated, no verdict. Gate proceeded on Gemini
+      per the documented fallback. Gemini 3.1 Pro returned PASS_WITH_NOTES with
+      zero defects and confirmed all 12 acceptance criteria covered.
+    validation_findings_dispositions:
+      - finding: 'LOW (src/cli.rs): Cli::max_rounds() accessor from decomposition step 2 was omitted'
+        disposition: not_applied
+        reason: >-
+          Deliberate. remote_push()/no_finish() exist because call sites outside
+          cli.rs need them; nothing outside resolve_conflict_config reads
+          max_rounds, and that function already gets it from the exhaustive
+          Commands::Resolve destructure - which is also what forces future fields
+          to be handled at compile time. Adding the accessor would introduce an
+          unused pub fn (dead_code) purely for symmetry. Spec decomposition item 2
+          is the thing that was slightly wrong here, not the code.
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/47
+    pr_number: 47
+    base_moved_mid_flight: >-
+      CLO-595 (secret scanner as a library API, PR #45/#46) merged into main while
+      CLO-554 was in the validation gate, adding src/lib.rs and a [lib] target and
+      touching src/cli.rs, src/error.rs, src/privacy/ and src/resolve/mod.rs.
+      Rebased onto post-CLO-595 main: source files auto-merged; the three
+      aggregation docs conflicted and were hand-resolved (both sides had edited
+      the Last Updated lines, Active Work, and Unblocked & Ready). Re-verified
+      after the rebase - make check green, 514 cargo tests (the lib split moved 39
+      privacy tests into the new lib target), acceptance 264/0. CLO-554's unit
+      tests stay in the bin target, so `cargo test --bin gcm` remains correct.
+    revalidated_after_rebase: true
+    ci_passed: true
+    ci_note: 'Both jobs green first run on 690d491 (ubuntu-latest 2m33s, macos-latest 3m12s); no flakes'
+    awaiting: 'Owner squash-merge on GitHub, then /pr:finalize'
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-28T00:00:00.000Z'
+    action: workflow_started
+    phase: init
+    details: Workflow created for CLO-554; branch feat/clo-554-resolve-until-clean already existed with no commits ahead of main
+  - timestamp: '2026-07-28T00:00:00.000Z'
+    action: task_classified
+    phase: init
+    details: 'recommended: specification, chosen: specification, confidence: high (5/5 signals aligned); owner confirmed at the classification checkpoint'
+  - timestamp: '2026-07-28T00:05:00.000Z'
+    action: project_sync_start
+    phase: init
+    details: 'PROJECT.md Active Work 1/3 + master table In Progress + removed from Up Next; ROADMAP.md Phase 4 In Progress; DEPENDENCIES.md left Unblocked & Ready. WIP 0/3 and no blockers at entry.'
+  - timestamp: '2026-07-28T00:20:00.000Z'
+    action: spec_review_complete
+    phase: spec
+    details: >-
+      Two review runs. Run 1: Gemini + Ollama both killed by a quoting bug in the
+      lok harness (apostrophe in the description closed a single-quoted sed
+      expression); Claude fallback returned NEEDS_REVISION with 3 blocking
+      findings. Run 2 with sanitized args: Gemini APPROVE_WITH_SUGGESTIONS, 7
+      findings, zero constraint or decomposition violations; Ollama/Codex
+      banner-only empty output again. Consensus = NEEDS_REVISION (strictest).
+  - timestamp: '2026-07-28T01:40:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 8 sub-tasks landed in 86de613 + b91caae. Loop driver in run_resolve keyed
+      on StoppedOnConflict; round gate + --max-rounds cap (default 10); additive
+      JSON loop block; post-gate head re-read feeding a pure advanced() guard.
+      Fixed a latent CLO-555 bug the loop is the first path to hit: is_rebasing
+      tested REBASE_HEAD, which git leaves behind after a rebase completes, so a
+      successful finish classified as Failed. 500 cargo tests + acceptance 264/0
+      including new PTY cases AC-R3/AC-R4. make check green.
+  - timestamp: '2026-07-28T01:45:00.000Z'
+    action: pushed_to_remote
+    phase: implement
+    details: 'Branch feat/clo-554-resolve-until-clean pushed to origin (new branch)'
+  - timestamp: '2026-07-28T09:40:00.000Z'
+    action: pushed_to_remote
+    phase: pr
+    details: >-
+      Rebased onto post-CLO-595 main (base moved during the validation gate) and
+      force-pushed with --force-with-lease. Source auto-merged; PROJECT.md,
+      DEPENDENCIES.md and ROADMAP.md hand-resolved. Full re-verification after the
+      rebase: make check green, 514 cargo tests, acceptance 264 PASS / 0 FAIL.
+  - timestamp: '2026-07-28T09:46:00.000Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #47 created against post-CLO-595 main; Linear comment posted and CLO-554 moved to In Review'
+  - timestamp: '2026-07-28T00:40:00.000Z'
+    action: spec_approved
+    phase: spec
+    details: 'Owner approved at the spec checkpoint; proceeding straight to implement (spec decomposition is the plan)'
+  - timestamp: '2026-07-28T00:35:00.000Z'
+    action: spec_review_applied
+    phase: spec
+    details: >-
+      All 3 blockers and 16 lower-severity findings applied in one pass; each
+      blocker verified against the code first (resolve_conflict_config returns
+      ConflictConfig not Result at src/resolve/mod.rs:508; the Skip arm returns
+      before the finish step at :348-376; mock_ollama_server_multiple has no
+      request counter at tests/resolve_integration.rs:115-151). ACs grew 8 -> 12,
+      tests 12 -> 17, sub-tasks 7 -> 8. No finding contradicted a prior decision,
+      so nothing was flagged for owner adjudication.

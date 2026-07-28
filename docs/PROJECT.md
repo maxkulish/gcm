@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-07-28 (CLO-595 merged — secret scanner exposed as library API; CLO-596 unblocked)
+**Last Updated**: 2026-07-28 (CLO-595 merged — secret scanner library API; CLO-554 in review — resolve-until-clean rebase loop)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -44,7 +44,7 @@
 | [CLO-545](https://linear.app/cloud-ai/issue/CLO-545) | Maint | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | AFK/Improvement | Medium | Done | — | provider maintenance; no new FR; spun off CLO-547 |
 | [CLO-547](https://linear.app/cloud-ai/issue/CLO-547) | Maint | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | AFK/Improvement | Medium | Done | — | provider-wide discovery hygiene; split from CLO-545 review; PR #38 |
 | [CLO-555](https://linear.app/cloud-ai/issue/CLO-555) | R3 | Rework `gcm resolve` into an ownership transaction (apply, stage, signed finish) | AFK/Improvement | Medium | Done | — | resolve UX contract; fixed prompt parser + remote Partial commit/push; PR #35 |
-| [CLO-554](https://linear.app/cloud-ai/issue/CLO-554) | R4 | Add resolve-until-clean rebase loop to `gcm resolve` | HITL/Feature | Low | Backlog | — (CLO-555 Done 2026-07-13) | multi-commit rebase completion; builds on StoppedOnNextConflict |
+| [CLO-554](https://linear.app/cloud-ai/issue/CLO-554) | R4 | Add resolve-until-clean rebase loop to `gcm resolve` | HITL/Feature | Low | In Progress | — (CLO-555 Done 2026-07-13) | multi-commit rebase completion; builds on StoppedOnNextConflict |
 | [CLO-564](https://linear.app/cloud-ai/issue/CLO-564) | Maint | Add live Vertex model discovery to `gcm provider` + refresh Gemini catalog (default → gemini-3.5-flash-lite) | AFK/Improvement | Medium | Done | — (rel CLO-547/537/516) | closed CLO-537 design-D4 deferral; PR #41 |
 
 FR-1…58 are allocated across CLO-485…CLO-497 (`a`/`b`/`c` mark partial → full progressions). **FR-60** (new, added 2026-06-23 in `e89ee14`) is allocated to CLO-514. **v2/R-series** (CLO-515…535) are post-migration additions: introspection (`gcm status`/`provider`), the `gcm resolve` conflict-resolver feature, and bug fixes. **CLO-537** (Vertex AI provider, S14) is the first open post-`resolve` slice — provider expansion, no new FR.
@@ -83,20 +83,19 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 **Two parallel fronts after the tracer (CLO-486):** the workflow chain (CLO-487 → CLO-491 → CLO-492) and the provider chain (CLO-489 → CLO-494/CLO-495).
 
-**Live frontier:** **CLO-555** (rework `gcm resolve` into an ownership transaction - apply, stage, signed finish) merged in PR #35 (2026-07-13): Yes to every file now applies, stages, and finishes the operation with a signed commit; No restores byte-for-byte. Fixed along the way: the anything-means-yes prompt parser (both prompts, breaking change: Enter now aborts), the remote wrapper committing/pushing Partial marker trees, `ConflictConfig` defaults silently disabling mergiraf, and zdiff3 destroying hand-made resolutions. **CLO-547** (model-discovery hardening) merged in PR #38 (2026-07-22); **CLO-564** (live Vertex model discovery + Gemini catalog refresh, default → gemini-3.5-flash-lite) is next, built on its transport seam. **CLO-554** (rebase resolve-until-clean loop) remains in the backlog. Previously: **CLO-545** (OpenAI GPT-5.6 model refresh — default `gpt-5.6-terra`, `gpt-5.6-luna` selectable, uniform GPT-5.6 payload, validate-to-family gate) merged in PR #34 (2026-07-11); the only remaining step is the owner's live API smokes (AC7, need `OPENAI_API_KEY`). **CLO-547** (provider-wide discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). All prior tracked gcm work is complete: `gcm resolve` Phase 1 (CLO-531, PR #25) + fixes (CLO-534/535) + Phase 2 (CLO-533, PR #30) shipped. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (HITL).
+**Live frontier:** **CLO-555** (rework `gcm resolve` into an ownership transaction - apply, stage, signed finish) merged in PR #35 (2026-07-13): Yes to every file now applies, stages, and finishes the operation with a signed commit; No restores byte-for-byte. Fixed along the way: the anything-means-yes prompt parser (both prompts, breaking change: Enter now aborts), the remote wrapper committing/pushing Partial marker trees, `ConflictConfig` defaults silently disabling mergiraf, and zdiff3 destroying hand-made resolutions. **CLO-547** (model-discovery hardening) merged in PR #38 (2026-07-22); **CLO-564** (live Vertex model discovery + Gemini catalog refresh, default → gemini-3.5-flash-lite) is next, built on its transport seam. **CLO-554** (rebase resolve-until-clean loop) is the current Active Work — started 2026-07-28 as a specification task on `feat/clo-554-resolve-until-clean`, closing the one-conflict-stop limit that CLO-555 deliberately left open. Previously: **CLO-545** (OpenAI GPT-5.6 model refresh — default `gpt-5.6-terra`, `gpt-5.6-luna` selectable, uniform GPT-5.6 payload, validate-to-family gate) merged in PR #34 (2026-07-11); the only remaining step is the owner's live API smokes (AC7, need `OPENAI_API_KEY`). **CLO-547** (provider-wide discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). All prior tracked gcm work is complete: `gcm resolve` Phase 1 (CLO-531, PR #25) + fixes (CLO-534/535) + Phase 2 (CLO-533, PR #30) shipped. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — code done and verified; the only remaining step is the maintainer's live ADC end-to-end check (HITL).
 
 ## Active Work (WIP Limit: 3)
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None in progress | — | — | — |
+| [CLO-554](https://linear.app/cloud-ai/issue/CLO-554) | Add resolve-until-clean rebase loop to `gcm resolve` | In Review | PR | — |
 
 ## Up Next (Ready - no open blockers)
 
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
 | 1 | [CLO-595](https://linear.app/cloud-ai/issue/CLO-595) | Ship gcm's secret scanner as a library API consumable by other crates | CLO-594 complete (2026-07-27) | — |
-| 2 | [CLO-554](https://linear.app/cloud-ai/issue/CLO-554) | Add resolve-until-clean rebase loop to `gcm resolve` | CLO-555 complete (2026-07-13) | — |
 
 > All tracked gcm work is complete. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09); the only remaining step is the maintainer's live ADC end-to-end check (HITL, needs the GCP project + `gcloud auth application-default login`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), and `gcm resolve` Phase 1/2 (CLO-531 + fixes CLO-534/535 + CLO-533).
 >

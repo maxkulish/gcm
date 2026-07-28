@@ -9,6 +9,8 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 
 const PROVIDER_ENV: &[&str] = &[
@@ -112,16 +114,34 @@ fn mock_ollama_server(response_body: &str) -> (String, thread::JoinHandle<()>) {
     (format!("http://127.0.0.1:{port}"), handle)
 }
 
-fn mock_ollama_server_multiple(responses: Vec<String>) -> (String, thread::JoinHandle<()>) {
+/// Serve `responses` in order, one per incoming request, and count how many
+/// requests actually arrived.
+///
+/// The counter is what makes "this round spent nothing" provable rather than
+/// inferred (CLO-554 AC2): a test that queues two responses and asserts the
+/// counter reads 1 has shown the declined round issued no provider call.
+///
+/// The accept budget restarts for each queued response, so a slow multi-round
+/// run is not cut off by time the earlier rounds consumed. When fewer requests
+/// arrive than responses were queued, the pending waits time out in turn and
+/// the thread exits, so `join()` always returns.
+fn mock_ollama_server_multiple(
+    responses: Vec<String>,
+) -> (String, thread::JoinHandle<()>, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().unwrap().port();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&requests);
     let handle = thread::spawn(move || {
         listener.set_nonblocking(true).ok();
-        let start = std::time::Instant::now();
         for body in responses {
+            // Per-response budget: an earlier round's latency must not eat the
+            // window a later one waits in.
+            let start = std::time::Instant::now();
             loop {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        counter.fetch_add(1, Ordering::SeqCst);
                         // See mock_ollama_server: the accepted socket inherits
                         // O_NONBLOCK from the non-blocking listener on BSD/macOS.
                         let _ = stream.set_nonblocking(false);
@@ -138,6 +158,8 @@ fn mock_ollama_server_multiple(responses: Vec<String>) -> (String, thread::JoinH
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         if start.elapsed() > std::time::Duration::from_secs(10) {
+                            // Nobody is coming for this response; stop waiting
+                            // for the rest either.
                             return;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -147,7 +169,7 @@ fn mock_ollama_server_multiple(responses: Vec<String>) -> (String, thread::JoinH
             }
         }
     });
-    (format!("http://127.0.0.1:{port}"), handle)
+    (format!("http://127.0.0.1:{port}"), handle, requests)
 }
 
 /// Build a mock Ollama chat response that returns a resolution JSON.
@@ -614,7 +636,7 @@ fn resolve_validation_retry_then_escalate() {
     let bad1 = mock_resolve_response("<<<<<<< HEAD\nstill conflict\n=======\n>>>>>>> feature\n");
     let bad2 =
         mock_resolve_response("<<<<<<< HEAD\nyet again conflict\n=======\n>>>>>>> feature\n");
-    let (url, server) = mock_ollama_server_multiple(vec![bad1, bad2]);
+    let (url, server, _requests) = mock_ollama_server_multiple(vec![bad1, bad2]);
 
     let cfg_dir = tempfile::tempdir().unwrap();
     write_config(
@@ -662,7 +684,7 @@ fn resolve_validation_retry_success() {
     // Serve a bad response first, then a successful clean response
     let bad = mock_resolve_response("<<<<<<< HEAD\nfirst bad try\n=======\n>>>>>>> feature\n");
     let clean = mock_resolve_response("clean and corrected resolution\n");
-    let (url, server) = mock_ollama_server_multiple(vec![bad, clean]);
+    let (url, server, _requests) = mock_ollama_server_multiple(vec![bad, clean]);
 
     let cfg_dir = tempfile::tempdir().unwrap();
     write_config(
@@ -1112,10 +1134,264 @@ fn cherry_pick_transaction_completes() {
     assert_eq!(unmerged_paths(repo), "");
 }
 
+/// A 3-commit feature branch rebased onto a moved mainline, where BOTH feature
+/// commits conflict on the same file. Stops on c1, then on c2.
+///
+/// Fixture invariant the round-counting tests depend on: exactly one conflicted
+/// file with one Complex hunk per conflicting commit, so one queued mock
+/// response serves exactly one round. Changing the file set or making a hunk
+/// trivially auto-resolvable would silently change what the request counter
+/// proves.
+fn two_conflict_rebase(repo: &Path) -> String {
+    git_init(repo);
+    fs::write(repo.join("f.txt"), "base\n").unwrap();
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "base"]);
+    let base = git_str(repo, &["branch", "--show-current"]);
+    git(repo, &["switch", "-q", "-c", "feature"]);
+    fs::write(repo.join("f.txt"), "f1\n").unwrap();
+    git(repo, &["commit", "-qam", "c1"]);
+    fs::write(repo.join("f.txt"), "f2\n").unwrap();
+    git(repo, &["commit", "-qam", "c2"]);
+    git(repo, &["switch", "-q", &base]);
+    fs::write(repo.join("f.txt"), "moved\n").unwrap();
+    git(repo, &["commit", "-qam", "move main"]);
+    git(repo, &["switch", "-q", "feature"]);
+    let _ = run_git(repo, &["rebase", &base]); // stops on c1
+    base
+}
+
+/// A rebase is in progress iff git's sequencer directory exists. Do NOT test
+/// `REBASE_HEAD` here: git leaves that ref behind after the rebase finishes, so
+/// it reports a completed rebase as still running (the same trap the
+/// production `Repo::is_rebasing` had).
+fn rebase_in_progress(repo: &Path) -> bool {
+    let out = run_git(repo, &["rev-parse", "--git-path", "rebase-merge"]);
+    let merge_dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let out = run_git(repo, &["rev-parse", "--git-path", "rebase-apply"]);
+    let apply_dir = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    repo.join(merge_dir).exists() || repo.join(apply_dir).exists()
+}
+
 #[test]
 fn rebase_stops_on_next_conflict_reports_rerun() {
     if !signing_available() {
         eprintln!("skipping rebase_stops_on_next_conflict: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    // Two responses are queued but the cap allows one round: the counter then
+    // proves the loop spent nothing past its own boundary (AC2's guarantee,
+    // exercised here on the cap rather than the interactive gate - the gate
+    // needs a TTY and lives in scripts/acceptance.sh AC-R3).
+    let (url, server, requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("r1\n"),
+        mock_resolve_response("r2\n"),
+    ]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // --max-rounds 1 is the deliberate opt-in to pre-CLO-554 behavior: one
+    // provider call resolves the c1 stop, the finish continues the rebase,
+    // which halts again applying c2, and the run ends there.
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &[
+            "resolve",
+            "--yes",
+            "--max-rounds",
+            "1",
+            "--provider",
+            "ollama",
+        ],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        1,
+        "the capped-off round must not have issued a provider request"
+    );
+
+    // Legacy half of AC4: identical headline and git state.
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("stopped on the next conflicted commit"),
+        "headline: {stdout}"
+    );
+    assert!(rebase_in_progress(repo), "rebase still in progress");
+    assert!(
+        !unmerged_paths(repo).is_empty(),
+        "next commit's conflict present"
+    );
+}
+
+#[test]
+fn max_rounds_one_emits_cap_reached_metadata() {
+    // The other half of AC4: passing --max-rounds is an explicit opt-in, so the
+    // run additionally reports why it stopped. (Split from the legacy pin above
+    // because --json suppresses the human headline that test asserts.)
+    if !signing_available() {
+        eprintln!("skipping max_rounds_one_emits_cap_reached_metadata: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    let (url, server, requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("r1\n"),
+        mock_resolve_response("r2\n"),
+    ]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &[
+            "resolve",
+            "--json",
+            "--yes",
+            "--max-rounds",
+            "1",
+            "--provider",
+            "ollama",
+        ],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json envelope");
+    assert_eq!(v["loop"]["terminal"], "cap_reached", "{stdout}");
+    assert_eq!(v["loop"]["rounds_run"], 1, "{stdout}");
+    assert_eq!(v["loop"]["max_rounds"], 1, "{stdout}");
+    // The stop the user would see in `git status` is named for machines too.
+    assert!(v["loop"]["stopped_on"].is_string(), "{stdout}");
+}
+
+#[test]
+fn rebase_loop_completes_multi_commit_in_one_invocation() {
+    if !signing_available() {
+        eprintln!("skipping rebase_loop_completes_multi_commit: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    let (url, server, requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("r1\n"),
+        mock_resolve_response("r2\n"),
+    ]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), 2, "one call per round");
+
+    // AC1: the whole rebase finished in this one invocation.
+    assert!(!rebase_in_progress(repo), "rebase completed");
+    assert_eq!(unmerged_paths(repo), "", "nothing left conflicted");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json envelope");
+    assert_eq!(v["loop"]["terminal"], "completed", "{stdout}");
+    assert_eq!(v["loop"]["rounds_run"], 2, "{stdout}");
+    assert_eq!(v["loop"]["rounds"].as_array().unwrap().len(), 2, "{stdout}");
+    // Each round names the commit it was applying.
+    assert!(v["loop"]["rounds"][0]["commit"].is_string(), "{stdout}");
+    assert!(v["loop"]["rounds"][1]["commit"].is_string(), "{stdout}");
+    assert_ne!(
+        v["loop"]["rounds"][0]["commit"], v["loop"]["rounds"][1]["commit"],
+        "rounds must name different commits: {stdout}"
+    );
+    // Both feature commits landed on top of the moved mainline.
+    let log = git_str(repo, &["log", "--oneline"]);
+    assert!(log.contains("c1") && log.contains("c2"), "log: {log}");
+}
+
+#[test]
+fn rebase_loop_escalation_stops_loop_and_keeps_earlier_rounds() {
+    if !signing_available() {
+        eprintln!("skipping rebase_loop_escalation: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    // Round 1 resolves; round 2's provider response is unusable, so that file
+    // escalates. The finish is skipped, the report is Partial, and the loop
+    // must not start a round 3.
+    let (url, server, requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("r1\n"),
+        "{\"message\":{\"content\":\"not json\"}}".to_string(),
+        mock_resolve_response("never\n"),
+    ]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "escalation is exit 0: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json envelope");
+    assert_eq!(v["status"], "partial", "{stdout}");
+    assert_eq!(v["loop"]["terminal"], "partial", "{stdout}");
+    assert_eq!(v["loop"]["rounds_run"], 2, "no round 3: {stdout}");
+    // Round 1's commit survives the round-2 escalation.
+    let log = git_str(repo, &["log", "--oneline"]);
+    assert!(log.contains("c1"), "round 1 stays committed: {log}");
+    assert!(rebase_in_progress(repo), "rebase left stopped");
+    // A third round was never attempted, so the third response went unused.
+    assert!(
+        requests.load(Ordering::SeqCst) <= 2,
+        "loop must not spend after an escalation"
+    );
+}
+
+#[test]
+fn cherry_pick_sequence_loops_on_the_same_signal() {
+    if !signing_available() {
+        eprintln!("skipping cherry_pick_sequence_loops: signing unavailable");
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -1133,20 +1409,212 @@ fn rebase_stops_on_next_conflict_reports_rerun() {
     git(repo, &["switch", "-q", &base]);
     fs::write(repo.join("f.txt"), "moved\n").unwrap();
     git(repo, &["commit", "-qam", "move main"]);
-    git(repo, &["switch", "-q", "feature"]);
-    let _ = run_git(repo, &["rebase", &base]); // stops on c1
+    // Cherry-picking a RANGE sequences the same way a rebase does.
+    let _ = run_git(repo, &["cherry-pick", &format!("{base}..feature")]);
 
-    let (url, server) = mock_ollama_server(&mock_resolve_response("r1\n"));
+    let (url, server, _requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("p1\n"),
+        mock_resolve_response("p2\n"),
+    ]);
     let cfg_dir = tempfile::tempdir().unwrap();
     write_config(cfg_dir.path(), OLLAMA_CONFIG);
 
-    // One provider call resolves the c1 stop; the finish continues the rebase,
-    // which halts again applying c2. That ends this run (CLO-554 owns looping).
     let out = run_gcm(
         repo,
         cfg_dir.path(),
         &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--json", "--yes", "--provider", "ollama"],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json envelope");
+    // Keying on StoppedOnConflict rather than the op name is what makes this
+    // work with no cherry-pick-specific code.
+    assert_eq!(
+        v["loop"]["rounds"][0]["finish"]["op"], "cherry-pick",
+        "{stdout}"
+    );
+    assert!(
+        v["loop"]["rounds_run"].as_u64().unwrap() >= 2,
+        "the sequence looped: {stdout}"
+    );
+}
+
+#[test]
+fn max_rounds_zero_is_rejected_at_parse_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+    let before = fs::read(repo.join("f.txt")).unwrap();
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", "http://127.0.0.1:1")],
+        &[
+            "resolve",
+            "--yes",
+            "--max-rounds",
+            "0",
+            "--provider",
+            "ollama",
+        ],
+    );
+    assert!(!out.status.success(), "0 rounds is not a runnable request");
+    // clap rejects before main ever runs, so the tree is untouched.
+    assert_eq!(
+        fs::read(repo.join("f.txt")).unwrap(),
+        before,
+        "no mutation on a rejected flag"
+    );
+}
+
+#[test]
+fn config_max_rounds_zero_is_rejected_before_mutation() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git_init(repo);
+    create_conflict(repo);
+    let before = fs::read(repo.join("f.txt")).unwrap();
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(
+        cfg_dir.path(),
+        "version = 2\ndefault = \"ollama\"\n\n[[providers]]\nid = \"ollama\"\n\n[conflict]\nmax_rounds = 0\n",
+    );
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", "http://127.0.0.1:1")],
         &["resolve", "--yes", "--provider", "ollama"],
+    );
+    assert!(!out.status.success(), "a configured 0 is rejected too");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("max_rounds must be at least 1"),
+        "actionable message: {stderr}"
+    );
+    // Rejected before the snapshot/zdiff3 re-checkout: markers untouched.
+    assert_eq!(
+        fs::read(repo.join("f.txt")).unwrap(),
+        before,
+        "no mutation on a rejected config"
+    );
+}
+
+#[test]
+fn max_rounds_flag_beats_config() {
+    if !signing_available() {
+        eprintln!("skipping max_rounds_flag_beats_config: signing unavailable");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    let (url, server, requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("r1\n"),
+        mock_resolve_response("r2\n"),
+    ]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    // Config says 5; the flag says 1. The flag wins, so the loop stops after
+    // one round and the second queued response is never requested.
+    write_config(
+        cfg_dir.path(),
+        "version = 2\ndefault = \"ollama\"\n\n[[providers]]\nid = \"ollama\"\n\n[conflict]\nmax_rounds = 5\n",
+    );
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &[
+            "resolve",
+            "--json",
+            "--yes",
+            "--max-rounds",
+            "1",
+            "--provider",
+            "ollama",
+        ],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("json envelope");
+    assert_eq!(v["loop"]["max_rounds"], 1, "CLI overrides config: {stdout}");
+    assert_eq!(v["loop"]["terminal"], "cap_reached", "{stdout}");
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn no_finish_runs_a_single_round_without_loop_metadata() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    let (url, server, requests) = mock_ollama_server_multiple(vec![
+        mock_resolve_response("r1\n"),
+        mock_resolve_response("r2\n"),
+    ]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    // --no-finish never continues the rebase, so no second stop can arise.
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &[
+            "resolve",
+            "--json",
+            "--yes",
+            "--no-finish",
+            "--provider",
+            "ollama",
+        ],
+    );
+    server.join().unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), 1, "exactly one round");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("\"loop\""),
+        "a single-round mode emits the pre-CLO-554 envelope: {stdout}"
+    );
+}
+
+#[test]
+fn dry_run_runs_a_single_round_without_loop_metadata() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    two_conflict_rebase(repo);
+
+    let (url, server, _requests) = mock_ollama_server_multiple(vec![mock_resolve_response("r1\n")]);
+    let cfg_dir = tempfile::tempdir().unwrap();
+    write_config(cfg_dir.path(), OLLAMA_CONFIG);
+
+    let out = run_gcm(
+        repo,
+        cfg_dir.path(),
+        &[("GCM_OLLAMA_BASE_URL", &url)],
+        &["resolve", "--json", "--dry-run", "--provider", "ollama"],
     );
     server.join().unwrap();
     assert!(
@@ -1156,19 +1624,10 @@ fn rebase_stops_on_next_conflict_reports_rerun() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("stopped on the next conflicted commit"),
-        "headline: {stdout}"
+        !stdout.contains("\"loop\""),
+        "dry-run previews the first stop only: {stdout}"
     );
-    assert!(
-        run_git(repo, &["rev-parse", "--verify", "--quiet", "REBASE_HEAD"])
-            .status
-            .success(),
-        "rebase still in progress at the next stop"
-    );
-    assert!(
-        !unmerged_paths(repo).is_empty(),
-        "next commit's conflict present"
-    );
+    assert!(rebase_in_progress(repo), "dry-run changed nothing");
 }
 
 #[test]
