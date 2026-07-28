@@ -12,6 +12,7 @@
 use serde_json::{json, Value};
 
 use super::http::{self, HttpRequest};
+use super::OPENAI_SUPPORTED_MODELS;
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
 use crate::plan::Plan;
@@ -25,7 +26,7 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 /// GPT-5.6 family is valid: `default_model`, the wizard fallback list, and the
 /// `provider::select` validation gate all derive from this single source. `[0]` is
 /// the default (`terra`, the mini-tier like-for-like per OpenAI's tier mapping).
-pub(super) const SUPPORTED_MODELS: [&str; 2] = ["gpt-5.6-terra", "gpt-5.6-luna"];
+pub(super) const SUPPORTED_MODELS: &[&str] = OPENAI_SUPPORTED_MODELS;
 
 pub struct OpenAi {
     model: String,
@@ -287,8 +288,9 @@ mod tests {
         assert!(validate_model("gpt-5.6-luna").is_ok());
         // Any other model is rejected with an actionable Config error naming the
         // model and pointing at `gcm provider`. Uses non-legacy invalid ids so this
-        // helper test carries no swept strings; the `mod.rs` `select`-gate test is the
-        // sole legacy-string fixture (the AC9 regression scenario, AC5/AC8 exemption).
+        // helper test carries no swept strings; the facade `provider::select`-gate test
+        // at `src/provider/facade.rs` is the sole legacy-string fixture (the AC9
+        // regression scenario, AC5/AC8 exemption).
         let err = validate_model("gpt-5.6-sol").unwrap_err();
         assert!(matches!(err.kind, ErrorKind::Config(_)));
         let msg = err.to_string();

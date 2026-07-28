@@ -93,11 +93,13 @@ pub enum ErrorKind {
 }
 
 /// Which `kind`s are worth retrying (FR-22): only transient 429 / 5xx.
+#[allow(dead_code)]
 pub(crate) fn is_retryable(kind: &ErrorKind) -> bool {
     matches!(kind, ErrorKind::RateLimit { .. } | ErrorKind::Server(_))
 }
 
 /// The server's `Retry-After` hint, when the error carries one (429 only).
+#[allow(dead_code)]
 pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
     match kind {
         ErrorKind::RateLimit { retry_after } => *retry_after,
@@ -106,6 +108,7 @@ pub(crate) fn retry_after_hint(kind: &ErrorKind) -> Option<Duration> {
 }
 
 /// Read a non-empty, parseable `u64` env var, else `None` (shared by submodules).
+#[allow(dead_code)]
 pub(crate) fn env_u64(name: &str) -> Option<u64> {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
 }
@@ -141,8 +144,10 @@ pub enum AuthMethod {
 
 /// OpenAI supported model family (CLO-545). Kept in identity so the library's
 /// model registry can filter/dedupe OpenAI models without depending on the
-/// binary-only `openai` backend module.
-pub(crate) const OPENAI_SUPPORTED_MODELS: &[&str] = &["gpt-5.6-terra", "gpt-5.6-luna"];
+/// binary-only `openai` backend module. Re-exported by the facade so the
+/// backend shares one source of truth.
+#[doc(hidden)]
+pub const OPENAI_SUPPORTED_MODELS: &[&str] = &["gpt-5.6-terra", "gpt-5.6-luna"];
 
 impl ProviderId {
     /// The provider's API key env var, or `None` for key-free Ollama and Vertex.
@@ -223,6 +228,24 @@ impl ProviderId {
             ProviderId::Vertex => AuthMethod::KeylessAdc,
             _ => AuthMethod::ApiKey,
         }
+    }
+}
+
+#[cfg(test)]
+mod auth_method_tests {
+    use super::{AuthMethod, ProviderId};
+
+    #[test]
+    fn auth_method_returns_correct_variant_for_each_provider() {
+        assert_eq!(ProviderId::Groq.auth_method(), AuthMethod::ApiKey);
+        assert_eq!(ProviderId::Google.auth_method(), AuthMethod::ApiKey);
+        assert_eq!(ProviderId::Openai.auth_method(), AuthMethod::ApiKey);
+        assert_eq!(ProviderId::Anthropic.auth_method(), AuthMethod::ApiKey);
+        assert_eq!(
+            ProviderId::Ollama.auth_method(),
+            AuthMethod::KeylessEndpoint
+        );
+        assert_eq!(ProviderId::Vertex.auth_method(), AuthMethod::KeylessAdc);
     }
 }
 

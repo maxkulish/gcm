@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T10:41:38.048Z'
+  updated_at: '2026-07-28T11:39:09.967Z'
 phases:
   discovery:
     status: complete
@@ -107,7 +107,7 @@ phases:
     plan_file: docs/plans/clo-596-expose-provider-identity-and-registry.md
     approved: true
   implement:
-    status: pending
+    status: validating
     commits:
       - 63006bc
       - 64f7631
@@ -115,6 +115,46 @@ phases:
       - 17b314b
       - 46232f2
       - 37b1b38
+      - 8cacf80
+    assumption_outcomes:
+      - evidence: 'src/lib.rs declares #[doc(hidden)] pub mod debug; and cargo build --no-default-features passes'
+        outcome: held
+        text: 'src/debug.rs has no use crate:: imports and can be compiled in the library crate without changes.'
+      - evidence: >-
+          Cargo.toml line 18: cli = ["clap", "dep:cliclack", ...]; ProviderId derives ValueEnum under default features
+          and compiles without clap when no-default-features
+        outcome: held
+        text: >-
+          The cli feature in Cargo.toml already includes 'clap' (not just 'dep:clap'), so cfg_attr(feature='clap') fires
+          under default features.
+      - evidence: Binary compiles and all provider tests pass; facade re-exports from gcm::provider (src/provider/facade.rs)
+        outcome: held
+        text: >-
+          The binary's existing use crate::provider::ProviderId callsites resolve to the facade's pub use
+          gcm::provider::ProviderId re-export without changes, maintaining type identity.
+      - evidence: >-
+          src/provider/identity.rs::tests::provider_id_parse_canonical_alias_and_case covers gemini/google-vertex
+          aliases and unknown inputs
+        outcome: held
+        text: >-
+          ProviderId::parse can be hand-rolled to match clap::ValueEnum::from_str's alias behavior (gemini to Google,
+          google-vertex to Vertex) without behavioral change.
+      - evidence: status.rs compiles and status_* tests pass; facade declares pub(crate) mod ollama
+        outcome: held
+        text: >-
+          status.rs's use of crate::provider::ollama (is_cloud_model, normalize_host, DEFAULT_BASE_URL) continues to
+          work because the facade declares pub(crate) mod ollama.
+      - evidence: 'http.rs debug_log! calls are inside #[cfg(feature=''cli'')] functions and library builds without cli'
+        outcome: held
+        text: >-
+          http.rs's crate::debug_log! calls resolve correctly in the library because src/debug.rs is compiled as pub mod
+          debug in lib.rs.
+      - evidence: fetch_supported_models_with is pub and uses injected fetcher; cargo build --no-default-features passes
+        outcome: held
+        text: >-
+          ureq-using functions in http.rs can be gated behind cfg(feature='cli') without breaking the library build,
+          since fetch_supported_models_with (the pure surface) does not call them.
+    assumptions_revalidated: true
   pr:
     status: pending
   complete:
@@ -228,5 +268,34 @@ history:
     details: >-
       ST6 landed: add library consumer integration test and gate cli-dependent tests. Commit 37b1b38. cargo test
       --no-default-features and cargo test green.
+  - timestamp: '2026-07-28T10:44:43.843Z'
+    action: subtask_complete
+    phase: implement
+    details: >-
+      ST7 landed: finalize docs, formatting, and lints. Commit 8cacf80. cargo fmt --check, cargo clippy --all-targets --
+      -D warnings, and cargo test green.
+  - timestamp: '2026-07-28T10:44:56.835Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      7 assumptions reviewed. held: 7, violated: 0, untested: 0. Implementation required one minor addition:
+      OPENAI_SUPPORTED_MODELS constant in identity.rs because models.rs references it from the library.
+  - timestamp: '2026-07-28T10:44:58.882Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 7 sub-tasks landed. 7 commits. fmt+clippy+test green. cargo test --no-default-features green. Entering
+      validation gate.
+  - timestamp: '2026-07-28T10:57:53.056Z'
+    action: validation_gate_failed
+    phase: implement
+    details: >-
+      lok pre-pr-validation timed out after 600s without producing the three required review files. Codex and Gemini
+      reviewer processes started (evident in /tmp/lok-*-prepr-stderr.log) but did not complete/flush output in time.
+      fmt+clippy+test are green on HEAD.
+  - timestamp: '2026-07-28T11:39:09.967Z'
+    action: validation_retry_started
+    phase: implement
+    details: Retrying pre-pr-validation gate with 1200s timeout after prior 600s timeout. Stale logs/review files cleared.
 task_title: Expose provider identity and the live model registry through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm

@@ -21,6 +21,8 @@ mod openai;
 mod vertex;
 
 pub use gcm::provider::http;
+#[doc(hidden)]
+pub use gcm::provider::identity::OPENAI_SUPPORTED_MODELS;
 #[cfg(feature = "cli")]
 pub use gcm::provider::models::fetch_supported_models;
 pub use gcm::provider::models::FetchSource;
@@ -428,6 +430,66 @@ fn strip_think(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pick_provider_id_precedence() {
+        // flag wins over env
+        assert_eq!(
+            pick_provider_id(Some(ProviderId::Openai), Some("google")).unwrap(),
+            ProviderId::Openai
+        );
+        // env when no flag
+        assert_eq!(
+            pick_provider_id(None, Some("google")).unwrap(),
+            ProviderId::Google
+        );
+        // default groq when neither
+        assert_eq!(pick_provider_id(None, None).unwrap(), ProviderId::Groq);
+        // empty/whitespace env -> default (not an error)
+        assert_eq!(pick_provider_id(None, Some("")).unwrap(), ProviderId::Groq);
+        assert_eq!(
+            pick_provider_id(None, Some("   ")).unwrap(),
+            ProviderId::Groq
+        );
+    }
+
+    #[test]
+    fn pick_provider_id_unknown_is_config_error() {
+        let err = pick_provider_id(None, Some("bogus")).unwrap_err();
+        assert!(matches!(err.kind, ErrorKind::Config(_)));
+        assert!(err.to_string().contains("bogus"));
+        assert!(err.to_string().contains("groq"));
+        assert!(err.to_string().contains("anthropic"));
+        assert!(err.to_string().contains("ollama"));
+    }
+
+    #[test]
+    fn select_ollama_is_key_free() {
+        // CLO-495 eval row 4: selecting Ollama constructs a provider with no key
+        // read and no panic; the default model resolves and qualifies the cache id.
+        let p = select(Some(ProviderId::Ollama), None).unwrap();
+        assert_eq!(p.name(), "Ollama");
+        assert_eq!(p.cache_model_id(), "ollama:gemma4:e4b-mlx");
+    }
+
+    #[test]
+    fn select_openai_validates_gpt_5_6_family() {
+        // Design A (CLO-545): the OpenAI gate lives in `select`, so it guards both the
+        // commit path and `gcm resolve` (both construct via `select`). Passing cli
+        // provider + model bypasses env, keeping this hermetic; `select` reads no key.
+        // This is the sole intentional legacy-string fixture in `src/` (the AC9
+        // breaking-change regression scenario; the AC5/AC8 sweep exemption).
+        assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-terra")).is_ok());
+        assert!(select(Some(ProviderId::Openai), Some("gpt-5.6-luna")).is_ok());
+        // `Box<dyn Provider>` is not `Debug`, so match rather than `unwrap_err`.
+        match select(Some(ProviderId::Openai), Some("gpt-5.4-mini")) {
+            Err(e) => {
+                assert_eq!(e.provider, "OpenAI");
+                assert!(matches!(e.kind, ErrorKind::Config(_)));
+            }
+            Ok(_) => panic!("gpt-5.4-mini must be rejected by the GPT-5.6 gate"),
+        }
+    }
 
     #[test]
     fn strips_think_block() {
