@@ -106,7 +106,17 @@ phases:
   implement:
     status: complete
     commits:
-      - 86de613
+      - 2dcccd0
+      - c0e5db9
+      - c127619
+      - 658edd5
+      - 690d491
+      - 13a1853
+    commits_note: >-
+      Post-rebase SHAs (the pre-rebase 86de613/b91caae/ebf60c2 no longer exist -
+      the branch was rebased onto post-CLO-595 main before the PR was opened).
+      2dcccd0 is the feature commit; c0e5db9 the stalled-commit naming fix; the
+      rest are workflow-state docs.
     subtasks_completed: 8
     bug_found_and_fixed:
       title: 'Repo::is_rebasing reported a completed rebase as still in progress'
