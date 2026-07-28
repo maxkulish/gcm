@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-28 (CLO-595 merged — unblocks CLO-596; CLO-554 in review)
+**Last Updated**: 2026-07-28 (CLO-554 merged — Phase 4 complete; CLO-596 ready)
 
 ## Current Blockers
 
@@ -15,7 +15,7 @@
 |------|------------------------|-------------|
 | CLO-596 | CLO-595 complete (secret scanner exposed as a library API) | 2026-07-28 |
 
-> **CLO-554** (rebase resolve-until-clean loop) left Unblocked & Ready on 2026-07-28 and is now in review, built on the **CLO-555** transaction engine merged in PR #35 (2026-07-13). **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
+> **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 
@@ -23,7 +23,7 @@
 |------|-----------------|----------|
 | CLO-595 | CLO-594 (library boundary ADR) | 2026-07-27 (merged PR #42/#43/#44) |
 | CLO-594 | CLO-593 (lok backend extraction, cross-repo) | 2026-07-26 (merged lok PR #61) |
-| CLO-554 | CLO-555 (resolve ownership transaction) | 2026-07-13 (merged PR #35) |
+| CLO-554 | CLO-555 (resolve ownership transaction) | 2026-07-13 (merged PR #35); CLO-554 itself merged 2026-07-28 (PR #47) |
 | CLO-533 | CLO-531 (Phase-1 resolve core) | 2026-07-07 (merged PR #25) |
 | CLO-534 | CLO-531 (resolve feature) | 2026-07-07 (merged same day) |
 | CLO-535 | CLO-531 (resolve feature) | 2026-07-07 (merged PR #29) |

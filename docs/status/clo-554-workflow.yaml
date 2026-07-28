@@ -42,10 +42,10 @@ linear:
   priority: Low
   labels: [HITL, Feature]
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-07-28T00:00:00.000Z'
-  updated_at: '2026-07-28T00:00:00.000Z'
+  updated_at: '2026-07-28T09:56:07.000Z'
 phases:
   discovery:
     status: skipped
@@ -152,7 +152,7 @@ phases:
           unused pub fn (dead_code) purely for symmetry. Spec decomposition item 2
           is the thing that was slightly wrong here, not the code.
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/47
     pr_number: 47
     base_moved_mid_flight: >-
@@ -167,10 +167,22 @@ phases:
       tests stay in the bin target, so `cargo test --bin gcm` remains correct.
     revalidated_after_rebase: true
     ci_passed: true
-    ci_note: 'Both jobs green first run on 690d491 (ubuntu-latest 2m33s, macos-latest 3m12s); no flakes'
-    awaiting: 'Owner squash-merge on GitHub, then /pr:finalize'
+    ci_note: 'Both jobs green first run on 690d491 and again on the final head 13a1853 (ubuntu ~2m30s, macos ~3m20s); no flakes, mergeable CLEAN'
+    approved: true
+    merged_at: '2026-07-28T09:56:07Z'
+    merge_commit: c19c825
+    reviews_addressed: 0
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-07-28T09:56:07Z'
+    merge_commit: c19c825
+    linear_status: Done
+    unblocked_downstream: []
+    owner_followups:
+      - 'The is_rebasing fix is a repo-wide behavior change beyond CLO-554''s stated scope (required - the loop cannot finish a rebase without it). Owner was offered a split into a separate PR and merged as-is.'
+      - 'Gemini LOW finding declined: Cli::max_rounds() accessor would be dead code; nothing outside resolve_conflict_config reads it.'
+      - 'lok spec-review harness bug still open: .lok/workflows/spec-review.toml interpolates the Linear description inside single-quoted sed expressions, so any apostrophe or pipe kills both external reviewers with a shell syntax error that reads like a model timeout.'
 history:
   - timestamp: '2026-07-28T00:00:00.000Z'
     action: workflow_started
@@ -236,3 +248,23 @@ history:
       request counter at tests/resolve_integration.rs:115-151). ACs grew 8 -> 12,
       tests 12 -> 17, sub-tasks 7 -> 8. No finding contradicted a prior decision,
       so nothing was flagged for owner adjudication.
+  - timestamp: '2026-07-28T09:56:07.000Z'
+    action: pr_merged
+    phase: pr
+    details: 'PR #47 merged to main as c19c825; CI green on both platforms, no review rounds needed'
+  - timestamp: '2026-07-28T10:00:00.000Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      PROJECT.md -> CLO-554 Recently Completed + master table Done + Active Work
+      empty + CLO-596 into Up Next; ROADMAP -> Done and Phase 4 4/4 Complete;
+      DEPENDENCIES -> CLO-554 blocked nothing downstream, note updated. Linear
+      CLO-554 -> Done.
+  - timestamp: '2026-07-28T10:00:00.000Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-554 fully completed. PR #47 merged (c19c825). Phase 4 (gcm resolve)
+      is now complete. Owner follow-ups recorded: the in-scope is_rebasing fix was
+      merged as-is rather than split; the Cli::max_rounds() accessor was declined
+      as dead code; the lok spec-review quoting bug remains open.
