@@ -36,6 +36,11 @@ pub struct ModelFetchOutcome {
 /// yet; for Vertex it is the ADC access token resolved by the wizard, CLO-564);
 /// `endpoint` is an explicit base URL (Ollama, from the wizard); `project` is
 /// Vertex-only - the `x-goog-user-project` quota header.
+///
+/// Available only with the `cli` feature because the default fetcher uses the
+/// `ureq` HTTP transport. The always-available library surface is
+/// [`fetch_supported_models_with`].
+#[cfg(feature = "cli")]
 pub fn fetch_supported_models(
     id: ProviderId,
     key: Option<&str>,
@@ -45,7 +50,12 @@ pub fn fetch_supported_models(
     fetch_supported_models_with(id, key, endpoint, project, http::get_json)
 }
 
-fn fetch_supported_models_with(
+/// Fetch models using a caller-supplied fetcher. This is the library surface:
+/// it never touches the network itself and compiles without the `cli` feature.
+/// The fetcher receives an [`HttpGet`] and returns the raw response body or a
+/// [`super::ProviderError`]. On any failure a usable static fallback list is
+/// returned with a warning.
+pub fn fetch_supported_models_with(
     id: ProviderId,
     key: Option<&str>,
     endpoint: Option<&str>,

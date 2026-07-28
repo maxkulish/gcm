@@ -18,7 +18,9 @@ pub(crate) mod ollama;
 mod openai;
 mod vertex;
 
-pub(crate) use models::{fetch_supported_models, FetchSource};
+pub(crate) use models::FetchSource;
+#[cfg(feature = "cli")]
+pub(crate) use models::fetch_supported_models;
 
 pub mod identity;
 
