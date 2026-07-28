@@ -42,7 +42,7 @@ linear:
   priority: Low
   labels: [HITL, Feature]
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-07-28T00:00:00.000Z'
   updated_at: '2026-07-28T00:00:00.000Z'
@@ -104,7 +104,7 @@ phases:
       signal_not_op: 'Keyed on FinishResult::StoppedOnConflict rather than the op name, so cherry-pick sequences loop too'
       json_additive: 'Additive `loop` object, SCHEMA_VERSION stays 1, omitted whenever the run behaves as today (byte-identical legacy JSON)'
   implement:
-    status: in_progress
+    status: complete
     commits:
       - 86de613
     subtasks_completed: 8
