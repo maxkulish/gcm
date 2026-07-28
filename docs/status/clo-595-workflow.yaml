@@ -20,8 +20,8 @@ linear:
   branch_suggested: kmamemo/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by
   branch_actual: feat/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by
 workflow:
-  current_phase: pr
-  status: active
+  current_phase: complete
+  status: complete
   created_at: '2026-07-27T19:28:26.207Z'
   updated_at: '2026-07-28T07:59:17.967Z'
 phases:
@@ -199,7 +199,13 @@ phases:
     pre_merge_refetch_at: '2026-07-28T08:02:00Z'
     pre_merge_refetch_passed: true
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: "2026-07-28T08:14:52Z"
+    merge_commit: "58b19d35c88a5ea98ce32421527fbee4255b1c34"
+    lessons_learned:
+      - "L8 - Worktree removal after merge can strand the orchestrator cwd"
+    lessons_file: ".pi/lessons/pr-review-failures.md"
 history:
   - timestamp: '2026-07-27T19:28:26.207Z'
     action: workflow_started
@@ -365,5 +371,13 @@ history:
     action: pre_merge_refetch_passed
     phase: pr
     details: 'Pre-merge re-fetch passed: no new inline comments and no unresolved review threads.'
+  - timestamp: '2026-07-28T08:21:00Z'
+    action: lessons_extracted
+    phase: complete
+    details: 'Appended L8 to .pi/lessons/pr-review-failures.md: worktree removal after merge can strand the orchestrator cwd.'
+  - timestamp: '2026-07-28T08:22:00Z'
+    action: workflow_complete
+    phase: complete
+    details: 'Task CLO-595 fully completed. PR #45 merged. Unblocks CLO-596.'
 task_title: Ship gcm's secret scanner as a library API consumable by other crates
 task_url: https://linear.app/cloud-ai/issue/clo-595/ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates
