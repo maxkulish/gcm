@@ -258,5 +258,12 @@ mod tests {
             }),
             GcmError::Config(message) if message.contains("unknown GCM_SECRET_SCAN")
         ));
+
+        assert!(matches!(
+            GcmError::from(gcm::privacy::ScanError::RulePack {
+                message: "broken pack".to_string()
+            }),
+            GcmError::Config(message) if message == "broken pack"
+        ));
     }
 }

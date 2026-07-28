@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::diff::{GatheredDiff, GroupingContext};
 use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
-use gcm::privacy::{ScanError, Scanner, SecretScanMode};
+use gcm::privacy::{Scanner, SecretScanMode};
 
 pub struct Privacy {
     filter: PathFilter,
@@ -50,12 +50,7 @@ impl Privacy {
     /// Scan arbitrary text with the configured secret-scan mode. Public so the
     /// `gcm resolve` path can check hunk text before provider egress (CLO-531).
     pub fn scan_text(&self, text: String) -> Result<String, GcmError> {
-        self.scanner.scan(text).map_err(|e| match e {
-            ScanError::SecretDetected { count } => GcmError::SecretDetected { count },
-            ScanError::InvalidMode { value } | ScanError::RulePack { message: value } => {
-                GcmError::Config(value)
-            }
-        })
+        self.scanner.scan(text).map_err(GcmError::from)
     }
 }
 

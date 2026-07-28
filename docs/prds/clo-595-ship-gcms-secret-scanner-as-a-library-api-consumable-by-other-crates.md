@@ -45,7 +45,7 @@ The binary should keep scanning paths (`.gcmignore`/`gcmignore` filtering, diff 
 ## 4. Functional requirements
 
 - **FR1:** `gcm --secret-scan=redact` and `gcm --secret-scan=abort` keep current behavior on diff/hunk egress paths.
-- **FR2:** `Cargo test` remains green (current target remains 475 passing tests). 
+- **FR2:** `Cargo test` remains green (current target remains 475 passing tests).
 - **FR3:** Library API supports external usage through vendored rules (`src/privacy/rules.toml`) and allows callers to scan text without binary internals.
 - **FR4:** Abort mode path is available to callers via a scanner error type that does not require importing `GcmError`.
 - **FR5:** The library API avoids mandatory `clap` dependency; CLI-specific parsing remains in the `main` crate path.

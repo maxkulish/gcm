@@ -214,8 +214,8 @@ mod tests {
     fn scanner_ranges_match_detect_secret_ranges() {
         let scanner = Scanner::new(SecretScanMode::Redact, rules::vendored().unwrap());
         let text = "token=ghp_abcdefghijklmnopqrstuvwxyz123456\nAWS=AKIAABCDEFGHIJKLMNOP\n";
-        let expected = detect::secret_ranges(text, scanner.engine()).len();
-        let ranges = scanner.ranges(text).len();
+        let expected = detect::secret_ranges(text, scanner.engine());
+        let ranges = scanner.ranges(text);
         assert_eq!(expected, ranges);
     }
 }
