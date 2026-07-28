@@ -23,7 +23,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-27T19:28:26.207Z'
-  updated_at: '2026-07-28T07:44:51.347Z'
+  updated_at: '2026-07-28T07:58:59.020Z'
 phases:
   discovery:
     status: complete
@@ -190,6 +190,12 @@ phases:
         task_label: pre-pr-validation-synthesis
   pr:
     status: in_progress
+    pr_number: 45
+    pr_url: https://github.com/maxkulish/gcm/pull/45
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-07-28T08:00:00Z'
+    reviews_addressed: true
   complete:
     status: pending
 history:
@@ -333,5 +339,25 @@ history:
       Pre-merge gate green with single-threaded execution. One flaky parallel test
       (provider::models::tests::transport_auth_headers_and_parsing) passes in isolation and single-threaded; not related
       to CLO-595 changes (no diff in src/provider/models.rs).
+  - timestamp: '2026-07-28T07:45:19.502Z'
+    action: pr_created
+    phase: pr
+    details: >-
+      PR #45 opened: https://github.com/maxkulish/gcm/pull/45. Branch pushed and PR health gate passed (mergeable, no
+      conflicts). CI queued.
+  - timestamp: '2026-07-28T07:48:18.673Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required GitHub checks passing: build / test (ubuntu-latest) and build / test (macos-latest).'
+  - timestamp: '2026-07-28T07:58:49.131Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
+      inline comments expected.
+  - timestamp: '2026-07-28T07:58:59.019Z'
+    action: review_addressed
+    phase: pr
+    details: '0 threads to address; no inline comments, no review threads, no bot or human reviews on PR #45.'
 task_title: Ship gcm's secret scanner as a library API consumable by other crates
 task_url: https://linear.app/cloud-ai/issue/clo-595/ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates
