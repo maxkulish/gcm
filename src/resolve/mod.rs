@@ -216,7 +216,11 @@ fn run_resolve_loop(repo: &Repo, args: &Cli) -> Result<ResolveReport, GcmError> 
                 head.as_ref().map(|(op, _)| *op).unwrap_or("operation"),
                 head.as_ref().map(|(_, sha)| sha.as_str()).unwrap_or("HEAD")
             );
-            stopped_on = next_head.map(|(_, sha)| sha).or(stopped_on);
+            // Prefer the fresh read, but fall back to the round's own head so a
+            // vanished sequencing ref still names where the run got stuck.
+            stopped_on = next_head
+                .map(|(_, sha)| sha)
+                .or_else(|| head.as_ref().map(|(_, sha)| sha.clone()));
             break (round, report::LoopTerminal::NoProgress);
         }
         head = next_head;

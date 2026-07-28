@@ -104,7 +104,32 @@ phases:
       signal_not_op: 'Keyed on FinishResult::StoppedOnConflict rather than the op name, so cherry-pick sequences loop too'
       json_additive: 'Additive `loop` object, SCHEMA_VERSION stays 1, omitted whenever the run behaves as today (byte-identical legacy JSON)'
   implement:
-    status: pending
+    status: in_progress
+    commits:
+      - 86de613
+    subtasks_completed: 8
+    bug_found_and_fixed:
+      title: 'Repo::is_rebasing reported a completed rebase as still in progress'
+      detail: >-
+        is_rebasing tested REBASE_HEAD, but git leaves that ref behind after a
+        rebase finishes. has_conflict_state() therefore stayed true and
+        finish_conflict_op classified a successful finish as
+        FinishOutcome::Failed, surfacing as FinishFailed with exit 1. Latent
+        because nothing drove a rebase to completion through gcm before - CLO-555
+        always ended while the ref was legitimately live. The loop fails on round
+        2 of every multi-commit rebase until this is fixed, so it is in scope.
+        Detection now uses git's own signal: the rebase-merge/rebase-apply
+        sequencer directory via rev-parse --git-path (worktree-safe).
+      regression_test: 'git::tests::finish_rebase_completing_the_sequence_reports_completed'
+      note: 'The integration test helper had the same REBASE_HEAD bug and was fixed alongside.'
+    spec_deviations:
+      - 'Unit tests run via `cargo test --bin gcm`, not `--lib` - gcm is a binary crate with no library target (that is CLO-595 work). Spec Evaluation column corrected.'
+      - 'Interactive tests (gate declined, mid-loop file rejection) could not be integration tests: needs_terminal_but_absent rejects a non-TTY run without --yes, and the harness pipes stdin. Covered instead at two levels - prompt contract by unit test, end-to-end by PTY acceptance cases AC-R3/AC-R4 (the CLO-555 AC-R1/AC-R2 pattern). AC2 zero-spend is ALSO proven hermetically on the cap boundary via the request counter.'
+      - 'AC4 split across two tests: --json suppresses the human headline, so the legacy-headline half and the loop-metadata half cannot be observed in one run.'
+      - 'LoopReport gained a skip-serialized `stopped_on` field (not in the original spec) so both the human recovery text and machine consumers can name the stop without shelling out to git.'
+      - 'PTY fixture uses two different files across the two conflicting commits: the acceptance mock serves one canned resolution for every request, so a same-file fixture would make round 2 an empty commit and stop git on "the previous cherry-pick is now empty".'
+    tests: '500 cargo tests (415 unit + 85 integration), 0 failures; acceptance 264 PASS / 0 FAIL / 1 SKIP'
+    checks: 'make check green (fmt-check + clippy --all-targets + full suite)'
   pr:
     status: pending
   complete:
