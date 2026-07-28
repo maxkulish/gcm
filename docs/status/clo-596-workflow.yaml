@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T11:39:09.967Z'
+  updated_at: '2026-07-28T11:51:49.091Z'
 phases:
   discovery:
     status: complete
@@ -107,7 +107,7 @@ phases:
     plan_file: docs/plans/clo-596-expose-provider-identity-and-registry.md
     approved: true
   implement:
-    status: validating
+    status: complete
     commits:
       - 63006bc
       - 64f7631
@@ -155,6 +155,13 @@ phases:
           ureq-using functions in http.rs can be gated behind cfg(feature='cli') without breaking the library build,
           since fetch_supported_models_with (the pure surface) does not call them.
     assumptions_revalidated: true
+    validation_fix_iteration_count: 1
+    codex_report: docs/reviews/clo-596-codex-validation.md
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-596-gemini-validation.md
+    validation_synthesis_report: docs/reviews/clo-596-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
   pr:
     status: pending
   complete:
@@ -297,5 +304,17 @@ history:
     action: validation_retry_started
     phase: implement
     details: Retrying pre-pr-validation gate with 1200s timeout after prior 600s timeout. Stale logs/review files cleared.
+  - timestamp: '2026-07-28T11:51:34.867Z'
+    action: validation_fix_iteration_applied
+    phase: implement
+    details: >-
+      Applied single fix iteration per synthesis PASS_WITH_NOTES: (1) made OPENAI_SUPPORTED_MODELS #[doc(hidden)] pub in
+      identity.rs, re-exported via facade, consumed by openai.rs; (2) restored pick_provider_id_* and select_* tests in
+      facade.rs; (3) added ProviderId::auth_method test; (4) fixed dangling openai.rs comment; (5) committed uncommitted
+      files. fmt+clippy+test and no-default-features test green.
+  - timestamp: '2026-07-28T11:51:49.091Z'
+    action: codex_validation_complete
+    phase: implement
+    details: 'Codex: PASS_WITH_NOTES. Gemini: PASS. Synthesis: PASS_WITH_NOTES. Fix iteration 1 applied and build matrix green.'
 task_title: Expose provider identity and the live model registry through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-596/expose-provider-identity-and-the-live-model-registry-through-the-gcm
