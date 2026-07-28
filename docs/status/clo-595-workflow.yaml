@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-27T19:28:26.207Z'
-  updated_at: '2026-07-27T19:58:46.162Z'
+  updated_at: '2026-07-28T07:42:37.991Z'
 phases:
   discovery:
     status: complete
@@ -100,13 +100,14 @@ phases:
     plan_file: docs/plans/clo-595-ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates.md
     approved: true
   implement:
-    status: validating
+    status: complete
     commits:
       - cfb1fa9
       - b4726d9
       - c06eed4
       - 0aad03b
       - fdcaa4b
+      - d6c004b
     assumptions_revalidated: true
     assumption_outcomes:
       - text: >-
@@ -161,6 +162,32 @@ phases:
         evidence: >-
           `ScanError` is consumed through `gcm::privacy` and mapped by `src/error.rs::From<ScanError>`; full unit and
           integration suites pass.
+    codex_report: docs/reviews/clo-595-codex-validation.md
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-595-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-595-validation-synthesis.md
+    validation_synthesis_verdict: PASS_WITH_NOTES
+    token_usage:
+      - recorded_at: '2026-07-28T07:42:37.991Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-07-28T07:42:37.991Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-07-28T07:42:37.991Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis
   pr:
     status: pending
   complete:
@@ -288,5 +315,12 @@ history:
       8 assumptions rechecked on current HEAD after the full feature matrix and pre-merge gate. held: 8, violated: 0,
       untested: 0. Corrected the prior test-count interpretation: cargo test runs multiple targets totaling 489 passing
       tests, exceeding the 475 baseline.
+  - timestamp: '2026-07-28T07:42:37.991Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: PASS_WITH_NOTES. Gemini: PASS_WITH_NOTES. Synthesis: PASS_WITH_NOTES. One fix iteration applied: removed
+      stale allow(dead_code) attributes, strengthened range/test assertions, stripped PRD trailing whitespace, committed
+      facade cleanup and review reports. Pre-merge gate green (489 tests).
 task_title: Ship gcm's secret scanner as a library API consumable by other crates
 task_url: https://linear.app/cloud-ai/issue/clo-595/ship-gcms-secret-scanner-as-a-library-api-consumable-by-other-crates
