@@ -130,6 +130,27 @@ phases:
       - 'PTY fixture uses two different files across the two conflicting commits: the acceptance mock serves one canned resolution for every request, so a same-file fixture would make round 2 an empty commit and stop git on "the previous cherry-pick is now empty".'
     tests: '500 cargo tests (415 unit + 85 integration), 0 failures; acceptance 264 PASS / 0 FAIL / 1 SKIP'
     checks: 'make check green (fmt-check + clippy --all-targets + full suite)'
+    codex_validated: false
+    codex_verdict: unavailable
+    codex_report: docs/reviews/clo-554-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-554-gemini-validation.md
+    gemini_verdict: pass_with_notes
+    validation_note: >-
+      Codex (gpt-5.4, high effort) read the diff for >15 min across two runs and
+      never emitted a report; terminated, no verdict. Gate proceeded on Gemini
+      per the documented fallback. Gemini 3.1 Pro returned PASS_WITH_NOTES with
+      zero defects and confirmed all 12 acceptance criteria covered.
+    validation_findings_dispositions:
+      - finding: 'LOW (src/cli.rs): Cli::max_rounds() accessor from decomposition step 2 was omitted'
+        disposition: not_applied
+        reason: >-
+          Deliberate. remote_push()/no_finish() exist because call sites outside
+          cli.rs need them; nothing outside resolve_conflict_config reads
+          max_rounds, and that function already gets it from the exhaustive
+          Commands::Resolve destructure - which is also what forces future fields
+          to be handled at compile time. Adding the accessor would introduce an
+          unused pub fn (dead_code) purely for symmetry. Spec decomposition item 2
+          is the thing that was slightly wrong here, not the code.
   pr:
     status: pending
   complete:
@@ -157,6 +178,21 @@ history:
       findings. Run 2 with sanitized args: Gemini APPROVE_WITH_SUGGESTIONS, 7
       findings, zero constraint or decomposition violations; Ollama/Codex
       banner-only empty output again. Consensus = NEEDS_REVISION (strictest).
+  - timestamp: '2026-07-28T01:40:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 8 sub-tasks landed in 86de613 + b91caae. Loop driver in run_resolve keyed
+      on StoppedOnConflict; round gate + --max-rounds cap (default 10); additive
+      JSON loop block; post-gate head re-read feeding a pure advanced() guard.
+      Fixed a latent CLO-555 bug the loop is the first path to hit: is_rebasing
+      tested REBASE_HEAD, which git leaves behind after a rebase completes, so a
+      successful finish classified as Failed. 500 cargo tests + acceptance 264/0
+      including new PTY cases AC-R3/AC-R4. make check green.
+  - timestamp: '2026-07-28T01:45:00.000Z'
+    action: pushed_to_remote
+    phase: implement
+    details: 'Branch feat/clo-554-resolve-until-clean pushed to origin (new branch)'
   - timestamp: '2026-07-28T00:40:00.000Z'
     action: spec_approved
     phase: spec
