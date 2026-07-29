@@ -20,10 +20,10 @@ linear:
   priority: Medium
   branch_actual: feat/clo-596-provider-id
 workflow:
-  current_phase: pr
-  status: active
+  current_phase: complete
+  status: complete
   created_at: '2026-07-28T09:36:23.412Z'
-  updated_at: '2026-07-28T12:09:22.030Z'
+  updated_at: '2026-07-28T12:11:55.000Z'
 phases:
   discovery:
     status: complete
@@ -174,8 +174,14 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-07-28T12:21:45Z'
     pre_merge_refetch_passed: true
+    merged_at: '2026-07-28T12:09:54Z'
+    merge_commit: 8e2620bc9c6cbd144e677173fe697807c50c23ff
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-07-28T12:09:54Z'
+    lessons_learned: []
+    lessons_skip_reason: "No violated assumptions, no fix iterations beyond the single required one, no flagged design suggestions requiring declined rationale, no plannotator annotations, no new durable PR incidents. The single validation fix iteration was a code-quality issue (duplicate OpenAI model list + missing tests) rather than a reusable cross-task rule."
 history:
   - timestamp: '2026-07-28T09:36:23.412Z'
     action: workflow_started
@@ -358,6 +364,14 @@ history:
     details: >-
       Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs); zero
       inline comments expected.
+  - timestamp: '2026-07-28T12:11:55.000Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #48 merged. Merge commit 8e2620bc9c6cbd144e677173fe697807c50c23ff.'
+  - timestamp: '2026-07-28T12:11:55.000Z'
+    action: workflow_complete
+    phase: complete
+    details: 'Task CLO-596 fully completed. PR #48 merged. Unblocks downstream library consumers (lok picker, future CLO-597 status extraction). Feature worktree removed. Linear status set to Done.'
   - timestamp: '2026-07-28T12:09:06.925Z'
     action: review_addressed
     phase: pr
