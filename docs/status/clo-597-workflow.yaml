@@ -20,10 +20,10 @@ linear:
   priority: Medium
   branch_actual: feat/clo-597-status-res
 workflow:
-  current_phase: pr
+  current_phase: complete
   status: checkpoint
   created_at: '2026-07-30T07:45:03.661Z'
-  updated_at: '2026-07-30T08:54:11.645Z'
+  updated_at: '2026-07-30T08:54:24.471Z'
 phases:
   discovery:
     status: complete
@@ -280,5 +280,9 @@ history:
     action: bot_review_wait_completed
     phase: pr
     details: Bots confirmed absent from recent closed PRs. Setting completion timestamp.
+  - timestamp: '2026-07-30T08:54:24.471Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
 task_title: Expose source-attributed status resolution through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-597/expose-source-attributed-status-resolution-through-the-gcm-library
