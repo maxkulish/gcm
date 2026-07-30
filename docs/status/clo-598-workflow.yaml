@@ -1,0 +1,178 @@
+task_id: clo-598
+task_type: development
+classification_reason: >-
+  Title starts with 'Verify' and ACs are mechanical (build, test, verify public surface). Involves creating a consumer
+  crate, enumerating public surface, and carrying out publish decision.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: Personal-health
+  status_at_start: Backlog
+  blocks: []
+  blocked_by:
+    - CLO-597
+  branch_suggested: kmamemo/clo-598-verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock
+  priority: '3'
+  branch_actual: feat/clo-598-consumer-check
+workflow:
+  current_phase: implement
+  status: active
+  created_at: '2026-07-30T09:59:14.679Z'
+  updated_at: '2026-07-30T10:14:10.909Z'
+phases:
+  discovery:
+    status: complete
+    approach_chosen: Automated surface verification + consumer test
+    approaches_identified: 2
+    approved: true
+    baseline_score: 8
+    discovery_debt: []
+    discovery_report: docs/discovery/clo-598.md
+    prd_created: false
+    prd_exists: true
+    problem_framed: true
+  design:
+    status: complete
+    design_doc: docs/designs/clo-598-consumer-check.md
+    discovery_context_used: true
+    draft_ready: true
+    draft_source: manual-fallback
+    assumptions:
+      - confidence: high
+        text: The smoke/ crate can depend on gcm by path with default-features = false
+        verification: 'smoke crate cargo build --no-default-features confirms (CLO-594 L3: package name is gcm)'
+      - confidence: high
+        text: cargo doc --lib --no-default-features accurately reflects the public surface
+        verification: surface check script runs this and greps for forbidden types
+      - confidence: high
+        text: The Provider trait is only in provider/facade.rs, not included in lib.rs
+        verification: grep mod facade src/lib.rs returns no results; surface check verifies mechanically
+      - confidence: high
+        text: The entire resolve/ module is only in main.rs, not in lib.rs
+        verification: grep mod resolve src/lib.rs returns no results; surface check verifies mechanically
+      - confidence: medium
+        text: cargo doc --lib output path is predictable enough to grep for type names
+        verification: surface check script confirms by running and checking output
+      - confidence: high
+        text: The 524 existing tests continue to pass after adding smoke/ and scripts/
+        verification: cargo test in gcm crate after adding new directories
+    assumptions_surfaced: true
+    applied_suggestions:
+      - file-existence check instead of grep (avoid Provider matching ProviderId)
+      - isolated CARGO_TARGET_DIR=target/surface_check (avoid stale artifacts)
+      - smoke gcm-cli feature propagation (test both feature states)
+      - publish=false in Cargo.toml (mechanically enforce ADR-002 D7)
+      - script portability via git rev-parse --show-toplevel
+    flagged_suggestions: []
+    review_completed: true
+    review_gemini: docs/reviews/clo-598-design-gemini.md
+    review_synthesis: docs/reviews/clo-598-design-synthesis.md
+    review_verdict: approve_with_changes
+    token_usage:
+      - recorded_at: '2026-07-30T10:11:36.500Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 2500
+        completion_tokens: 800
+        task_label: design-review-gemini
+      - recorded_at: '2026-07-30T10:11:36.500Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 400
+        task_label: design-review-synthesis
+    human_review_completed: true
+    finalized: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-598-consumer-check.md
+    approved: true
+  implement:
+    status: in_progress
+    commits:
+      - 202d329
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-30T09:59:14.679Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-598 as development
+  - timestamp: '2026-07-30T09:59:30.049Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: Title starts with "Verify" and ACs are mechanical (build, test, verify public surface).
+      Involves creating a consumer crate, enumerating public surface, and carrying out publish decision.
+  - timestamp: '2026-07-30T10:00:00.118Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-598 --start: Added to Active Work, status set
+      to In Progress, removed from Up Next and Unblocked & Ready
+  - timestamp: '2026-07-30T10:00:05.503Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-07-30T10:00:17.744Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-598-consumer-check already exists, checked out from main
+  - timestamp: '2026-07-30T10:02:51.481Z'
+    action: discovery_approved
+    phase: discovery
+    details: 'Approach: Automated surface verification + consumer test. Baseline 8/10. 2 approaches considered.'
+  - timestamp: '2026-07-30T10:02:53.359Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-07-30T10:08:48.308Z'
+    action: design_draft_ready
+    phase: design
+    details: Draft generated manually (lok timed out) at docs/designs/clo-598-consumer-check.md. 8 sections verified.
+  - timestamp: '2026-07-30T10:08:53.635Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: '6 assumptions surfaced (high: 5, medium: 1, low: 0). See design doc § Assumptions.'
+  - timestamp: '2026-07-30T10:11:36.500Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: approve_with_changes. 5 applied, 0 flagged. All suggestions additive: file-existence check,
+      isolated CARGO_TARGET_DIR, smoke feature propagation, publish=false, script portability.
+  - timestamp: '2026-07-30T10:11:57.668Z'
+    action: design_human_review_complete
+    phase: design
+    details: Plannotator annotate session closed with user approval. No annotations requiring changes.
+  - timestamp: '2026-07-30T10:12:03.326Z'
+    action: design_finalized
+    phase: design
+    details: Design ready for plan phase. 8 sections verified, 5 review suggestions applied, human review approved.
+  - timestamp: '2026-07-30T10:12:05.416Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-07-30T10:14:03.871Z'
+    action: plan_created
+    phase: plan
+    details: Plan with 6 sub-tasks at docs/plans/clo-598-consumer-check.md
+  - timestamp: '2026-07-30T10:14:08.752Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Plan approved. 6 sub-tasks queued: ST1 smoke skeleton, ST2 smoke API exercises, ST3 surface check script, ST4
+      publish=false, ST5 feature matrix, ST6 pre-merge gate.
+  - timestamp: '2026-07-30T10:14:10.909Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
+task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
