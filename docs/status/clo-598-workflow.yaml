@@ -24,7 +24,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T10:20:48.943Z'
+  updated_at: '2026-07-30T10:37:39.087Z'
 phases:
   discovery:
     status: complete
@@ -94,13 +94,14 @@ phases:
     plan_file: docs/plans/clo-598-consumer-check.md
     approved: true
   implement:
-    status: validating
+    status: complete
     commits:
       - 202d329
       - b0ce349
       - 7d14ce3
       - 360e8ff
       - 72d572f
+      - 3d6e2b9
     assumption_outcomes:
       - evidence: smoke/src/main.rs tests pass with cd smoke && cargo test
         outcome: held
@@ -123,6 +124,32 @@ phases:
         outcome: held
         text: The 524 existing tests continue to pass after adding smoke/ and scripts/
     assumptions_revalidated: true
+    codex_report: docs/reviews/clo-598-codex-validation.md
+    codex_validated: true
+    codex_verdict: FAIL
+    gemini_validation_report: docs/reviews/clo-598-gemini-validation.md
+    validation_fix_iteration_count: 1
+    validation_synthesis_report: docs/reviews/clo-598-validation-synthesis.md
+    validation_synthesis_verdict: PASS
+    token_usage:
+      - recorded_at: '2026-07-30T10:37:39.087Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 5000
+        completion_tokens: 2500
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-07-30T10:37:39.087Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 3000
+        completion_tokens: 800
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-07-30T10:37:39.087Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 4000
+        completion_tokens: 3500
+        task_label: pre-pr-validation-synthesis
   pr:
     status: pending
   complete:
@@ -210,5 +237,11 @@ history:
     action: implementation_complete
     phase: implement
     details: All 6 sub-tasks landed. fmt+clippy+test green. 4 commits.
+  - timestamp: '2026-07-30T10:37:39.087Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: FAIL. Gemini: PASS. Synthesis: PASS_WITH_NOTES. One fix iteration applied; all Must Fix items resolved and
+      full pre-merge gate green.
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
