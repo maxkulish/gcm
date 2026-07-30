@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-30 (CLO-597 merged — status resolution + config types exposed; CLO-598 unblocked)
+**Last Updated**: 2026-07-30 (CLO-598 merged — out-of-tree consumer check + public surface locked; Phase 6 complete)
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 3 | 3 | Complete |
-| Phase 6: Library Extraction | 5 | 4 | In Progress |
+| Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 3 | 3 | Complete |
 
 ## Phase 6: Library Extraction
@@ -21,7 +21,7 @@ Source: [CLO-594](https://linear.app/cloud-ai/issue/CLO-594) — Lock the gcm li
 
 Upstream: lok's [CLO-593](https://linear.app/cloud-ai/issue/CLO-593) extracted its async `Backend` first, which is what let ADR-002 settle gcm's sync/async question against a real trait rather than in the abstract.
 
-Progress: the `[lib]` target and the `gcm::privacy` scanner landed in CLO-595 (PR #45); provider identity, `http.rs` and `models.rs` crossed in CLO-596 (PR #48, released as v0.6.0); status resolution and the config types followed in CLO-597 (PR #49), with `gcm status` output byte-identical to v0.6.0. Only CLO-598 — the out-of-tree consumer check that locks the public surface — remains.
+Progress: the `[lib]` target and the `gcm::privacy` scanner landed in CLO-595 (PR #45); provider identity, `http.rs` and `models.rs` crossed in CLO-596 (PR #48, released as v0.6.0); status resolution and the config types followed in CLO-597 (PR #49), with `gcm status` output byte-identical to v0.6.0. CLO-598 (out-of-tree consumer check, PR #52) locked the public surface with `smoke/` and `scripts/check-public-surface.sh`, completing Phase 6.
 
 | Task | Title | Status | Dependencies |
 |------|-------|--------|--------------|
@@ -29,7 +29,7 @@ Progress: the `[lib]` target and the `gcm::privacy` scanner landed in CLO-595 (P
 | CLO-595 | Ship gcm's secret scanner as a library API consumable by other crates | Done | CLO-594 |
 | CLO-596 | Expose provider identity and the live model registry through the gcm library | Done | CLO-595 |
 | CLO-597 | Expose source-attributed status resolution through the gcm library | Done | CLO-596 |
-| CLO-598 | Verify the gcm library from an out-of-tree consumer and lock its public surface | Backlog (ready) | CLO-597 (Done 2026-07-30) |
+| CLO-598 | Verify the gcm library from an out-of-tree consumer and lock its public surface | Done | CLO-597 (Done 2026-07-30) |
 
 ## Phase 1: Foundations
 
