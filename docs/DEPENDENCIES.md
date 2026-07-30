@@ -6,21 +6,23 @@
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-
+| — | None blocked | — | CLO-597 merged 2026-07-30, clearing the last Phase-6 dependency |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| — | None waiting | — |
+| CLO-598 | CLO-597 complete (status resolution + config types exposed through the library) | 2026-07-30 |
 
-> **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) is ready with no blockers. **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
+> **Phase 6 (library extraction) is 4/5 done.** CLO-597 merged in PR #49 (2026-07-30) — status resolution and the config types now cross the `[lib]` boundary, with `gcm status` output byte-identical to v0.6.0 — leaving **CLO-598** (out-of-tree consumer check, locks the public surface) as the only open slice and the one that closes the phase. **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work (CLO-485…CLO-535) is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
 
 | Task | Previous Blocker | Resolved |
 |------|-----------------|----------|
-| CLO-597 | CLO-596 (provider identity + model registry) | 2026-07-30 (merged PR #48) |
+| CLO-598 | CLO-597 (source-attributed status resolution) | 2026-07-30 (merged PR #49) |
+| CLO-597 | CLO-596 (provider identity + model registry) | 2026-07-28 (merged PR #48, released v0.6.0) |
+| CLO-596 | CLO-595 (secret scanner as library API) | 2026-07-28 (merged PR #45/#46) |
 | CLO-595 | CLO-594 (library boundary ADR) | 2026-07-27 (merged PR #42/#43/#44) |
 | CLO-594 | CLO-593 (lok backend extraction, cross-repo) | 2026-07-26 (merged lok PR #61) |
 | CLO-554 | CLO-555 (resolve ownership transaction) | 2026-07-13 (merged PR #35); CLO-554 itself merged 2026-07-28 (PR #47) |
