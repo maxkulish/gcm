@@ -22,9 +22,9 @@ linear:
   branch_actual: feat/clo-598-consumer-check
 workflow:
   current_phase: complete
-  status: active
+  status: complete
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T11:14:15.983Z'
+  updated_at: '2026-07-30T11:23:42.112Z'
 phases:
   discovery:
     status: complete
@@ -164,9 +164,18 @@ phases:
     merge_commit: b70917b81f041e1f3ce43830c314b4c5fc440344
     merged_at: '2026-07-30T11:25:00.000Z'
   complete:
-    status: pending
+    status: complete
     merge_commit: b70917b81f041e1f3ce43830c314b4c5fc440344
     merged_at: '2026-07-30T11:25:00.000Z'
+    aggregation_files_updated: true
+    lessons_file: .pi/lessons/clo-598-consumer-check-lessons.md
+    lessons_learned:
+      - L1 - Mechanical guards must be proven to fail before they can be trusted
+      - L2 - Out-of-tree consumer tests must exercise real code paths, not just type names
+      - L3 - Cargo publish=false is represented as [], not null
+    docs_pr_merge_commit: a9cf49be9e83bd152fcdcc7a788d7b0693e02a6f
+    docs_pr_number: 53
+    docs_pr_url: https://github.com/maxkulish/gcm/pull/53
 history:
   - timestamp: '2026-07-30T09:59:14.679Z'
     action: workflow_started
@@ -302,5 +311,30 @@ history:
     action: pr_merged
     phase: complete
     details: 'PR #52 merged. Merge commit b70917b81f041e1f3ce43830c314b4c5fc440344.'
+  - timestamp: '2026-07-30T11:17:35.715Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced for CLO-598 completion: task moved to Recently Completed, Phase 6
+      marked Complete, CLO-598 removed from Unblocked & Ready.
+  - timestamp: '2026-07-30T11:18:00.987Z'
+    action: lessons_extracted
+    phase: complete
+    details: >-
+      3 lessons recorded in .pi/lessons/clo-598-consumer-check-lessons.md: L1 mechanical guards must fail self-test, L2
+      out-of-tree tests must exercise real paths, L3 cargo publish=false metadata representation.
+  - timestamp: '2026-07-30T11:23:30.922Z'
+    action: docs_pr_merged
+    phase: complete
+    details: >-
+      Docs PR #53 merged. Files: docs/status/clo-598-workflow.yaml, docs/PROJECT.md, docs/ROADMAP.md,
+      docs/DEPENDENCIES.md, .pi/lessons/clo-598-consumer-check-lessons.md. Merge commit
+      a9cf49be9e83bd152fcdcc7a788d7b0693e02a6f.
+  - timestamp: '2026-07-30T11:23:42.112Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-598 fully completed. PR #52 merged (code), PR #53 merged (docs/workflow). Phase 6 (library extraction)
+      closed. Linear updated to Done.
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
