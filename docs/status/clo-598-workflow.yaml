@@ -24,7 +24,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T10:39:35.102Z'
+  updated_at: '2026-07-30T10:46:09.847Z'
 phases:
   discovery:
     status: complete
@@ -154,6 +154,7 @@ phases:
     status: in_progress
     pr_number: 52
     pr_url: https://github.com/maxkulish/gcm/pull/52
+    ci_passed: true
   complete:
     status: pending
 history:
@@ -259,5 +260,11 @@ history:
     action: pr_created
     phase: pr
     details: 'PR #52 created: https://github.com/maxkulish/gcm/pull/52. Branch feat/clo-598-consumer-check pushed to origin.'
+  - timestamp: '2026-07-30T10:46:09.847Z'
+    action: ci_passed
+    phase: pr
+    details: >-
+      CI passed for PR #52 on both ubuntu-latest and macos-latest. All steps including smoke tests, library-only tests,
+      surface check, and release build are green.
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
