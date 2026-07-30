@@ -1,11 +1,13 @@
 mod cache;
 mod cli;
+#[path = "config/facade.rs"]
 mod config;
 mod debug;
 mod diff;
 mod error;
 mod git;
 mod output;
+#[path = "paths/facade.rs"]
 mod paths;
 mod plan;
 #[path = "privacy/facade.rs"]
@@ -13,6 +15,7 @@ mod privacy;
 #[path = "provider/facade.rs"]
 mod provider;
 mod resolve;
+#[path = "status/facade.rs"]
 mod status;
 mod ui;
 

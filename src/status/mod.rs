@@ -22,13 +22,11 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::cli::Cli;
 use crate::config::{self, Config};
-use crate::output::SCHEMA_VERSION;
-use crate::provider::{ollama, resolve_model_with_source, AuthMethod, ModelSource, ProviderId};
+use crate::provider::{identity, resolve_model_with_source, AuthMethod, ModelSource, ProviderId};
 
 /// Canonical provider order for output (matches the wizard's `all_providers`).
-const PROVIDER_ORDER: [ProviderId; 6] = [
+pub(crate) const PROVIDER_ORDER: [ProviderId; 6] = [
     ProviderId::Groq,
     ProviderId::Google,
     ProviderId::Vertex,
@@ -93,7 +91,7 @@ pub struct ProviderStatus {
     /// Model source: `default` / `env var <NAME>` / `flag`.
     pub model_source: String,
     /// For Ollama only: false when the model routes off-machine (a cloud-tagged
-    /// `:cloud` / `-cloud` model); see [`ollama::is_cloud_model`].
+    /// `:cloud` / `-cloud` model); see [`identity::is_cloud_model`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zero_egress: Option<bool>,
     /// Vertex only (CLO-537): GCP project as `value (source)`; `None` otherwise.
@@ -108,44 +106,15 @@ pub struct ProviderStatus {
     pub auth_source: Option<String>,
 }
 
-/// Entry point for the `status` subcommand. Pure introspection: loads the config
-/// and reads the environment, builds the report, prints it (JSON or human), and
-/// returns exit code 0 (misconfiguration is reported as fields, not a failure).
-/// A non-zero exit is reserved for a catastrophic internal error - per AC-9, a
-/// JSON serialization failure (infallible for these owned types in practice) is
-/// the one such case. Dispatched at the top of `run()` before any repo/provider/
-/// LLM work.
-pub fn run_status_subcommand(args: &Cli) -> i32 {
-    let config = config::load();
-    let report = build_report(
-        args.provider,
-        args.model.as_deref(),
-        config.as_ref(),
-        |var| std::env::var(var).ok(),
-    );
-
-    if args.json {
-        match serde_json::to_string(&report) {
-            Ok(json) => println!("{json}"),
-            Err(e) => {
-                // AC-9: catastrophic internal error -> stderr + non-zero exit.
-                eprintln!("gcm: error: could not serialize status report: {e}");
-                return 1;
-            }
-        }
-    } else {
-        print_human(&report);
-    }
-    0
-}
-
 /// Build the report from explicit inputs (pure; the body of
 /// [`run_status_subcommand`]), so the whole shape is unit-testable without env.
-fn build_report(
+pub fn build_report(
     cli_provider: Option<ProviderId>,
     cli_model: Option<&str>,
     config: Option<&Config>,
     env_lookup: impl Fn(&str) -> Option<String>,
+    schema_version: i32,
+    version: &'static str,
 ) -> StatusReport {
     let paths = paths_status(&env_lookup, config::config_path(), config.is_some());
     let (selected, provider_error) = selected_provider(cli_provider, config, &env_lookup);
@@ -180,7 +149,7 @@ fn build_report(
             ) = match id.auth_method() {
                 AuthMethod::KeylessEndpoint => {
                     let (ep, src) = ollama_endpoint(config, &env_lookup);
-                    let zero = Some(!ollama::is_cloud_model(&model));
+                    let zero = Some(!identity::is_cloud_model(&model));
                     (None, Some(ep), Some(src), zero, None, None, None)
                 }
                 AuthMethod::KeylessAdc => (
@@ -221,8 +190,8 @@ fn build_report(
         .collect();
 
     StatusReport {
-        v: SCHEMA_VERSION,
-        version: crate::cli::VERSION,
+        v: schema_version,
+        version,
         paths,
         providers,
         provider_error,
@@ -435,7 +404,7 @@ fn ollama_endpoint(
     }
     if let Some(v) = env_value(env_lookup, "OLLAMA_HOST") {
         return (
-            ollama::normalize_host(&v),
+            identity::normalize_host(&v),
             "env var OLLAMA_HOST".to_string(),
         );
     }
@@ -447,7 +416,10 @@ fn ollama_endpoint(
     {
         return (ep.to_string(), "config file".to_string());
     }
-    (ollama::DEFAULT_BASE_URL.to_string(), "default".to_string())
+    (
+        identity::DEFAULT_BASE_URL.to_string(),
+        "default".to_string(),
+    )
 }
 
 fn model_source_label(src: ModelSource) -> String {
@@ -474,7 +446,7 @@ fn env_value(env_lookup: &impl Fn(&str) -> Option<String>, name: &str) -> Option
 /// headline (what the next run will use) / providers grouped into Activated and
 /// Not activated. Pure formatting over the already-resolved [`StatusReport`];
 /// the `--json` payload is rendered separately and is unaffected.
-fn print_human(report: &StatusReport) {
+pub fn print_human(report: &StatusReport) {
     println!("gcm {}", report.version);
 
     println!("\nPaths:");
@@ -550,7 +522,7 @@ fn print_human(report: &StatusReport) {
 /// The neutral `cloud` / `local` descriptor for an Ollama model, or `None` for a
 /// cloud provider (the distinction is only meaningful for Ollama). Driven by the
 /// already-computed `zero_egress` field; never recomputed here.
-fn locality_tag(p: &ProviderStatus) -> Option<&'static str> {
+pub fn locality_tag(p: &ProviderStatus) -> Option<&'static str> {
     match p.zero_egress {
         Some(true) => Some("local"),
         Some(false) => Some("cloud"),
@@ -562,7 +534,7 @@ fn locality_tag(p: &ProviderStatus) -> Option<&'static str> {
 /// selected provider leads (marked `>`), the rest keep canonical order - a stable
 /// sort on `!selected` floats the selection without disturbing the others. An
 /// empty section prints `(none)`.
-fn print_provider_section(report: &StatusReport, heading: &str, activated: bool) {
+pub fn print_provider_section(report: &StatusReport, heading: &str, activated: bool) {
     println!("\n{heading}");
     let mut members: Vec<&ProviderStatus> = report
         .providers
@@ -582,7 +554,7 @@ fn print_provider_section(report: &StatusReport, heading: &str, activated: bool)
 /// Print a single de-noised provider block: the name line (marked `>` when
 /// selected, two spaces otherwise) and the same indented detail lines as before.
 /// Ollama appends a `[cloud]` / `[local]` tag to its model line.
-fn print_provider_block(p: &ProviderStatus) {
+pub fn print_provider_block(p: &ProviderStatus) {
     let marker = if p.selected { ">" } else { " " };
     println!("{marker} {}", p.name.as_str());
     if let Some(ks) = &p.key_source {
@@ -805,7 +777,10 @@ mod tests {
         // default
         assert_eq!(
             ollama_endpoint(None, &env(&[])),
-            (ollama::DEFAULT_BASE_URL.to_string(), "default".to_string())
+            (
+                identity::DEFAULT_BASE_URL.to_string(),
+                "default".to_string()
+            )
         );
     }
 
@@ -820,6 +795,8 @@ mod tests {
             None,
             Some(&c),
             env(&[("OPENAI_API_KEY", "sk-ENV-SECRET")]),
+            1,
+            "test",
         );
         // canonical order
         let names: Vec<&str> = report.providers.iter().map(|p| p.name.as_str()).collect();
@@ -858,6 +835,8 @@ mod tests {
                 ("GCM_VERTEX_PROJECT", "my-proj"),
                 ("GCM_VERTEX_LOCATION", "us-central1"),
             ]),
+            1,
+            "test",
         );
         let v = report
             .providers
@@ -880,6 +859,8 @@ mod tests {
             None,
             None,
             env(&[("GCM_VERTEX_TOKEN", "t"), ("GCM_VERTEX_PROJECT", "p")]),
+            1,
+            "test",
         );
         let v2 = report2
             .providers
@@ -893,7 +874,14 @@ mod tests {
     #[test]
     fn model_flag_scoped_to_selected_provider() {
         // --provider openai --model foo: only openai reports flag; others env/default
-        let report = build_report(Some(ProviderId::Openai), Some("foo"), None, env(&[]));
+        let report = build_report(
+            Some(ProviderId::Openai),
+            Some("foo"),
+            None,
+            env(&[]),
+            1,
+            "test",
+        );
         let openai = report
             .providers
             .iter()
@@ -926,7 +914,7 @@ mod tests {
                 location: None,
             }],
         );
-        let report = build_report(None, None, Some(&config), env(&[]));
+        let report = build_report(None, None, Some(&config), env(&[]), 1, "test");
         let openai = report
             .providers
             .iter()
@@ -955,6 +943,8 @@ mod tests {
             None,
             Some(&config),
             env(&[("GCM_OPENAI_MODEL", "gpt-env")]),
+            1,
+            "test",
         );
         let openai = report
             .providers
@@ -973,6 +963,8 @@ mod tests {
             None,
             None,
             env(&[("GCM_OLLAMA_MODEL", "gemma4:e4b-mlx")]),
+            1,
+            "test",
         );
         let ollama = report
             .providers
@@ -986,6 +978,8 @@ mod tests {
             None,
             None,
             env(&[("GCM_OLLAMA_MODEL", "deepseek-v4-flash:cloud")]),
+            1,
+            "test",
         );
         let ollama = report
             .providers
@@ -999,6 +993,8 @@ mod tests {
             None,
             None,
             env(&[("GCM_OLLAMA_MODEL", "nemotron-3-nano:30b-cloud")]),
+            1,
+            "test",
         );
         let ollama = report
             .providers

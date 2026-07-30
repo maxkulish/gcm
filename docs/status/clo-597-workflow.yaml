@@ -1,0 +1,288 @@
+task_id: clo-597
+task_type: development
+classification_reason: >-
+  Title starts with 'Expose' (not in spec/ops patterns), no Type: label in body, ACs involve library reshaping with
+  behavioural verification — not purely mechanical spec work.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-597-expose-source-attributed-status-resolution-through-the-gcm
+  priority: Medium
+  branch_actual: feat/clo-597-status-res
+workflow:
+  current_phase: complete
+  status: checkpoint
+  created_at: '2026-07-30T07:45:03.661Z'
+  updated_at: '2026-07-30T08:54:24.471Z'
+phases:
+  discovery:
+    status: complete
+    approach_chosen: In-place gating + status facade
+    approaches_identified: 2
+    approved: true
+    baseline_score: 7
+    discovery_debt: []
+    discovery_report: docs/discovery/clo-597.md
+    prd_created: true
+    prd_exists: true
+    prd_file: docs/prds/clo-597-status-resolution.md
+    problem_framed: true
+  design:
+    status: complete
+    design_doc: docs/designs/clo-597-expose-status-resolution.md
+    draft_ready: true
+    applied_suggestions:
+      - tests/status.rs unchanged (subprocess-based, no crate::status imports)
+      - Relocate ollama helper unit tests to identity.rs
+      - >-
+        Pure wizard helpers (wizard_model_list, wizard_model_hint, wizard_persist_key, canonicalize_model) stay in
+        library config/mod.rs
+      - library_status_api.rs must compile under --no-default-features
+    flagged_suggestions: []
+    review_applied: true
+    review_completed: true
+    review_gemini: docs/reviews/clo-597-review-gemini.md
+    review_ollama: null
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    assumptions_surfaced: true
+    finalized: true
+    human_review_completed: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-597-expose-status-resolution.md
+    approved: true
+  implement:
+    status: complete
+    current_step: phase_4_library_test
+    byte_identical_status_json: true
+    byte_identical_status_output: true
+    tests_pass: 524
+    assumptions_revalidated: true
+    codex_report: null
+    codex_validated: false
+    gemini_validation_report: docs/reviews/clo-597-validation-gemini.md
+    validation_synthesis_report: docs/reviews/clo-597-validation-synthesis.md
+    validation_synthesis_verdict: PASS
+  pr:
+    status: complete
+    ci_passed: true
+    pr_number: 49
+    pr_url: https://github.com/maxkulish/gcm/pull/49
+    pre_flight_passed: true
+    bot_review_wait_completed: true
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-30T08:39:15Z'
+    pre_merge_refetch_passed: true
+    bot_review_wait_completed_at: '2026-07-30T08:33:53Z'
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-07-30T07:45:03.661Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-597 as development
+  - timestamp: '2026-07-30T07:45:16.846Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: title starts with "Expose" (not in spec/ops patterns), no Type: label in body, ACs
+      involve library reshaping with behavioural verification — not purely mechanical spec work.
+  - timestamp: '2026-07-30T07:45:41.972Z'
+    action: project_sync_blocked
+    phase: init
+    details: >-
+      CLO-597 blocked by CLO-596 (provider identity + model registry must cross library boundary first).
+      DEPENDENCIES.md: "Status resolution imports ProviderId, AuthMethod, ModelSource and resolve_model_with_source from
+      crate::provider, so it cannot cross the boundary before they do."
+  - timestamp: '2026-07-30T07:46:35.594Z'
+    action: blocker_resolved
+    phase: init
+    details: 'CLO-596 is Done (completed 2026-07-28, PR #48 merged). Blocker resolved — proceeding with project sync --start.'
+  - timestamp: '2026-07-30T07:46:49.308Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via /project:sync CLO-597 --start. CLO-596 marked Done in all files
+      (PR #48 merged 2026-07-28). CLO-597 added to Active Work, status → In Progress in ROADMAP, removed from Current
+      Blockers in DEPENDENCIES. WIP: 1/3.
+  - timestamp: '2026-07-30T07:46:50.593Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-07-30T07:47:01.756Z'
+    action: branch_created
+    phase: discovery
+    details: Branch feat/clo-597-status-res checked out from main (056b0f1). Session knowledge initialized.
+  - timestamp: '2026-07-30T07:49:28.437Z'
+    action: discovery_approved
+    phase: discovery
+    details: >-
+      Approach B — in-place gating for config (#[cfg(feature="cli")] on wizard), facade split for status (library mod.rs
+      + binary facade.rs), ollama helpers move to identity.rs. Baseline 7/10. 2 approaches considered. 522 tests
+      currently pass.
+  - timestamp: '2026-07-30T07:49:30.867Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-07-30T07:50:40.047Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Design document created at docs/designs/clo-597-expose-status-resolution.md. AI review unavailable in pi context —
+      proceeding to checkpoint.
+  - timestamp: '2026-07-30T07:59:34.550Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Gemini review: APPROVE_WITH_SUGGESTIONS. 4 actionable items applied: (1) tests/status.rs unchanged —
+      subprocess-based, (2) relocate ollama helper unit tests to identity.rs, (3) pure wizard helpers stay in library
+      config/mod.rs, (4) library_status_api.rs must compile under --no-default-features. Ollama review unavailable.
+  - timestamp: '2026-07-30T08:04:10.526Z'
+    action: design_human_review_complete
+    phase: design
+    details: 'User approved the design checkpoint (message: plan approved). Proceeding to finalize design and move to plan.'
+  - timestamp: '2026-07-30T08:04:13.570Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: >-
+      Assumptions surfaced: (1) tests/status.rs is subprocess-based and needs no changes, (2) pure wizard helpers stay
+      in library config/mod.rs, (3) ollama helper unit tests move to identity.rs, (4) library_status_api.rs must compile
+      under --no-default-features.
+  - timestamp: '2026-07-30T08:04:16.662Z'
+    action: design_finalized
+    phase: design
+    details: Design finalized at docs/designs/clo-597-expose-status-resolution.md. Approved with suggestions applied.
+  - timestamp: '2026-07-30T08:04:18.102Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-07-30T08:04:30.197Z'
+    action: plan_started
+    phase: plan
+    details: >-
+      Plan phase resumed. Creating implementation plan from design document
+      docs/designs/clo-597-expose-status-resolution.md.
+  - timestamp: '2026-07-30T08:04:59.847Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      Implementation plan created at docs/plans/clo-597-expose-status-resolution.md. 36 tasks across 6 phases. Linear
+      comment posted.
+  - timestamp: '2026-07-30T08:05:09.308Z'
+    action: plan_approved
+    phase: plan
+    details: 'User approved the implementation plan (message: plan approved). Proceeding to implement phase.'
+  - timestamp: '2026-07-30T08:05:10.693Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+  - timestamp: '2026-07-30T08:05:13.653Z'
+    action: implement_started
+    phase: implement
+    details: 'Implementation started. Executing plan phases 1-4. Current step: Phase 1 — move ollama helpers to identity.rs.'
+  - timestamp: '2026-07-30T08:09:28.113Z'
+    action: phase_1_complete
+    phase: implement
+    details: >-
+      Phase 1 complete: ollama helpers moved to identity.rs, tests relocated, all references updated (status.rs,
+      facade.rs, ollama.rs). cargo test passes.
+  - timestamp: '2026-07-30T08:16:25.139Z'
+    action: phase_2_complete
+    phase: implement
+    details: >-
+      Phase 2 complete: config.rs split into config/mod.rs (library) + config/facade.rs (binary). paths.rs also moved to
+      library with facade. cargo test passes (all features and no-default-features --lib).
+  - timestamp: '2026-07-30T08:20:10.800Z'
+    action: phase_3_complete
+    phase: implement
+    details: >-
+      Phase 3 complete: status.rs split into status/mod.rs (library) + status/facade.rs (binary). build_report now takes
+      schema_version and version params. cargo test passes; no-default-features --lib passes with 126 tests.
+  - timestamp: '2026-07-30T08:25:03.250Z'
+    action: implement_complete
+    phase: implement
+    details: >-
+      Implementation complete. 524 tests pass, clippy clean, fmt clean, byte-identical gcm status output verified,
+      no-default-features --lib passes with 126 tests. Library consumer test tests/library_status_api.rs passes.
+  - timestamp: '2026-07-30T08:29:01.290Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      Implementation complete. 524 tests pass, clippy clean, fmt clean, byte-identical status output verified, library
+      consumer test passes under no-default-features.
+  - timestamp: '2026-07-30T08:29:03.837Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      Assumptions revalidated: (1) tests/status.rs unchanged, (2) ollama helper tests in identity.rs, (3) pure wizard
+      helpers in config/mod.rs, (4) library_status_api.rs compiles under --no-default-features.
+  - timestamp: '2026-07-30T08:29:05.807Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex validation skipped — Codex/GPT-5.4 tool not available in pi context. Manual verification + Gemini validation
+      used as substitute.
+  - timestamp: '2026-07-30T08:29:08.278Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-30T08:31:00.159Z'
+    action: pr_created
+    phase: pr
+    details: >-
+      PR #49 created at https://github.com/maxkulish/gcm/pull/49. Pre-flight checks passed: fmt, clippy -D warnings, 524
+      tests.
+  - timestamp: '2026-07-30T08:32:09.967Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-flight checks passed before PR creation: cargo fmt --check (0), cargo clippy -- -D warnings (0), cargo test
+      (524 tests). CI currently pending on PR #49.
+  - timestamp: '2026-07-30T08:33:00.056Z'
+    action: ci_passed
+    phase: pr
+    details: >-
+      GitHub Actions CI passed for PR #49: build/test (macos-latest) and build/test (ubuntu-latest) both succeeded. PR
+      is MERGEABLE with mergeStateStatus CLEAN.
+  - timestamp: '2026-07-30T08:33:50.882Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed: no gemini-code-assist or copilot-pull-request-reviewer reviews on last 5 closed PRs. Zero
+      inline comments/reviews on PR #49. Proceeding with no bot-review gate.
+  - timestamp: '2026-07-30T08:33:53.471Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      PR #49 has no comments or reviews (human or bot). Bot reviewers confirmed absent from recent closed PRs. No review
+      feedback to address.
+  - timestamp: '2026-07-30T08:36:16.761Z'
+    action: ci_passed
+    phase: pr
+    details: 'CI passed after workflow-state commit push: build/test (macos-latest) and build/test (ubuntu-latest) both SUCCESS.'
+  - timestamp: '2026-07-30T08:53:52.005Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: >-
+      Pre-merge re-fetch passed after new commits: no new inline comments since last review_addressed and no unresolved
+      review threads. CI re-passed.
+  - timestamp: '2026-07-30T08:54:11.645Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: Bots confirmed absent from recent closed PRs. Setting completion timestamp.
+  - timestamp: '2026-07-30T08:54:24.471Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+task_title: Expose source-attributed status resolution through the gcm library
+task_url: https://linear.app/cloud-ai/issue/CLO-597/expose-source-attributed-status-resolution-through-the-gcm-library
