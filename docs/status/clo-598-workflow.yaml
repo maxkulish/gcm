@@ -24,7 +24,7 @@ workflow:
   current_phase: pr
   status: active
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T10:38:54.206Z'
+  updated_at: '2026-07-30T10:39:35.102Z'
 phases:
   discovery:
     status: complete
@@ -151,7 +151,9 @@ phases:
         completion_tokens: 3500
         task_label: pre-pr-validation-synthesis
   pr:
-    status: pending
+    status: in_progress
+    pr_number: 52
+    pr_url: https://github.com/maxkulish/gcm/pull/52
   complete:
     status: pending
 history:
@@ -253,5 +255,9 @@ history:
     details: >-
       Pre-flight CI checks passed on current HEAD: cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo
       test all green.
+  - timestamp: '2026-07-30T10:39:35.102Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #52 created: https://github.com/maxkulish/gcm/pull/52. Branch feat/clo-598-consumer-check pushed to origin.'
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
