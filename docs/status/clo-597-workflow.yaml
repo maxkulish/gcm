@@ -311,6 +311,3 @@ history:
     details: >-
       Survey complete; no durable lessons surfaced. No violated assumptions, no validation fix iterations, no flagged
       suggestions, no plannotator annotations, no session notes.
-||||||| 056b0f1
-task_title: Expose source-attributed status resolution through the gcm library
-task_url: https://linear.app/cloud-ai/issue/CLO-597/expose-source-attributed-status-resolution-through-the-gcm-library
