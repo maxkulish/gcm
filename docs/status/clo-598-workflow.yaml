@@ -24,7 +24,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T10:14:10.909Z'
+  updated_at: '2026-07-30T10:20:48.943Z'
 phases:
   discovery:
     status: complete
@@ -94,9 +94,35 @@ phases:
     plan_file: docs/plans/clo-598-consumer-check.md
     approved: true
   implement:
-    status: in_progress
+    status: validating
     commits:
       - 202d329
+      - b0ce349
+      - 7d14ce3
+      - 360e8ff
+      - 72d572f
+    assumption_outcomes:
+      - evidence: smoke/src/main.rs tests pass with cd smoke && cargo test
+        outcome: held
+        text: The smoke/ crate can depend on gcm by path with default-features = false
+      - evidence: scripts/check-public-surface.sh exits 0
+        outcome: held
+        text: cargo doc --lib --no-default-features accurately reflects the public surface
+      - evidence: scripts/check-public-surface.sh exits 0 — trait.Provider.html not found
+        outcome: held
+        text: The Provider trait is only in provider/facade.rs, not included in lib.rs
+      - evidence: scripts/check-public-surface.sh exits 0 — no resolve types in docs
+        outcome: held
+        text: The entire resolve/ module is only in main.rs, not in lib.rs
+      - evidence: scripts/check-public-surface.sh exits 0 — file-existence check works
+        outcome: held
+        text: >-
+          cargo doc --lib generates HTML files named after type kinds, and file existence is a binary indicator of
+          public export
+      - evidence: cargo test — all 524 tests pass
+        outcome: held
+        text: The 524 existing tests continue to pass after adding smoke/ and scripts/
+    assumptions_revalidated: true
   pr:
     status: pending
   complete:
@@ -174,5 +200,15 @@ history:
     action: phase_transition
     phase: plan
     details: Transitioned from plan to implement
+  - timestamp: '2026-07-30T10:20:46.075Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      6 assumptions reviewed. held: 6, violated: 0, untested: 0. All assumptions confirmed by smoke tests, surface
+      check, and full test suite.
+  - timestamp: '2026-07-30T10:20:48.943Z'
+    action: implementation_complete
+    phase: implement
+    details: All 6 sub-tasks landed. fmt+clippy+test green. 4 commits.
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its

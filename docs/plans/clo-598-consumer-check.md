@@ -46,7 +46,7 @@ Create the script per the design spec:
 
 ### ST4 Add publish=false to root Cargo.toml
 **Files:** `Cargo.toml`
-**Acceptance:** `cargo metadata --no-deps --format-version 1 | jq '.packages[0].publish'` returns `null` (publish = false)
+**Acceptance:** `cargo metadata --no-deps --format-version 1 | jq '.packages[0].publish'` returns `[]` (publish = false)
 **Estimate:** S
 
 Add `publish = false` to the `[package]` section of the root `Cargo.toml` to mechanically enforce ADR-002 Decision 7.

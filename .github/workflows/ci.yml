@@ -44,5 +44,17 @@ jobs:
       - name: Test
         run: cargo test --all
 
+      - name: Test (library-only, no default features)
+        run: cargo test --no-default-features --lib --locked
+
+      - name: Smoke test (library-only)
+        run: cargo test --manifest-path smoke/Cargo.toml --locked
+
+      - name: Smoke test (with CLI features)
+        run: cargo test --manifest-path smoke/Cargo.toml --locked --features gcm-cli
+
+      - name: Surface check (no commit-domain types in public API)
+        run: scripts/check-public-surface.sh
+
       - name: Build (release)
         run: cargo build --release

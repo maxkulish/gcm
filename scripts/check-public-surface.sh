@@ -16,21 +16,27 @@ DOC_DIR="$CARGO_TARGET_DIR/doc/gcm"
 
 # Forbidden types that must NOT appear in the public library surface.
 # These are commit-domain types or binary-only facades.
+# Format: "<item-kind>.<Name>" where item-kind is one of:
+#   struct, enum, trait, type, fn
 FORBIDDEN=(
-  "trait.Provider.html"
-  "struct.ConflictHunk.html"
-  "struct.ResolveContext.html"
-  "struct.Resolution.html"
-  "struct.HunkResolution.html"
-  "struct.ResolveReport.html"
-  "struct.RoundReport.html"
-  "struct.FinishReport.html"
+  "trait.Provider"
+  "struct.ConflictHunk"
+  "struct.ResolveContext"
+  "struct.Resolution"
+  "enum.HunkResolution"
+  "struct.ResolveReport"
+  "struct.RoundReport"
+  "struct.FinishReport"
 )
 
 FAILED=0
 for f in "${FORBIDDEN[@]}"; do
-  if [ -f "$DOC_DIR/$f" ]; then
-    echo "FAIL: forbidden type leaked into public surface: $f"
+  # Recursive search under doc/gcm/ — rustdoc places types in per-module
+  # subdirectories (e.g. doc/gcm/provider/facade/trait.Provider.html).
+  # Match all item-kind prefixes: struct, enum, trait, type, fn.
+  if find "$DOC_DIR" -name "${f}.html" 2>/dev/null | grep -q .; then
+    echo "FAIL: forbidden type leaked into public surface: ${f}.html"
+    find "$DOC_DIR" -name "${f}.html"
     FAILED=1
   fi
 done
