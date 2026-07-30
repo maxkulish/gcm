@@ -1,12 +1,11 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-30 (CLO-596 merged — CLO-597 unblocked and started)
+**Last Updated**: 2026-07-30 (CLO-597 merged — CLO-598 unblocked)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| CLO-598 | CLO-597 | In Progress | The out-of-tree consumer check exercises all three earlier slices together. |
 
 ## Unblocked & Ready
 
