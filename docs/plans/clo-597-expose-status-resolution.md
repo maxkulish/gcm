@@ -3,7 +3,7 @@
 **Linear Task**: https://linear.app/cloud-ai/issue/CLO-597
 **Design Document**: [docs/designs/clo-597-expose-status-resolution.md](../designs/clo-597-expose-status-resolution.md)
 **Created**: 2026-07-30
-**Overall Progress**: 78% (47/60 tasks completed)
+**Overall Progress**: 100% (60/60 tasks completed)
 
 ---
 
@@ -75,23 +75,23 @@ CLO-597 extends the library boundary work from CLO-595/596 by moving the `status
 - [x] Run `cargo clippy` and ensure clean output
 - [x] Verify `cargo test --no-default-features --lib` compiles
 - [x] Verify byte-identical `gcm status` output:
-  - [ ] Check out baseline binary or use `git stash` method
-  - [ ] Run `gcm status` before changes, save to `/tmp/status-old.txt`
-  - [ ] Run `gcm status` after changes, save to `/tmp/status-new.txt`
-  - [ ] Run `gcm status --json` before changes, save to `/tmp/status-json-old.txt`
-  - [ ] Run `gcm status --json` after changes, save to `/tmp/status-json-new.txt`
-  - [ ] `diff` old vs new for both human and JSON outputs; expect no differences
+  - [x] Check out baseline binary or use `git stash` method
+  - [x] Run `gcm status` before changes, save to `/tmp/status-old.txt`
+  - [x] Run `gcm status` after changes, save to `/tmp/status-new.txt`
+  - [x] Run `gcm status --json` before changes, save to `/tmp/status-json-old.txt`
+  - [x] Run `gcm status --json` after changes, save to `/tmp/status-json-new.txt`
+  - [x] `diff` old vs new for both human and JSON outputs; expect no differences
 - [x] Verify `cargo fmt --check` passes (or run `cargo fmt`)
 
 ### Phase 6: Finalization
 
-- [~] Stage all changes: `git add -A`
-- [~] Commit with conventional message: `feat(CLO-597): expose source-attributed status resolution through gcm library`
-- [~] Push branch: `git push origin feat/clo-597-status-res`
-- [~] Create PR: `gh pr create --title "feat(CLO-597): expose source-attributed status resolution through gcm library" --body "..."`
-- [~] Link PR to Linear task CLO-597
-- [~] Post PR link to Linear comment
-- [~] Request review
+- [x] Stage all changes: `git add -A`
+- [x] Commit with conventional message: `feat(CLO-597): expose source-attributed status resolution through gcm library`
+- [x] Push branch: `git push origin feat/clo-597-status-res`
+- [x] Create PR: `gh pr create --title "feat(CLO-597): expose source-attributed status resolution through gcm library" --body "..."`
+- [x] Link PR to Linear task CLO-597
+- [x] Post PR link to Linear comment
+- [x] Request review
 
 ---
 
