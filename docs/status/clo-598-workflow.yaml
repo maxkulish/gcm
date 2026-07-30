@@ -21,10 +21,10 @@ linear:
   priority: '3'
   branch_actual: feat/clo-598-consumer-check
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: active
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T10:37:39.087Z'
+  updated_at: '2026-07-30T10:38:54.206Z'
 phases:
   discovery:
     status: complete
@@ -243,5 +243,15 @@ history:
     details: >-
       Codex: FAIL. Gemini: PASS. Synthesis: PASS_WITH_NOTES. One fix iteration applied; all Must Fix items resolved and
       full pre-merge gate green.
+  - timestamp: '2026-07-30T10:38:33.660Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-07-30T10:38:54.206Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-flight CI checks passed on current HEAD: cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo
+      test all green.
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
