@@ -23,7 +23,7 @@ workflow:
   current_phase: pr
   status: checkpoint
   created_at: '2026-07-30T07:45:03.661Z'
-  updated_at: '2026-07-30T08:36:16.761Z'
+  updated_at: '2026-07-30T08:53:52.005Z'
 phases:
   discovery:
     status: complete
@@ -74,13 +74,15 @@ phases:
     validation_synthesis_report: docs/reviews/clo-597-validation-synthesis.md
     validation_synthesis_verdict: PASS
   pr:
-    status: in_progress
+    status: complete
     ci_passed: true
     pr_number: 49
     pr_url: https://github.com/maxkulish/gcm/pull/49
     pre_flight_passed: true
     bot_review_wait_completed: true
     reviews_addressed: true
+    pre_merge_refetch_at: '2026-07-30T08:39:15Z'
+    pre_merge_refetch_passed: true
   complete:
     status: pending
 history:
@@ -267,5 +269,11 @@ history:
     action: ci_passed
     phase: pr
     details: 'CI passed after workflow-state commit push: build/test (macos-latest) and build/test (ubuntu-latest) both SUCCESS.'
+  - timestamp: '2026-07-30T08:53:52.005Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: >-
+      Pre-merge re-fetch passed after new commits: no new inline comments since last review_addressed and no unresolved
+      review threads. CI re-passed.
 task_title: Expose source-attributed status resolution through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-597/expose-source-attributed-status-resolution-through-the-gcm-library
