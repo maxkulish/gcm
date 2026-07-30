@@ -21,10 +21,10 @@ linear:
   priority: '3'
   branch_actual: feat/clo-598-consumer-check
 workflow:
-  current_phase: pr
+  current_phase: complete
   status: active
   created_at: '2026-07-30T09:59:14.679Z'
-  updated_at: '2026-07-30T11:08:25.399Z'
+  updated_at: '2026-07-30T11:14:15.983Z'
 phases:
   discovery:
     status: complete
@@ -161,8 +161,12 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-07-30T11:15:00.000Z'
     pre_merge_refetch_passed: true
+    merge_commit: b70917b81f041e1f3ce43830c314b4c5fc440344
+    merged_at: '2026-07-30T11:25:00.000Z'
   complete:
     status: pending
+    merge_commit: b70917b81f041e1f3ce43830c314b4c5fc440344
+    merged_at: '2026-07-30T11:25:00.000Z'
 history:
   - timestamp: '2026-07-30T09:59:14.679Z'
     action: workflow_started
@@ -286,5 +290,17 @@ history:
     action: pre_merge_refetch_passed
     phase: pr
     details: 'Pre-merge re-fetch passed: no new inline comments since review_addressed and no unresolved review threads.'
+  - timestamp: '2026-07-30T11:08:31.581Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-07-30T11:14:12.975Z'
+    action: pr_merged
+    phase: pr
+    details: 'PR #52 merged via GitHub API. Merge commit b70917b81f041e1f3ce43830c314b4c5fc440344. Squash merge, branch deleted.'
+  - timestamp: '2026-07-30T11:14:15.983Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #52 merged. Merge commit b70917b81f041e1f3ce43830c314b4c5fc440344.'
 task_title: Verify the gcm library from an out-of-tree consumer and lock its public surface
 task_url: https://linear.app/cloud-ai/issue/CLO-598/verify-the-gcm-library-from-an-out-of-tree-consumer-and-lock-its
