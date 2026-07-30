@@ -23,7 +23,7 @@ workflow:
   current_phase: pr
   status: checkpoint
   created_at: '2026-07-30T07:45:03.661Z'
-  updated_at: '2026-07-30T08:53:52.005Z'
+  updated_at: '2026-07-30T08:54:11.645Z'
 phases:
   discovery:
     status: complete
@@ -83,6 +83,7 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-07-30T08:39:15Z'
     pre_merge_refetch_passed: true
+    bot_review_wait_completed_at: '2026-07-30T08:33:53Z'
   complete:
     status: pending
 history:
@@ -275,5 +276,9 @@ history:
     details: >-
       Pre-merge re-fetch passed after new commits: no new inline comments since last review_addressed and no unresolved
       review threads. CI re-passed.
+  - timestamp: '2026-07-30T08:54:11.645Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: Bots confirmed absent from recent closed PRs. Setting completion timestamp.
 task_title: Expose source-attributed status resolution through the gcm library
 task_url: https://linear.app/cloud-ai/issue/CLO-597/expose-source-attributed-status-resolution-through-the-gcm-library
