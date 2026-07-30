@@ -5,6 +5,8 @@
 //! - `gcm::privacy` — secret scanning (CLO-595)
 //! - `gcm::provider` — provider identity, model resolution, and the injectable
 //!   model registry (CLO-596)
+//! - `gcm::config` — persisted configuration types and pure helpers (CLO-597)
+//! - `gcm::status` — source-attributed provider status resolution (CLO-597)
 //!
 //! The CLI lives in the `gcm` binary target; this crate carries no `clap`,
 //! `cliclack`, or HTTP transport unless the `cli` feature is enabled.
@@ -21,8 +23,11 @@
 //! # Ok::<(), ScanError>(())
 //! ```
 
+pub mod config;
+pub mod paths;
 pub mod privacy;
 pub mod provider;
+pub mod status;
 
 #[doc(hidden)]
 pub mod debug;

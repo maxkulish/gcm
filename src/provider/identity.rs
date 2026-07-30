@@ -284,6 +284,47 @@ pub fn resolve_model_with_source(
     (id.default_model().to_string(), ModelSource::Default)
 }
 
+/// Default Ollama endpoint.
+pub const DEFAULT_BASE_URL: &str = "http://localhost:11434";
+/// Default Ollama port (used by `normalize_host` when the host has no port).
+pub const DEFAULT_PORT: &str = "11434";
+
+/// Normalize an `OLLAMA_HOST` value into a base URL. A value with no `://`
+/// scheme gets `http://` prepended; if it then carries no explicit port, the
+/// Ollama default `:11434` is appended. A value that already has a scheme is
+/// taken as-is (no port forced).
+pub fn normalize_host(host: &str) -> String {
+    let h = host.trim();
+    if h.contains("://") {
+        return h.to_string();
+    }
+    if has_port(h) {
+        format!("http://{h}")
+    } else {
+        format!("http://{h}:{DEFAULT_PORT}")
+    }
+}
+
+/// Whether a scheme-less host string carries an explicit numeric port in its
+/// last `:`-segment (`host` -> false, `host:11434` -> true).
+fn has_port(h: &str) -> bool {
+    match h.rsplit_once(':') {
+        Some((_, port)) => !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()),
+        None => false,
+    }
+}
+
+/// Whether an Ollama model routes off-machine through Ollama Cloud rather than
+/// running locally. Cloud passthrough models carry a `:cloud` or `-cloud` tag
+/// suffix (e.g. `deepseek-v4-flash:cloud`, `nemotron-3-nano:30b-cloud`); the
+/// local daemon proxies those requests to a remote backend, so they are NOT
+/// zero-egress. Single source of truth for the runtime egress note and the
+/// `gcm status` cloud/local tag, so the two never disagree.
+pub fn is_cloud_model(model: &str) -> bool {
+    let m = model.trim();
+    m.ends_with(":cloud") || m.ends_with("-cloud")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,6 +506,31 @@ mod tests {
         assert!(msgs.iter().all(|m| !m.is_empty()));
         let set: HashSet<&String> = msgs.iter().collect();
         assert_eq!(set.len(), 6, "all six messages must be distinct");
+    }
+
+    #[test]
+    fn normalize_host_variants() {
+        assert_eq!(normalize_host("localhost"), "http://localhost:11434");
+        assert_eq!(normalize_host("127.0.0.1:11434"), "http://127.0.0.1:11434");
+        assert_eq!(
+            normalize_host("http://127.0.0.1:11434"),
+            "http://127.0.0.1:11434"
+        );
+        assert_eq!(
+            normalize_host("my-host.local"),
+            "http://my-host.local:11434"
+        );
+    }
+
+    #[test]
+    fn is_cloud_model_detects_both_suffixes() {
+        // both the `:cloud` and `-cloud` tag forms route off-machine
+        assert!(is_cloud_model("deepseek-v4-flash:cloud"));
+        assert!(is_cloud_model("nemotron-3-nano:30b-cloud"));
+        assert!(is_cloud_model("  gpt-oss:120b-cloud  ")); // trimmed
+                                                           // local GGUF models are not cloud
+        assert!(!is_cloud_model("gemma4:e4b-mlx"));
+        assert!(!is_cloud_model("llama3:8b"));
     }
 
     #[test]

@@ -22,13 +22,11 @@ mod vertex;
 
 pub use gcm::provider::http;
 #[doc(hidden)]
-pub use gcm::provider::identity::OPENAI_SUPPORTED_MODELS;
+pub use gcm::provider::identity::{is_cloud_model, OPENAI_SUPPORTED_MODELS};
 #[cfg(feature = "cli")]
 pub use gcm::provider::models::fetch_supported_models;
 pub use gcm::provider::models::FetchSource;
-pub use gcm::provider::{
-    resolve_model_with_source, AuthMethod, ErrorKind, ModelSource, ProviderError, ProviderId,
-};
+pub use gcm::provider::{resolve_model_with_source, ErrorKind, ProviderError, ProviderId};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -255,7 +253,7 @@ pub fn select(
         ProviderId::Ollama => {
             // Privacy defense-in-depth (FR-56/FR-48): a cloud-tagged model is proxied
             // off-machine by the local daemon, so warn that it is NOT zero-egress.
-            if ollama::is_cloud_model(&model) {
+            if is_cloud_model(&model) {
                 eprintln!(
                     "note: Ollama model '{model}' routes through Ollama Cloud; the diff is NOT zero-egress."
                 );
