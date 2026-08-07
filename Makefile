@@ -205,7 +205,8 @@ _bump-and-tag:
 	echo "Bumping $(VERSION) -> $$NEW ($(BUMP))"; \
 	awk -v v="$$NEW" 'BEGIN{d=0} /^version = "/ && !d {sub(/"[^"]*"/, "\"" v "\""); d=1} {print}' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml; \
 	cargo check --quiet;  \
-	git add Cargo.toml Cargo.lock; \
+	cargo update -p gcm --manifest-path smoke/Cargo.toml --quiet; \
+	git add Cargo.toml Cargo.lock smoke/Cargo.lock; \
 	git commit -q -m "release: v$$NEW"; \
 	git tag -a "v$$NEW" -m "v$$NEW"; \
 	echo ""; \
