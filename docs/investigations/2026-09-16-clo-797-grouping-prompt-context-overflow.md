@@ -15,10 +15,12 @@ messages or completion.. Likely an unsupported model/parameter or a gcm bug;
 please report it.. Falling back to single-commit mode.
 ```
 
-The grouping plan was lost; gcm produced a single commit for all 515 files. The
-same oversized input against `gemini-3.5-flash-lite` did not fail - it stalled
-for minutes, because Gemini's ~1M window accepts the prompt that Groq rejects.
-One input defect, two different bad experiences.
+The grouping plan was lost; gcm produced a single commit for all 515 files.
+
+The same input against Google does not 400 - Gemini's ~1M window accepts the
+prompt Groq rejects - but it goes silent for 60 seconds and then times out
+anyway. One input defect, two different bad experiences. See "The Gemini stall"
+below for the measured breakdown.
 
 ## Root cause
 
@@ -139,26 +141,65 @@ Ordered by ratio of effect to risk.
    exceeds budget, drop hunks and group on paths + stat alone - grouping needs
    paths far more than it needs hunk bodies - and say so on stderr.
 
-## Observability gap (CLO-798)
+## The Gemini stall (CLO-798) - reproduced, cause established
 
-Found while investigating the Gemini stall, tracked separately.
+Tracked separately as CLO-798. Measured against the same 515-file tree with
+`gemini-3.1-flash-lite`:
+
+| Stage | Wall time | How measured |
+|---|---:|---|
+| All local work (git status, diff gather, 50 file reads, prompt assembly) | 0.16s | local capture server, no egress |
+| Grouping call, default 60s timeout | times out at 60.17s | real API, `GCM_LOG_LEVEL=debug` |
+| Grouping call, `GCM_HTTP_TIMEOUT_SECS=300` | **succeeds in 85.5s** | real API |
+| Fallback single-commit message call | ~1.9s | 62.07s total minus the 60.17s timeout |
+
+**Nothing hangs.** The request needs ~85s; the default timeout is 60s. gcm
+discards a minute of work and silently degrades to a worse result.
+
+### Why grouping takes 85s when the message call takes 1.9s
+
+`plan::schema()` (`src/plan.rs:310-331`) requires `groups[].files`, so the model
+must **echo every changed path back** in its response. 515 paths is roughly 36K
+output tokens. Generation dominates, not input processing - which is why 1.6x the
+input costs 45x the wall time.
+
+Grouping latency therefore scales with file count on the **output** side,
+independently of the input bloat above. Groq's rejection text named both:
+"reduce the length of the messages **or completion**". Fixing the input
+duplication will not by itself make the 36K-token output fast.
+
+### Anthropic cannot emit a large plan at all
+
+`build_plan_payload` hardcodes `max_tokens: 4096` (`src/provider/anthropic.rs:161`).
+A 515-file plan needs ~36K output tokens, so the response cannot fit. It hits
+`stop_reason: max_tokens` and surfaces as "Anthropic response truncated; the diff
+may be too large" (`anthropic.rs:242`) - a better message than Groq's, but still
+a hard failure. Groq and Gemini set no output cap, so they just run long.
+
+### The silence is structural
 
 Every log call in the codebase is `debug_log!`, i.e. `Level::Debug`, which is
-`Off` by default (`src/debug.rs:39`). There are eight call sites in total:
+`Off` by default (`src/debug.rs:39`). Eight call sites in total:
 `main.rs:415,462,495`, `plan.rs:279,294`, `http.rs:142,207,329`. With default
-settings the generation path emits **zero** bytes between start and finish, and
-there is no progress indicator - the only spinner lives in the `gcm provider`
-wizard's model-list fetch (`http.rs:33-37`).
+settings the generation path emits **zero** bytes for the full 60s, and there is
+no progress indicator - the only spinner lives in the `gcm provider` wizard's
+model-list fetch (`http.rs:33-37`).
+
+With `GCM_LOG_LEVEL=debug` the output is genuinely useful and named the cause on
+the first run: `Google API request timed out; falling back to single-commit`.
+The information exists; it is switched off.
 
 Relevant constants: timeout 60s (`DEFAULT_TIMEOUT_SECS`, `http.rs:20`);
 `DEFAULT_MAX_RETRIES = 3`, so four attempts, backoff base 500ms / max 8s
 (`http.rs:28-32`). `Timeout` is **not** retryable - `is_retryable`
-(`identity.rs:97-99`) matches only `RateLimit` and `Server` - so a single stalled
-request fails after 60s, but a retried 429/5xx sequence can silently occupy ~4
-minutes.
+(`identity.rs:97-99`) matches only `RateLimit` and `Server` - so one stall costs
+exactly 60s, but a retried 429/5xx sequence can silently occupy ~4 minutes.
 
-The exact cause of the multi-minute `gemini-3.5-flash-lite` stall was **not**
-reproduced. The silence is structural and certain; whether that run was retrying,
-genuinely slow on an oversized prompt, or blocked elsewhere is unknown, precisely
-because nothing was logged. Re-run with `GCM_LOG_LEVEL=debug` before assuming a
-cause.
+### Model-name note
+
+The model reported as `gemini-3.5-flash-lite` is not the one that ran. The active
+config has `gemini-3.1-flash-lite` enabled for google, and
+`gcm --model gemini-3.5-flash-lite` fails fast and clearly ("not enabled for
+google. Enabled: gemini-3.1-flash-lite") - that error path works well.
+`ProviderId::Google.default_model()` is nonetheless `gemini-3.5-flash-lite`
+(`identity.rs:456`), so the shipped default and the enabled list disagree.

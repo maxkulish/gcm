@@ -19,3 +19,22 @@ body composition:
 
 path text repeated three times:
   file_list + status + name-only stubs = 112,219 tokens (59% of prompt)
+
+=====================================================================
+CLO-798 timing, same 515-file tree, gemini-3.1-flash-lite, gcm 0.7.0+72e10a6
+=====================================================================
+
+stage                                          wall time   method
+local work only (git, diff, 50 reads, prompt)      0.16s   local capture server
+grouping call, default 60s timeout                60.17s   TIMED OUT, real API
+grouping call, GCM_HTTP_TIMEOUT_SECS=300          85.50s   SUCCEEDED, real API
+fallback single-commit message call                ~1.9s   62.07s total - 60.17s
+
+Conclusion: not a hang. The request needs ~85s; the default timeout is 60s.
+
+Why grouping is slow: plan::schema() requires groups[].files, so the model must
+echo all 515 paths back = ~36K output tokens. Generation dominates, not input
+processing (1.6x input tokens -> 45x wall time vs the message call).
+
+Anthropic's build_plan_payload hardcodes max_tokens: 4096 (anthropic.rs:161),
+so a 515-file plan cannot fit in the response at all.
