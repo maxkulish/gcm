@@ -107,7 +107,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Priority | Task | Title | Dependencies | Target |
 |----------|------|-------|--------------|--------|
 | 1 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window on large commits | none (root cause measured, fix directions written) | — |
-| 2 | (unfiled) | Return group assignments by index instead of making the model echo every path | CLO-797 (related — same prompt, output side) | — |
+| 2 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | CLO-797/798 (related — same call, output side) | — |
 | 3 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | none | — |
 | 4 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | none | — |
 
