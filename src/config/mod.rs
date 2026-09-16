@@ -525,10 +525,35 @@ pub fn canonicalize_model(id: ProviderId, model: &str) -> String {
     }
 }
 
+/// Known provider models that the enabled set does not already contain, for the
+/// enabled-set rejection message (CLO-799 AC2). Membership is compared after
+/// [`canonicalize_model`] on both sides - the same rule as the enforcement check -
+/// so an enabled `models/gemini-x` is never re-listed as known. Entries keep the
+/// catalog's own form, and the list is capped at 8 entries with a trailing
+/// ellipsis when longer. Pure and transport-free (the built-in list).
+#[doc(hidden)]
+pub fn known_models_not_enabled(id: ProviderId, enabled: &[String]) -> Vec<String> {
+    const DISPLAY_CAP: usize = 8;
+    let mut known: Vec<String> = crate::provider::models::static_fallback_models(id)
+        .into_iter()
+        .filter(|m| {
+            !enabled
+                .iter()
+                .any(|e| canonicalize_model(id, e) == canonicalize_model(id, m))
+        })
+        .collect();
+    if known.len() > DISPLAY_CAP {
+        known.truncate(DISPLAY_CAP);
+        known.push("…".to_string());
+    }
+    known
+}
+
 /// Enforce that `model` is in provider `id`'s enabled set. Returns `Ok` when the
 /// provider has no entry, or an empty `models` (= unrestricted, the v1-migration /
 /// pre-`gcm provider` state). A non-empty set rejects an out-of-set model with an
-/// actionable message (compared after [`canonicalize_model`]).
+/// actionable message (compared after [`canonicalize_model`]) that names the
+/// offender, the enabled set, and the provider's known catalog (CLO-799).
 #[doc(hidden)]
 pub fn model_is_enabled(cfg: &Config, id: ProviderId, model: &str) -> Result<(), String> {
     let Some(pc) = cfg.providers.iter().find(|p| p.id == id) else {
@@ -541,12 +566,19 @@ pub fn model_is_enabled(cfg: &Config, id: ProviderId, model: &str) -> Result<(),
     if pc.models.iter().any(|m| canonicalize_model(id, m) == want) {
         Ok(())
     } else {
-        Err(format!(
-            "model '{model}' is not enabled for {}. Enabled: {}. \
-             Run `gcm provider` to change the enabled models (or clear the list to allow any).",
-            provider_token(id),
+        let token = provider_token(id);
+        let mut msg = format!(
+            "model '{model}' is not enabled for {token}. Enabled: {}.",
             pc.models.join(", ")
-        ))
+        );
+        let known = known_models_not_enabled(id, &pc.models);
+        if !known.is_empty() {
+            msg.push_str(&format!(" Known {token} models: {}.", known.join(", ")));
+        }
+        msg.push_str(
+            " Run `gcm provider` to change the enabled models (or clear the list to allow any).",
+        );
+        Err(msg)
     }
 }
 
@@ -644,11 +676,11 @@ pub fn cloud_provider_config(
     }
 }
 
-/// The multiselect candidate list (D7.3, wizard side): fetched ∪ current enabled ∪
-/// current default, deduped, fetched first - so the user's existing selections and
-/// default stay selectable even if the live list omitted them. Membership is by
-/// canonical form (review L1), so a migrated `llama3` doesn't duplicate a fetched
-/// `llama3:latest`. Pure.
+/// The multiselect candidate list (D7.3, wizard side): fetched ∪ provider default ∪
+/// current enabled ∪ current default, deduped, fetched first - so the user's existing
+/// selections stay selectable and the shipped default is always present (CLO-799
+/// AC3) even when a live fetch omits it. Membership is by canonical form (review L1),
+/// so a migrated `llama3` doesn't duplicate a fetched `llama3:latest`. Pure.
 #[doc(hidden)]
 pub fn wizard_model_list(
     id: ProviderId,
@@ -663,6 +695,9 @@ pub fn wizard_model_list(
             out.push(m.to_string());
         }
     };
+    // The provider's shipped default is always a candidate so the default-select
+    // can pre-highlight it (CLO-799 AC3).
+    push_if_new(id.default_model(), &mut out);
     for m in current_enabled {
         push_if_new(m, &mut out);
     }
@@ -696,8 +731,9 @@ pub fn wizard_model_hint(
     }
 }
 
-/// The pre-selected default model: the current default if it survived into
-/// `selected` (canonical match, review L1), else the first selected (None only when
+/// The pre-selected default model (CLO-799 AC3): the current default if it survived
+/// into `selected` (canonical match, review L1), else the provider's shipped
+/// `default_model()` if that is selected, else the first selected (None only when
 /// `selected` is empty). Returns the matching `selected` entry. Pure.
 #[doc(hidden)]
 pub fn initial_default_model(
@@ -710,6 +746,13 @@ pub fn initial_default_model(
         if let Some(hit) = selected.iter().find(|m| canonicalize_model(id, m) == c) {
             return Some(hit.clone());
         }
+    }
+    let shipped = canonicalize_model(id, id.default_model());
+    if let Some(hit) = selected
+        .iter()
+        .find(|m| canonicalize_model(id, m) == shipped)
+    {
+        return Some(hit.clone());
     }
     selected.first().cloned()
 }
@@ -1639,6 +1682,72 @@ mod tests {
     }
 
     #[test]
+    fn model_is_enabled_message_lists_known_catalog() {
+        // CLO-799 AC2: the rejection names the provider's known catalog, not only
+        // the enabled set. Openai enabled ["gpt-5.6-terra"] -> gpt-5.6-luna is known.
+        let cfg = Config {
+            conflict: ConflictConfig::default(),
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pcw(
+                ProviderId::Openai,
+                Some("gpt-5.6-terra"),
+                &["gpt-5.6-terra"],
+            )],
+        };
+        let err = model_is_enabled(&cfg, ProviderId::Openai, "dall-e-3").unwrap_err();
+        assert!(err.contains("dall-e-3"), "names offender: {err}");
+        assert!(err.contains("gpt-5.6-terra"), "lists enabled: {err}");
+        assert!(
+            err.contains("gpt-5.6-luna"),
+            "lists a known-but-not-enabled model: {err}"
+        );
+        assert!(err.contains("gcm provider"), "actionable: {err}");
+    }
+
+    #[test]
+    fn known_models_excludes_enabled_by_canonical_form() {
+        // An enabled `models/`-prefixed Gemini value must not be re-listed bare as
+        // "known" (same canonical rule as membership).
+        let enabled = vec!["models/gemini-3.5-flash-lite".to_string()];
+        let known = known_models_not_enabled(ProviderId::Google, &enabled);
+        assert!(
+            !known.iter().any(|m| m == "gemini-3.5-flash-lite"),
+            "enabled entry excluded from known list: {known:?}"
+        );
+        // Openai: the one non-enabled catalog entry is surfaced.
+        assert_eq!(
+            known_models_not_enabled(ProviderId::Openai, &["gpt-5.6-terra".to_string()]),
+            vec!["gpt-5.6-luna"]
+        );
+        // Ollama's only catalog entry is its shipped default; enabling it leaves
+        // nothing "known but not enabled".
+        assert!(
+            known_models_not_enabled(ProviderId::Ollama, &["gemma4:e4b-mlx".to_string()])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn model_is_enabled_error_omits_known_clause_when_catalog_fully_enabled() {
+        // When every catalog entry is already enabled there is nothing extra to name,
+        // so the message keeps the enabled-set form instead of an empty "Known …".
+        let cfg = Config {
+            conflict: ConflictConfig::default(),
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Openai,
+            providers: vec![pcw(
+                ProviderId::Openai,
+                Some("gpt-5.6-terra"),
+                &["gpt-5.6-terra", "gpt-5.6-luna"],
+            )],
+        };
+        let err = model_is_enabled(&cfg, ProviderId::Openai, "dall-e-3").unwrap_err();
+        assert!(!err.contains("Known"), "no empty known clause: {err}");
+        assert!(err.contains("gcm provider"), "actionable: {err}");
+    }
+
+    #[test]
     fn model_is_enabled_canonicalizes_ollama_tag_and_gemini_prefix() {
         // Ollama: a tagless `--model` matches an enabled `:latest` entry.
         let ollama = Config {
@@ -1786,13 +1895,13 @@ mod tests {
         let list = wizard_model_list(id, &fetched, &enabled, Some("d"));
         assert_eq!(
             list,
-            vec!["a", "b", "c", "d"],
-            "fetched first, then missing enabled, then default"
+            vec!["a", "b", "gpt-5.6-terra", "c", "d"],
+            "fetched first, then the shipped default, then missing enabled/default"
         );
-        // no duplicates when the default is already present
+        // no duplicates: the shipped default is always present once
         assert_eq!(
             wizard_model_list(id, &fetched, &[], Some("a")),
-            vec!["a", "b"]
+            vec!["a", "b", "gpt-5.6-terra"]
         );
     }
 
@@ -1805,8 +1914,8 @@ mod tests {
         let list = wizard_model_list(ProviderId::Ollama, &fetched, &enabled, Some("llama3"));
         assert_eq!(
             list,
-            vec!["llama3:latest"],
-            "canonical dedupe keeps the fetched form"
+            vec!["llama3:latest", "gemma4:e4b-mlx"],
+            "canonical dedupe keeps the fetched form; the shipped default is appended"
         );
     }
 
@@ -1882,6 +1991,33 @@ mod tests {
         assert_eq!(
             initial_default_model(ProviderId::Ollama, &sel, Some("llama3")).as_deref(),
             Some("llama3:latest")
+        );
+    }
+
+    #[test]
+    fn initial_default_model_prefers_shipped_default() {
+        // CLO-799 AC3: with no current default, the provider's shipped default wins
+        // when the user enabled it, so the wizard agrees with `default_model()`.
+        let id = ProviderId::Google;
+        let selected = vec![
+            "gemini-3.1-flash-lite".to_string(),
+            "gemini-3.5-flash-lite".to_string(),
+        ];
+        assert_eq!(
+            initial_default_model(id, &selected, None).as_deref(),
+            Some("gemini-3.5-flash-lite"),
+            "shipped default (3.5) preferred over the first selected (3.1)"
+        );
+        // An explicit current default still wins over the shipped one.
+        assert_eq!(
+            initial_default_model(id, &selected, Some("gemini-3.1-flash-lite")).as_deref(),
+            Some("gemini-3.1-flash-lite")
+        );
+        // Shipped default not selected -> first selected (no forced enable).
+        let only_old = vec!["gemini-3.1-flash-lite".to_string()];
+        assert_eq!(
+            initial_default_model(id, &only_old, None).as_deref(),
+            Some("gemini-3.1-flash-lite")
         );
     }
 

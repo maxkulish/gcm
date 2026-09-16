@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-16 (CLO-797/CLO-798 filed; investigation merged in PR #57)
+**Last Updated**: 2026-09-16 (CLO-799 started, removed from Unblocked & Ready; CLO-797/CLO-798 filed; investigation merged in PR #57)
 
 ## Current Blockers
 

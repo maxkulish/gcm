@@ -1,0 +1,325 @@
+task_id: clo-799
+task_type: development
+classification_reason: >-
+  Title starts with 'Fix' but the fix spans three interacting surfaces and ACs require a design choice on --model
+  override semantics; not mechanical.
+task_profile:
+  has_backend: false
+  has_frontend: false
+  has_data_model: false
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-799-fix-the-enabled-model-set-pinning-gcm-to-one-model-so-a
+  priority: High
+  branch_actual: fix/clo-799-model-pining
+workflow:
+  current_phase: pr
+  status: active
+  created_at: '2026-09-16T21:24:47.223Z'
+  updated_at: '2026-09-16T22:08:18.816Z'
+phases:
+  discovery:
+    status: complete
+    approach_chosen: Keep the gate, enrich the message, fix the wizard
+    approaches_identified: 3
+    approved: true
+    baseline_score: 7
+    discovery_debt: []
+    discovery_report: docs/discovery/clo-799.md
+    prd_created: false
+    prd_exists: true
+    problem_framed: true
+  design:
+    status: complete
+    design_doc: docs/designs/clo-799-enabled-model-pinning.md
+    discovery_context_used: true
+    draft_ready: true
+    draft_source: manual-fallback
+    assumptions:
+      - confidence: medium
+        text: >-
+          The built-in static catalog is an adequate 'available models' list for the rejection message; a live fetch on
+          the error path is unnecessary.
+        verification: >-
+          Unit test asserts a non-enabled catalog entry appears in the message; the message points at `gcm provider` for
+          the live catalog.
+      - confidence: high
+        text: >-
+          static_fallback_models is transport-free and available without the cli feature, so config may call it in the
+          pure helper.
+        verification: cargo build --no-default-features --lib succeeds; the function body has no http/cli reference.
+      - confidence: high
+        text: >-
+          cliclack::note(prompt, message) renders an always-visible bordered message in cliclack 0.5 and is safe on the
+          TTY-only wizard.
+        verification: cliclack 0.5.4 lib.rs:427 exposes note; gcm provider already guards on an interactive TTY.
+      - confidence: medium
+        text: >-
+          Preserving the gate still satisfies AC1 because gcm provider is the documented non-hand-edit path, and once
+          enabled a model passes --model.
+        verification: >-
+          tests/provider.rs: a config enabling both 3.1 and 3.5 lets --model gemini-3.5-flash-lite pass enforcement
+          (fails later at a closed endpoint, not Config).
+      - confidence: high
+        text: Unioning id.default_model() into the candidate list does not change which models are pre-selected.
+        verification: >-
+          initial_enabled filters candidates by canonical match against current_enabled; the default is not in
+          current_enabled on a fresh run. Unit test on wizard_model_list.
+      - confidence: high
+        text: initial_default_model's new middle preference does not regress the current-default case.
+        verification: 'Existing test extended: current default wins; shipped default second; first selected last.'
+      - confidence: high
+        text: 'No config migration is required: the schema, format version, and persisted fields are unchanged.'
+        verification: git diff touches no ProviderConfig field; cargo test v1/v2 migration tests stay green.
+    assumptions_surfaced: true
+    applied_suggestions:
+      - canonical comparison on both sides of the known-vs-enabled diff
+      - cap the rendered known-model list at 8 entries
+      - state explicitly that initial_default_model returns None on an empty selected slice
+    flagged_suggestions: []
+    review_completed: true
+    review_gemini: docs/reviews/clo-799-design-gemini.md
+    review_synthesis: docs/reviews/clo-799-design-synthesis.md
+    review_verdict: approve_with_changes
+    human_review_completed: true
+    plannotator_annotations: design approved
+    finalized: true
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-799-enabled-model-pinning.md
+    approved: true
+  implement:
+    status: complete
+    assumption_outcomes:
+      - evidence: src/config/mod.rs::tests::model_is_enabled_message_lists_known_catalog (message contains gpt-5.6-luna)
+        outcome: held
+        text: >-
+          The built-in static catalog is an adequate 'available models' list for the rejection message; a live fetch on
+          the error path is unnecessary.
+      - evidence: cargo build --no-default-features --lib exit 0
+        outcome: held
+        text: >-
+          static_fallback_models is transport-free and available without the cli feature, so config may call it in the
+          pure helper.
+      - evidence: cliclack 0.5.4 lib.rs:427 exposes note; cargo clippy --all-targets green; wizard is TTY-guarded
+        outcome: held
+        text: >-
+          cliclack::note(prompt, message) renders an always-visible bordered message in cliclack 0.5 and is safe on the
+          TTY-only wizard.
+      - evidence: tests/provider.rs::newly_enabled_model_passes_enforcement (error code != Config)
+        outcome: held
+        text: >-
+          Preserving the gate still satisfies AC1 because gcm provider is the documented non-hand-edit path, and once
+          enabled a model passes --model.
+      - evidence: >-
+          src/config/mod.rs::tests::wizard_model_list_* ; initial_enabled filters candidates against current_enabled
+          only
+        outcome: held
+        text: Unioning id.default_model() into the candidate list does not change which models are pre-selected.
+      - evidence: src/config/mod.rs::tests::initial_default_model_prefers_current_then_first and ::prefers_shipped_default
+        outcome: held
+        text: initial_default_model's new middle preference does not regress the current-default case.
+      - evidence: no ProviderConfig field changed; v1/v2 migration tests green in cargo test
+        outcome: held
+        text: 'No config migration is required: the schema, format version, and persisted fields are unchanged.'
+    assumptions_revalidated: true
+    commits:
+      - 3b0ece6
+      - '9732748'
+      - 8ba627e
+    codex_report: docs/reviews/clo-799-codex-validation.md
+    codex_validated: true
+    codex_verdict: FAIL
+    gemini_validation_report: docs/reviews/clo-799-gemini-validation.md
+    validation_fix_iteration_count: 0
+    validation_synthesis_report: docs/reviews/clo-799-validation-synthesis.md
+    validation_synthesis_verdict: PASS
+    token_usage:
+      - recorded_at: '2026-09-16T21:49:47.499Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-09-16T21:49:47.499Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-09-16T21:49:47.499Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis
+  pr:
+    status: complete
+    pr_number: 59
+    pr_url: https://github.com/maxkulish/gcm/pull/59
+    ci_passed: true
+    bot_review_wait_completed: true
+    bot_review_wait_completed_at: '2026-09-16T22:07:59Z'
+    reviews_addressed: true
+    pre_merge_refetch_at: '2026-09-16T22:08:30Z'
+    pre_merge_refetch_passed: true
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-09-16T21:24:47.223Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-799 as development
+  - timestamp: '2026-09-16T21:26:14.708Z'
+    action: init_classified
+    phase: init
+    details: >-
+      Classified as development: title starts with "Fix" but the fix spans three interacting surfaces (enabled-set
+      enforcement in main.rs, cliclack wizard flow in config/facade.rs, and provider default_model reconciliation) plus
+      design choices on --model override semantics; ACs are not mechanical.
+  - timestamp: '2026-09-16T21:26:34.506Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced for CLO-799 --start: PROJECT.md Up Next row removed + Active Work row
+      added (WIP 2/3); ROADMAP.md status Backlog -> In Progress; DEPENDENCIES.md removed from Unblocked & Ready. No open
+      blockers, WIP under limit.
+  - timestamp: '2026-09-16T21:26:34.508Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to discovery
+  - timestamp: '2026-09-16T21:30:58.805Z'
+    action: branch_created
+    phase: discovery
+    details: >-
+      Branch fix/clo-799-model-pining checked out by the Orca worktree harness (linear.branch_suggested was
+      kmamemo/clo-799-...); branch is at origin/main tip and carries no feature commits yet. Session capture already
+      initialized (.session symlink present).
+  - timestamp: '2026-09-16T21:30:58.808Z'
+    action: discovery_approved
+    phase: discovery
+    details: >-
+      Approach: keep the enabled-set gate, improve the rejection message to list the provider's known catalog, and fix
+      the wizard (unmissable SPACE/ENTER note + default_model()-aligned default). Baseline 7/10. 3 approaches
+      considered.
+  - timestamp: '2026-09-16T21:31:02.407Z'
+    action: phase_transition
+    phase: discovery
+    details: Transitioned from discovery to design
+  - timestamp: '2026-09-16T21:32:58.459Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft written manually (lok design-draft backend not needed; manual fallback) at
+      docs/designs/clo-799-enabled-model-pinning.md with the 8 required sections. Read end-to-end.
+  - timestamp: '2026-09-16T21:33:05.325Z'
+    action: design_assumptions_surfaced
+    phase: design
+    details: '7 assumptions surfaced (high: 5, medium: 2, low: 0). See design doc § Assumptions.'
+  - timestamp: '2026-09-16T21:38:29.966Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Review verdict: APPROVE_WITH_SUGGESTIONS. 3 suggestions applied to the design doc (canonical-diff note + 8-entry
+      display cap in §A, explicit Option<String>/None-on-empty note in §C). lok design-review synthesis step failed on
+      an undefined steps.claude_fallback.* variable when the fallback step was skipped; Gemini ran via opencode directly
+      and the synthesis was produced with Claude.
+  - timestamp: '2026-09-16T21:38:29.973Z'
+    action: design_human_review_complete
+    phase: design
+    details: >-
+      Plannotator annotate session on docs/designs/clo-799-enabled-model-pinning.md returned one annotation whose text
+      is 'design approved' - an explicit approval with no requested changes; treated as approving feedback, so
+      human_review_completed is true. Decision record: {'decision':'annotated','feedback':'design approved'}.
+  - timestamp: '2026-09-16T21:38:50.350Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Design ready for plan phase. 8 sections present; public API unchanged; no config migration; review + human
+      approval recorded.
+  - timestamp: '2026-09-16T21:38:52.993Z'
+    action: phase_transition
+    phase: design
+    details: Transitioned from design to plan
+  - timestamp: '2026-09-16T21:39:13.222Z'
+    action: plan_created
+    phase: plan
+    details: Plan with 4 sub-tasks at docs/plans/clo-799-enabled-model-pinning.md
+  - timestamp: '2026-09-16T21:39:20.470Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Plan approved (Auto Mode): every sub-task has a concrete acceptance command, all reference real files/modules,
+      pre-merge gate is the standard fmt + clippy + test. 4 sub-tasks queued.
+  - timestamp: '2026-09-16T21:39:25.894Z'
+    action: phase_transition
+    phase: plan
+    details: Transitioned from plan to implement
+  - timestamp: '2026-09-16T21:45:53.688Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      7 assumptions reviewed. held: 7, violated: 0, untested: 0. The gate is preserved (CLO-516 D4/AC-6 intact); the
+      message lists the known catalog; no schema/migration change.
+  - timestamp: '2026-09-16T21:45:53.691Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 4 sub-tasks landed (commits 3b0ece6, 9732748, 8ba627e). fmt + clippy --all-targets -D warnings + full cargo
+      test green (12 suites, 529 tests). Library boundary (--no-default-features --lib) and
+      scripts/check-public-surface.sh green.
+  - timestamp: '2026-09-16T21:49:47.499Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: FAIL (1 MEDIUM on doc-hidden helper visibility + 1 LOW test-strength). Gemini: PASS. Synthesis: PASS, no
+      Must Fix items; Codex's FAIL basis classified as a false positive (every config helper is #[doc(hidden)] pub by
+      existing convention) and the LOW test nit as out-of-scope/shared with pre-existing tests. 0 fix iterations
+      applied.
+  - timestamp: '2026-09-16T21:49:59.302Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
+  - timestamp: '2026-09-16T21:51:02.644Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: >-
+      Pre-merge gate green: cargo fmt --check, cargo clippy -- -D warnings, cargo clippy --tests, and full cargo test
+      (12 suites, 529 tests) all pass on the current HEAD (2b4249f).
+  - timestamp: '2026-09-16T21:51:41.470Z'
+    action: pr_created
+    phase: pr
+    details: 'PR #59 opened: https://github.com/maxkulish/gcm/pull/59'
+  - timestamp: '2026-09-16T21:56:55.532Z'
+    action: ci_passed
+    phase: pr
+    details: 'All required checks passing: build/test (ubuntu-latest) and build/test (macos-latest) both pass on head 6613989.'
+  - timestamp: '2026-09-16T22:08:05.705Z'
+    action: bot_review_wait_completed
+    phase: pr
+    details: >-
+      Bots not installed (no gemini-code-assist or copilot-pull-request-reviewer reviews on PRs #54-58 nor the last 5
+      closed PRs). The only bot activity is a qodo-code-review billing-blocked comment. 600s wait on head 6613989
+      elapsed with no current-head bot review; zero inline comments and zero review threads expected.
+  - timestamp: '2026-09-16T22:08:05.714Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      0 review threads, 0 inline comments, 0 reviews to address. No author replies were posted, so the /gemini review
+      trailer gate is vacuously satisfied; unresolved-thread re-check is clean ([]). Only issue comment is
+      qodo-code-review's billing-blocked notice.
+  - timestamp: '2026-09-16T22:08:18.816Z'
+    action: pre_merge_refetch_passed
+    phase: pr
+    details: >-
+      Pre-merge re-fetch passed on PR #59 (head 6613989): no new inline comments since the last review_addressed event
+      and no unresolved review threads.
+task_title: Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect
+task_url: https://linear.app/cloud-ai/issue/CLO-799/fix-the-enabled-model-set-pinning-gcm-to-one-model-so-a-newer-gemini

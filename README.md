@@ -205,16 +205,18 @@ idempotent - it overwrites the existing file cleanly.
 Pick a provider, and gcm fetches that provider's available models live from its API
 (falling back to a built-in list if there is no key or the fetch fails). Type to filter
 the list, `space` to toggle the models you want to **enable**, `enter` to submit, then
-choose one as the default. The selection is saved to `config.toml`, preserving every
-other provider you have configured.
+choose one as the default. Filtering only narrows the view - it does not change what is
+checked, and `enter` saves exactly the checked set (an on-screen note says so before you
+start); press `space` on a model to add or remove it. The selection is saved to
+`config.toml`, preserving every other provider you have configured.
 
 Once a provider has a non-empty enabled set, gcm enforces it: a `--model` (or per-provider
-model env var, or config default) outside that set is rejected with a clear message, so
-you cannot accidentally use a disabled or non-text model. Leaving the set empty (the
-default, and how existing configs migrate) keeps models unrestricted - any model is
-allowed, exactly as before. The cloud-provider key is read from the environment or your
-existing config, and only prompted (masked, never echoed) when none is found; nothing is
-written until you finish the wizard.
+model env var, or config default) outside that set is rejected with a clear message that
+names the offending model, the enabled set, and the provider's known catalog. Leaving
+the set empty (the default, and how existing configs migrate) keeps models unrestricted -
+any model is allowed, exactly as before. The cloud-provider key is read from the
+environment or your existing config, and only prompted (masked, never echoed) when none is
+found; nothing is written until you finish the wizard.
 
 `gcm provider` needs an interactive terminal. The config-file format version is bumped to
 2 to record the enabled-model set; existing v1 configs load unchanged.

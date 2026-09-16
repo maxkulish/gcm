@@ -23,6 +23,8 @@ const PROVIDER_ENV: &[&str] = &[
     "GCM_OLLAMA_BASE_URL",
     "GCM_OPENAI_BASE_URL",
     "GCM_GROQ_BASE_URL",
+    "GCM_GEMINI_BASE_URL",
+    "GCM_GOOGLE_BASE_URL",
 ];
 
 fn git_init(dir: &Path) {
@@ -146,7 +148,57 @@ fn enabled_model_outside_set_is_rejected() {
         stdout.contains("dall-e-3"),
         "names the offending model: {stdout}"
     );
+    assert!(
+        stdout.contains("gpt-5.6-luna"),
+        "names a known-but-not-enabled catalog model, not just the enabled set: {stdout}"
+    );
     assert!(!out.status.success());
+}
+
+#[test]
+fn newly_enabled_model_passes_enforcement() {
+    // CLO-799 AC1: once a user enables a model through `gcm provider`, `--model`
+    // for it passes the gate (the wizard is the non-hand-edit path). Both 3.1 and
+    // 3.5 are enabled; requesting 3.5 must NOT be a Config error - the run proceeds
+    // to the (closed) provider endpoint and fails at transport instead.
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    git_init(repo.path());
+    fs::write(repo.path().join("a.txt"), "x\n").unwrap();
+    write_config(
+        cfg.path(),
+        "version = 2\ndefault = \"google\"\n\n[[providers]]\nid = \"google\"\nkey = \"k\"\nmodel = \"gemini-3.1-flash-lite\"\nmodels = [\"gemini-3.1-flash-lite\", \"gemini-3.5-flash-lite\"]\n",
+    );
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_gcm"));
+    cmd.current_dir(repo.path())
+        .args([
+            "--json",
+            "--yes",
+            "--provider",
+            "google",
+            "--model",
+            "gemini-3.5-flash-lite",
+        ])
+        .env("GCM_CONFIG", cfg.path())
+        .env("GCM_GEMINI_BASE_URL", "http://127.0.0.1:1")
+        .env("GCM_HTTP_TIMEOUT_SECS", "2")
+        .env("GCM_RETRY_MAX", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for var in PROVIDER_ENV {
+        if *var != "GCM_GEMINI_BASE_URL" {
+            cmd.env_remove(var);
+        }
+    }
+    let out = cmd.output().expect("run gcm");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_ne!(
+        error_code(&stdout),
+        "Config",
+        "enabled 3.5 passes enforcement (fails at transport, not Config): {stdout}"
+    );
 }
 
 #[test]

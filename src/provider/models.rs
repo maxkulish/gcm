@@ -408,7 +408,11 @@ fn keep_chat_model(id: ProviderId, model: &str) -> bool {
 /// A static per-provider model catalog used when the live fetch is unavailable.
 /// Always includes the provider's `default_model` so the default is selectable
 /// offline. These are discovery hints, not the resolved model (no ADR violation).
-fn static_fallback_models(id: ProviderId) -> Vec<String> {
+///
+/// `pub(crate)` (not `pub`) so the config layer can name the known catalog in the
+/// enabled-set rejection message (CLO-799) without widening the locked public
+/// surface.
+pub(crate) fn static_fallback_models(id: ProviderId) -> Vec<String> {
     let curated: &[&str] = match id {
         ProviderId::Groq => &[
             "openai/gpt-oss-120b",
