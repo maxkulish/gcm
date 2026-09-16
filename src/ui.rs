@@ -383,12 +383,18 @@ impl CallProgress {
                 let elapsed = started.elapsed().as_secs();
                 if tty {
                     let line = ticker_frame(&operation, elapsed, tick);
-                    let mut err = std::io::stderr();
-                    let _ = write!(err, "\r\x1b[K{line}");
-                    // Flush every frame: a line without a trailing newline sits
-                    // in the buffer otherwise, and the ticker would show nothing.
-                    let _ = err.flush();
+                    // Registered before the write, not after: a log line racing
+                    // this frame must see a live ticker even if the frame's bytes
+                    // have not landed yet. Clearing a line that turns out not to
+                    // be drawn costs nothing; not clearing one that is corrupts it.
                     gcm::debug::progress::set_live(line.chars().count());
+                    // One `write_all` of one buffer, so the frame cannot be split
+                    // around another thread's write. A frame carries no trailing
+                    // newline, so it needs an explicit flush to appear at all.
+                    let frame = format!("\r\x1b[K{line}");
+                    let mut err = std::io::stderr();
+                    let _ = err.write_all(frame.as_bytes());
+                    let _ = err.flush();
                 } else {
                     gcm::debug::progress::emit_line(&waiting_line(&operation, elapsed));
                 }

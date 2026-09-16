@@ -1,0 +1,194 @@
+task_id: clo-798
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius:
+      lean: neutral
+      note: >-
+        ~6 files, all existing modules: provider/http.rs, provider/identity.rs, debug.rs, main.rs, plan.rs, ui.rs.
+        Additive edits, no new module.
+    architecture_novelty:
+      lean: dev
+      note: >-
+        Transport is blocking ureq (ADR-001 Decision 2). A live elapsed ticker over a blocking call needs a background
+        thread plus TTY/--json gating. The only existing spinner (config/facade.rs:162,178, cliclack) is wizard-only.
+    prior_art:
+      lean: spec
+      note: >-
+        log! macro and Level::Warn already exist (debug.rs:62,15) - only a warn convenience macro is missing.
+        cliclack/console already dependencies. ProviderError Display (identity.rs:43-49) is the seam for the
+        actionable 400 message.
+    requirement_clarity:
+      lean: spec
+      note: 6 scope bullets and 4 acceptance criteria, each testable; the stderr-vs---json boundary is stated explicitly.
+    scope_signal:
+      lean: neutral
+      note: No estimate on the issue; 6 bullets reads M.
+  rationale: >-
+    Requirements are enumerated and testable and most infrastructure already exists; the single real design decision
+    (rendering live progress over a blocking call without breaking --json or non-TTY) is narrow enough to settle
+    inside the spec rather than a full design doc.
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related: [CLO-797]
+  branch_suggested: kmamemo/clo-798-add-progress-and-failure-visibility-to-provider-calls-so-a
+  branch_actual: fix/clo-798-silent
+  priority: High
+  labels: [Improvement]
+workflow:
+  current_phase: implement
+  status: in_progress
+  created_at: '2026-09-16T20:27:39.000Z'
+  updated_at: '2026-09-16T22:40:00.000Z'
+phases:
+  discovery:
+    status: skipped
+    skip_reason: Specification task
+    approved: true
+  design:
+    status: skipped
+    reason: Specification task - using /spec instead
+  spec:
+    status: complete
+    spec_version: 2
+    spec_file: docs/specs/2026-09-16-clo-798-provider-call-visibility.md
+    approved: true
+    review_completed: true
+    review_gemini: docs/reviews/clo-798-spec-review-gemini.md
+    review_ollama: null  # REVIEW_FAILED - glm-5:cloud manifest pull failed
+    review_synthesis: docs/reviews/clo-798-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS  # v1 only; v2 re-review in flight
+    review_applied: true
+    applied_suggestions:
+      - 'AC-2: pinned the unit - prompt text section bytes, not tokens, not the serialized request body'
+      - 'Evaluation: added row 11, error-path ticker join (MissingKey returns before the call)'
+      - 'Constraints: noted main.rs:36-39 exits via run() return, so CallProgress destructors are not skipped'
+      - 'Out of scope: resolve_hunks gap documented with evidence (resolve/mod.rs:966 batch loop, :1151); follow-up issue to file'
+    flagged_suggestions: []  # no reviewer item contradicted an ADR
+    decisions:
+      - Hand-rolled ticker thread in src/ui.rs, not cliclack (wizard widget, no non-TTY fallback)
+      - '--json suppresses the ticker only; status line and retry notices still reach stderr'
+      - 'JSON contract: envelope shape + v/status/mode/error.code/fallback.raw_code frozen; error.message and fallback.reason prose may change'
+      - 'log_level() default moves Off -> Warn; GCM_LOG_LEVEL=off is the opt-out (without this AC-3 is a no-op)'
+      - 'Timeout and context-window prose composed binary-side where the operation and its actual budget are known; ErrorKind shape frozen'
+  implement:
+    status: in_progress
+    last_phase_completed: 'sub-task 7 (binary-side diagnostics + wiring) + evaluation tests'
+    sub_tasks_complete: [1, 2, 3, 4, 5, 6, 7]
+    commits:
+      - 231f303 feat(logging): default to warn level and coordinate stderr writes
+      - d44f8f4 feat(provider): surface retries and mark context-window rejections
+      - 60912a2 feat(ui): show in-flight provider progress and actionable failures
+      - 5b0735c test(observability): cover the provider-call visibility criteria
+    tests_passing: 549
+    codex_validated: false
+    codex_verdict: null
+    codex_report: docs/reviews/clo-798-codex-validation.md
+    gemini_validation_report: null
+    gemini_skip_reason: 'gemini CLI not installed on this machine'
+  pr:
+    status: pending
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-09-16T20:27:39.000Z'
+    action: workflow_started
+    phase: init
+    details: Workflow initialized for clo-798 as specification
+  - timestamp: '2026-09-16T20:27:39.000Z'
+    action: task_classified
+    phase: init
+    details: >-
+      recommended=specification, chosen=specification, confidence=medium, method=probe (2 spec / 1 dev / 2 neutral).
+      User accepted the recommendation.
+  - timestamp: '2026-09-16T20:28:30.000Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      PROJECT.md/ROADMAP.md synced via /project:sync CLO-798 --start. WIP 0/3 before start, not blocked
+      (CLO-797 is related, not blocking). Added to Active Work and to the master table (slice Obs); new
+      ROADMAP section "Observability (cross-cutting)" with CLO-798 In Progress, Summary row 1/0.
+      DEPENDENCIES.md unchanged - CLO-798 was in neither Current Blockers nor Unblocked & Ready.
+  - timestamp: '2026-09-16T20:28:30.000Z'
+    action: phase_transition
+    phase: init
+    details: Transitioned from init to spec
+  - timestamp: '2026-09-16T20:33:32.000Z'
+    action: spec_created
+    phase: spec
+    details: >-
+      Spec written to docs/specs/2026-09-16-clo-798-provider-call-visibility.md. Scope M, 7 files, 6 sub-tasks,
+      9 acceptance criteria, 11 evaluation tests. Two design decisions settled with the user before drafting:
+      hand-rolled ticker over cliclack, and --json suppresses the ticker only.
+  - timestamp: '2026-09-16T20:37:45.000Z'
+    action: spec_review_complete
+    phase: spec
+    details: >-
+      lok spec-review: Gemini APPROVE_WITH_SUGGESTIONS; Ollama REVIEW_FAILED (glm-5:cloud manifest pull failed, no
+      second opinion). Consolidated verdict APPROVE_WITH_SUGGESTIONS, no NEEDS_REVISION findings. All three reviewer
+      code claims verified against the tree before acting (main.rs:36-39, resolve/mod.rs:966 and :1151).
+  - timestamp: '2026-09-16T20:37:45.000Z'
+    action: spec_review_applied
+    phase: spec
+    details: >-
+      4 suggestions auto-applied (AC-2 unit, evaluation row 11, process::exit constraint note, resolve out-of-scope
+      evidence). 0 conflicts with prior decisions, so nothing was escalated. Baseline cargo test green (exit 0).
+  - timestamp: '2026-09-16T20:52:59.000Z'
+    action: spec_revision_requested
+    phase: spec
+    details: >-
+      User returned a code-grounded review with 5 P1 blockers and 2 P2 gaps. All seven reproduced against the tree
+      before acting: (1) output.rs:194/:180 serialize prose into error.message/fallback.reason so byte-identical JSON
+      contradicts the ticket; (2) provider/facade.rs:23 shows binary and library are separate crates so a pub(crate)
+      helper cannot bridge them; (3) debug.rs:39-48 defaults to Off so promoting retries to Warn emits nothing;
+      (4) bad_request_detail http.rs:248-265 takes only error.message and truncates at 200 chars, discarding sibling
+      code; (5) http.rs:177-181 classifies a post-header stall as Transport not Timeout, and get_once shares
+      ErrorKind::Timeout with a fixed 5s budget; (6) groq.rs:62 raises MissingKey inside generate_plan so the guard is
+      already live; (7) main.rs:903 gates the fallback announcement on !args.json. Additionally found while revising:
+      src/debug.rs compiles into both crates (lib.rs:32 and main.rs:5) so any coordination static must live in the lib.
+  - timestamp: '2026-09-16T20:52:59.000Z'
+    action: spec_created
+    phase: spec
+    details: >-
+      Spec v2 written. Sections 2-5 rewritten: 12 acceptance criteria (was 9), 7 sub-tasks (was 6), 18 evaluation
+      tests (was 12), plus a four-call-site table and a findings table with per-finding evidence. Three contract
+      decisions taken with the user before drafting (JSON contract, default log level, diagnostic placement).
+  - timestamp: '2026-09-16T20:53:49.000Z'
+    action: spec_approved
+    phase: spec
+    details: >-
+      User approved spec v2 (message: approved). v2 AI re-review still in flight at approval time; its verdict will be
+      recorded when it lands and any blocker raised before the affected sub-task. Proceeding to implement.
+  - timestamp: '2026-09-16T20:53:49.000Z'
+    action: phase_transition
+    phase: spec
+    details: Transitioned from spec to implement (spec decomposition is the plan; plan phase skipped by design)
+  - timestamp: '2026-09-16T22:05:00.000Z'
+    action: phase_completed
+    phase: implement
+    details: >-
+      Sub-tasks 1-4 committed earlier (231f303, d44f8f4). Sub-tasks 5-7 landed in 60912a2:
+      ui::CallProgress with an interruptible condvar wait, provider::diagnostics composing
+      operation-specific context-window and both-phase timeout prose, prompt-section debug
+      logging, and the transition announcement unconditional under --json.
+  - timestamp: '2026-09-16T22:25:00.000Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      tests/observability.rs adds 11 integration tests covering evaluation rows 2,3,4,6,7,
+      10,11,12,13,14,15,16; row 8 (wizard model-list budget) is a library unit test because
+      the wizard reads /dev/tty. 549 tests pass; cargo fmt --check, clippy -D warnings,
+      scripts/check-public-surface.sh and cargo build --lib --no-default-features all clean.
+  - timestamp: '2026-09-16T22:35:00.000Z'
+    action: pushed_to_remote
+    phase: implement
+    details: fix/clo-798-silent pushed to origin
