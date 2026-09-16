@@ -21,9 +21,9 @@ linear:
   branch_actual: fix/clo-799-model-pining
 workflow:
   current_phase: complete
-  status: active
+  status: complete
   created_at: '2026-09-16T21:24:47.223Z'
-  updated_at: '2026-09-16T22:14:50.612Z'
+  updated_at: '2026-09-16T22:15:33.914Z'
 phases:
   discovery:
     status: complete
@@ -173,7 +173,7 @@ phases:
     merge_commit: 94763efb2e879f20328848ea8123791d2604b3ad
     merged_at: '2026-09-16T22:12:36Z'
   complete:
-    status: pending
+    status: complete
     merge_commit: 94763efb2e879f20328848ea8123791d2604b3ad
     merged_at: '2026-09-16T22:12:36Z'
     aggregation_files_updated: true
@@ -189,6 +189,9 @@ phases:
       - >-
         L4 - PROJECT/ROADMAP/DEPENDENCIES edits race across sibling worktrees; expect and resolve conflicts at the PR
         health gate
+    docs_pr_merge_commit: 826a5c2a8e4bd7057839f6daac7bc12ee4eeb090
+    docs_pr_number: 61
+    docs_pr_url: https://github.com/maxkulish/gcm/pull/61
 history:
   - timestamp: '2026-09-16T21:24:47.223Z'
     action: workflow_started
@@ -366,5 +369,18 @@ history:
       #[doc(hidden)] pub is the config-helper convention, not a surface change; L2: static_fallback_models always
       inserts default_model(); L3: aggregation-file edits race across sibling worktrees). No .session notes captured
       this task (entries=0), so no propose/verify step.
+  - timestamp: '2026-09-16T22:15:33.898Z'
+    action: docs_pr_merged
+    phase: complete
+    details: >-
+      Docs PR #61 merged (merge commit 826a5c2a8e4bd7057839f6daac7bc12ee4eeb090). Files:
+      docs/status/clo-799-workflow.yaml, docs/PROJECT.md, docs/ROADMAP.md, docs/DEPENDENCIES.md,
+      .pi/lessons/lok-workflow-templates.md, .pi/lessons/clo-799-model-pinning-lessons.md
+  - timestamp: '2026-09-16T22:15:33.914Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Task CLO-799 fully completed. PR #59 merged (94763ef); docs/lessons PR #61 merged (826a5c2). No downstream tasks
+      unblocked - CLO-799 had no dependents.
 task_title: Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect
 task_url: https://linear.app/cloud-ai/issue/CLO-799/fix-the-enabled-model-set-pinning-gcm-to-one-model-so-a-newer-gemini
