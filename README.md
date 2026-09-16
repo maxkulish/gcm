@@ -244,6 +244,28 @@ exits non-zero (in `--json` mode, a `status: error`, `code: OnboardingRequired` 
 on stdout, instructions on stderr). Export a key and set `GCM_PROVIDER`, or write the
 config file, to proceed unattended.
 
+### Progress and failures
+
+Provider calls are blocking and can take minutes on a large diff, so `gcm` reports
+what it is doing on **stderr** without being asked. Before each call it prints the
+operation, the provider and model, the file count and the approximate prompt size:
+
+```
+gcm: grouping: Groq (groq:openai/gpt-oss-120b), 12 file(s), ~48 KB prompt
+```
+
+While the call is in flight a spinner ticks in place on a terminal; where stderr is a
+pipe or a file it writes a plain `still waiting on grouping... 15s` line instead, with
+no escape sequences. Retries announce themselves (`attempt 2 of 4, retrying in 1s`), a
+timeout names the budget that expired and `GCM_HTTP_TIMEOUT_SECS`, and a prompt too
+large for the model's context window gets advice specific to the call that failed
+rather than a request to file a bug.
+
+`GCM_LOG_LEVEL=off` silences all of it; `GCM_LOG_LEVEL=debug` adds the per-section
+byte split of each prompt. Under `--json` the spinner does not run, but the status
+lines, retry notices and the grouping-to-single-commit announcement still reach
+stderr - stdout stays exactly one envelope.
+
 ### Machine-readable mode (`--json`)
 
 When `--json` is set, `gcm` prints exactly one JSON object on stdout and sends all
