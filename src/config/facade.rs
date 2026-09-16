@@ -21,7 +21,7 @@ use gcm::provider::{AuthMethod, ProviderId};
 /// written). cliclack reads `/dev/tty`; the testable logic is the pure helpers
 /// ([`wizard_model_list`], [`initial_default_model`], [`wizard_persist_key`]).
 pub fn run_provider_wizard() -> Result<bool, GcmError> {
-    use cliclack::{intro, multiselect, outro, password, select, spinner};
+    use cliclack::{intro, multiselect, note, outro, password, select, spinner};
     use console::style;
 
     let existing = load();
@@ -224,17 +224,28 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         })
         .cloned()
         .collect();
-    let selected = match multiselect::<String>("Enable models (space toggles, type to filter)")
-        .items(&model_items)
-        .initial_values(initial_enabled)
-        .required(true)
-        .filter_mode()
-        .max_rows(15)
-        .interact()
-    {
-        Ok(v) => v,
-        Err(_) => return wizard_cancelled(),
-    };
+    // Make the selection contract impossible to miss (CLO-799): a filtered view hides
+    // the pre-selected rows, so a user who filters and presses Enter can re-save the
+    // current set without noticing. This note is the explicit version of the
+    // multiselect's implicit "space toggles" rule.
+    note(
+        "Enable models",
+        "Type to filter. Press SPACE to toggle a model on/off, then ENTER to save the \
+         checked set. Filtering alone does NOT change the selection.",
+    )
+    .map_err(wizard_io)?;
+    let selected =
+        match multiselect::<String>("Enable models (SPACE toggles; ENTER saves the checked set)")
+            .items(&model_items)
+            .initial_values(initial_enabled)
+            .required(true)
+            .filter_mode()
+            .max_rows(15)
+            .interact()
+        {
+            Ok(v) => v,
+            Err(_) => return wizard_cancelled(),
+        };
 
     // 5. Choose exactly one default among the selected models.
     let default_items: Vec<(String, String, &'static str)> = selected
