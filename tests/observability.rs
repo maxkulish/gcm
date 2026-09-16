@@ -437,8 +437,10 @@ fn debug_logs_prompt_sections() {
 /// untouched `ErrorKind` even where the prose was replaced.
 #[test]
 fn json_contract_frozen() {
-    /// The envelope's own keys, sorted. A new top-level key, or a lost one, is
-    /// the shape change AC-7 freezes - the two prose fields live one level down.
+    /// An object's own keys, sorted. A new key, or a lost one, is the shape
+    /// change AC-7 freezes - the two prose fields live inside these, as values.
+    /// Applied to the nested objects as well as the envelope, because a
+    /// consumer reads `plan.groups[0].files` as surely as it reads `status`.
     fn keys(env: &serde_json::Value) -> Vec<String> {
         let mut k: Vec<String> = env.as_object().unwrap().keys().cloned().collect();
         k.sort();
@@ -478,6 +480,15 @@ fn json_contract_frozen() {
             "v"
         ]
     );
+    let group = &env["plan"]["groups"][0];
+    assert_eq!(keys(&env["plan"]), ["groups"], "{stdout}");
+    assert_eq!(
+        keys(group),
+        ["commit_message", "files", "summary"],
+        "{stdout}"
+    );
+    assert!(group["files"].is_array(), "{stdout}");
+    assert!(group["commit_message"].is_string(), "{stdout}");
 
     // A replaced error message must not move `error.code`.
     let repo2 = tempfile::tempdir().unwrap();
@@ -496,7 +507,11 @@ fn json_contract_frozen() {
     let stdout2 = String::from_utf8_lossy(&out2.stdout);
     assert_eq!(stdout2.trim().lines().count(), 1, "one envelope: {stdout2}");
     let env2: serde_json::Value = serde_json::from_str(stdout2.trim()).unwrap();
+    assert_eq!(env2["v"], 1, "{stdout2}");
     assert_eq!(env2["status"], "error");
+    // "single", not "dry_run": grouping failed, the run fell back to the
+    // single-commit path, and that second call failed too.
+    assert_eq!(env2["mode"], "single", "{stdout2}");
     assert_eq!(env2["error"]["code"], "Provider");
     assert_eq!(
         keys(&env2),
@@ -522,6 +537,9 @@ fn json_contract_frozen() {
     let env3: serde_json::Value = serde_json::from_str(stdout3.trim()).unwrap();
     assert_eq!(env3["v"], 1);
     assert_eq!(env3["status"], "noop", "{stdout3}");
+    // A run with nothing to commit reports "plan_only" whether or not the flag
+    // was passed (`main::noop_mode` falls through to it). Frozen as it stands.
+    assert_eq!(env3["mode"], "plan_only", "{stdout3}");
     assert_eq!(keys(&env3), ["mode", "status", "v"], "{stdout3}");
 
     // `committed`: the happy path still emits exactly one envelope.
@@ -551,6 +569,18 @@ fn json_contract_frozen() {
             "status",
             "v"
         ],
+        "{stdout4}"
+    );
+    assert_eq!(
+        keys(&env4["commit"]),
+        ["changed_files", "hash", "message", "status"],
+        "{stdout4}"
+    );
+    // The nested status is the commit's own ("ok"), not the envelope's.
+    assert_eq!(env4["commit"]["status"], "ok", "{stdout4}");
+    assert_eq!(
+        keys(&env4["group_progress"]),
+        ["group_count", "remaining_files"],
         "{stdout4}"
     );
 }

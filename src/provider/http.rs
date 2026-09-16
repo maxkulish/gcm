@@ -75,28 +75,40 @@ pub const CONTEXT_WINDOW_MARKER: &str = "context_window: ";
 pub fn is_context_window_body(body: &str) -> bool {
     let b = body.to_lowercase();
 
-    // Unambiguous evidence that the *window* is what was exceeded. Checked
-    // before the veto below, because input and output share that window: a real
-    // rejection routinely reads "9000 input tokens plus 1000 completion tokens
-    // exceed the 8192 token context limit", and vetoing it on the word
-    // "completion" would send the user back to "please report it".
+    // Wording that is itself the whole statement: the machine codes, and the
+    // prose providers use only when a prompt was too big. "Request too large"
+    // is a gateway's payload rejection rather than the window as such, but the
+    // recovery is the same one.
     if b.contains("context_length_exceeded")
         || b.contains("string_above_max_length")
-        || b.contains("context window")
-        || b.contains("context limit")
-        || b.contains("context length")
         || b.contains("reduce the length of the messages")
         || b.contains("please reduce the length")
         || b.contains("prompt is too long")
-        || b.contains("input token count")
-        || b.contains("input length")
+        || b.contains("request too large")
     {
         return true;
     }
 
-    // With no window evidence at all, output-budget wording means an
-    // output-budget rejection - the one class where "send a smaller prompt" is
-    // wrong advice, and the only reason this veto exists.
+    // Everything past here needs both halves: something naming the input or the
+    // window, and something saying it was overrun. "max_tokens must be at most
+    // 8192; received 16384. Input token count: 128." names the input and
+    // reports no overflow at all, and sending a smaller diff would not fix it.
+    if !(b.contains("exceed") || b.contains("too many") || b.contains("too large")) {
+        return false;
+    }
+
+    // Prose naming the window settles it before the veto runs, because input
+    // and output share that window: a real rejection routinely reads "9000
+    // input tokens plus 1000 completion tokens exceed the 8192 token context
+    // limit", and vetoing it on the word "completion" would send the user back
+    // to "please report it".
+    if b.contains("context window") || b.contains("context limit") || b.contains("context length") {
+        return true;
+    }
+
+    // With no window named, output-budget wording means an output-budget
+    // rejection - the one class where "send a smaller prompt" is wrong advice,
+    // and the only reason this veto exists.
     if b.contains("max_tokens")
         || b.contains("max_completion_tokens")
         || b.contains("max_output_tokens")
@@ -106,16 +118,9 @@ pub fn is_context_window_body(body: &str) -> bool {
         return false;
     }
 
-    // The payload-size wording a gateway in front of the provider uses. Not the
-    // context window as such, but the same recovery: send less.
-    if b.contains("request too large") {
-        return true;
-    }
-
-    // Gemini / Vertex: a token-count anchor next to the "exceeds" phrasing,
-    // never "exceeds the maximum" on its own.
-    b.contains("token count")
-        && (b.contains("exceed") || b.contains("too many") || b.contains("too large"))
+    // What is left is an overflow of something on the input side: Gemini and
+    // Vertex word it as a token count, OpenAI as an input length.
+    b.contains("input token") || b.contains("input length") || b.contains("token count")
 }
 
 /// One provider HTTP request (CLO-489 round-2 review pt 5): `auth` is an optional
@@ -527,6 +532,15 @@ mod tests {
         assert!(!is_context_window_body(
             r#"{"error":{"message":"value exceeds the maximum allowed length"}}"#
         ));
+        // Naming the input is not the same as reporting an overflow of it. Both
+        // of these are ordinary parameter complaints that mention the input in
+        // passing, and a smaller prompt fixes neither.
+        for body in [
+            r#"{"error":{"message":"max_tokens must be at most 8192; received 16384. Input token count: 128."}}"#,
+            r#"{"error":{"message":"The input token count must be greater than zero."}}"#,
+        ] {
+            assert!(!is_context_window_body(body), "false positive on {body}");
+        }
         // An *output* budget rejection is not an oversized request. Telling the
         // user to send a smaller diff would not fix it, so these veto the check
         // even when they also carry input-side wording.
