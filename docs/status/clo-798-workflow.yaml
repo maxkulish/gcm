@@ -114,7 +114,9 @@ phases:
     gemini_validation_report: null
     gemini_skip_reason: 'gemini CLI not installed on this machine'
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/60
+    pr_number: 60
   complete:
     status: pending
 history:
@@ -225,3 +227,12 @@ history:
     action: phase_transition
     phase: implement
     details: Transitioned from implement to pr
+  - timestamp: '2026-09-17T00:20:00.000Z'
+    action: pr_created
+    phase: pr
+    details: >-
+      Rebased onto origin/main first (branch was 7 commits behind, including the v0.7.1 release and the
+      dependency upgrade in PR #58); the two doc conflicts in PROJECT.md/ROADMAP.md were resolved in
+      main's favour, its versions being the newer ones. Gate re-run green after the rebase: 553 tests,
+      fmt, clippy -D warnings, the no-default-features lib build and the public-surface check.
+      PR #60 opened, listing the seven additive public exports as AC-9 requires.
