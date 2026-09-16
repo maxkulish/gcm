@@ -488,6 +488,8 @@ fn json_contract_frozen() {
         "{stdout}"
     );
     assert!(group["files"].is_array(), "{stdout}");
+    assert!(group["files"][0].is_string(), "{stdout}");
+    assert!(group["summary"].is_string(), "{stdout}");
     assert!(group["commit_message"].is_string(), "{stdout}");
 
     // A replaced error message must not move `error.code`.
@@ -619,6 +621,24 @@ fn transition_announced_under_json() {
     let mut fallback_keys: Vec<&String> = env["fallback"].as_object().unwrap().keys().collect();
     fallback_keys.sort();
     assert_eq!(fallback_keys, ["commit", "raw_code", "reason"], "{stdout}");
+    // The fallback carries its own copy of the commit, with the same shape as
+    // the top-level one - a consumer that reads only `fallback.commit` must not
+    // find a different object there.
+    for commit in [&env["commit"], &env["fallback"]["commit"]] {
+        let mut commit_keys: Vec<&String> = commit.as_object().unwrap().keys().collect();
+        commit_keys.sort();
+        assert_eq!(
+            commit_keys,
+            ["changed_files", "hash", "message", "status"],
+            "{stdout}"
+        );
+        assert_eq!(commit["status"], "ok", "{stdout}");
+        assert!(commit["hash"].is_string(), "{stdout}");
+        assert!(commit["message"].is_string(), "{stdout}");
+        assert!(commit["changed_files"][0].is_string(), "{stdout}");
+    }
+    assert_eq!(env["commit"], env["fallback"]["commit"], "{stdout}");
+    assert!(env["fallback"]["reason"].is_string(), "{stdout}");
     // Two calls, two different operation labels.
     assert!(stderr.contains("gcm: grouping:"), "{stderr}");
     assert!(stderr.contains("gcm: fallback message:"), "{stderr}");
