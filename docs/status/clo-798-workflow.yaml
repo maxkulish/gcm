@@ -236,3 +236,12 @@ history:
       main's favour, its versions being the newer ones. Gate re-run green after the rebase: 553 tests,
       fmt, clippy -D warnings, the no-default-features lib build and the public-surface check.
       PR #60 opened, listing the seven additive public exports as AC-9 requires.
+  - timestamp: '2026-09-17T00:40:00.000Z'
+    action: review_addressed
+    phase: pr
+    details: >-
+      First CI run failed on both runners: json_contract_frozen and transition_announced_under_json let a
+      run reach the commit, and gcm signs every commit (FR-4) while the runners hold no key. Both now probe
+      with `git commit -S` first, the pattern tests/resolve_integration.rs:802 already uses, and the AC-11
+      announcement is asserted before the guard because it is printed before the commit is attempted.
+      Verified locally both ways - with a key, and with GIT_CONFIG_GLOBAL=/dev/null to force the skip.
