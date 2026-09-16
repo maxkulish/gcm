@@ -14,6 +14,7 @@
 //! (CLO-488) lives in [`http`].
 
 mod anthropic;
+pub(crate) mod diagnostics;
 mod gemini;
 mod groq;
 pub(crate) mod ollama;

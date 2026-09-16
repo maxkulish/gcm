@@ -137,6 +137,17 @@ pub fn fetch_supported_models_with(
                  project lacks permission) - run `gcloud auth application-default \
                  login` or check the project; using the built-in list"
                     .to_string()
+            } else if matches!(e.kind, super::ErrorKind::Timeout) {
+                // Model discovery has its own fixed budget, not the generation
+                // timeout, and `GCM_HTTP_TIMEOUT_SECS` does not move it (CLO-798
+                // AC-4). Naming the wrong number would send the user to a knob
+                // that changes nothing here.
+                format!(
+                    "could not fetch {} models (no answer within the {}s discovery budget); \
+                     using the built-in list",
+                    id.as_str(),
+                    http::model_fetch_timeout_secs()
+                )
             } else {
                 format!(
                     "could not fetch {} models ({e}); using the built-in list",

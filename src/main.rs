@@ -37,6 +37,7 @@ use git::{ChangedFile, Repo};
 use output::Envelope;
 use plan::Plan;
 use privacy::Privacy;
+use provider::diagnostics::{self, CallShape, Operation};
 use provider::{ErrorKind, Provider};
 use ui::Decision;
 
@@ -433,7 +434,7 @@ fn execute(args: &Cli) -> Envelope {
                 .iter()
                 .filter(|c| c.is_partially_staged())
                 .count();
-            eprintln!("{}", ui::curated_index_warning(staged, partial));
+            gcm::debug::progress::emit_line(&ui::curated_index_warning(staged, partial));
         }
     }
 
@@ -450,6 +451,7 @@ fn execute(args: &Cli) -> Envelope {
             &privacy,
             provider_name.as_str(),
             model_id.as_str(),
+            Operation::SingleMessage,
         );
     }
 
@@ -481,7 +483,14 @@ fn execute(args: &Cli) -> Envelope {
             }
             (plan, true)
         }
-        None => match build_plan(&repo, &changed, provider.as_ref(), &privacy) {
+        None => match build_plan(
+            &repo,
+            &changed,
+            provider.as_ref(),
+            &privacy,
+            model_id.as_str(),
+            args.json,
+        ) {
             Ok(plan) => {
                 if !args.plan_only {
                     // `--dry-run` uses/saves but does not advance (FR-7); `--yes`
@@ -543,6 +552,22 @@ enum BuildError {
     Fallback { reason: String, raw_code: String },
 }
 
+/// Log the per-section byte split of a prompt at debug level (CLO-798). A size
+/// regression - the defect behind CLO-797 - is otherwise invisible without a
+/// packet capture, since nothing else records how big the prompt got or which
+/// section grew.
+fn log_prompt_sections(operation: &str, sections: &[(&'static str, usize)], total: usize) {
+    if !gcm::debug::enabled(gcm::debug::Level::Debug) {
+        return;
+    }
+    let split = sections
+        .iter()
+        .map(|(name, bytes)| format!("{name}={bytes}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    crate::debug_log!("{operation} prompt sections: {split} total={total}");
+}
+
 /// Gather the grouping context, request the plan, and basic-validate it.
 /// Model/plan failures (structured-output error, unparseable JSON, empty
 /// response, validation) are `Fallback`; a missing key or git failure is
@@ -552,11 +577,33 @@ fn build_plan(
     changed: &[ChangedFile],
     provider: &dyn Provider,
     privacy: &Privacy,
+    model: &str,
+    json: bool,
 ) -> Result<Plan, BuildError> {
     let ctx = diff::gather_for_grouping(repo, changed, &provider.diff_budget())
         .and_then(|ctx| privacy.prepare_grouping(ctx))
         .map_err(BuildError::Fatal)?;
-    let plan = provider.generate_plan(&ctx).map_err(|e| {
+    let shape = CallShape {
+        operation: Operation::Grouping,
+        files: changed.len(),
+        prompt_bytes: ctx.approx_bytes(),
+    };
+    log_prompt_sections(
+        shape.operation.label(),
+        &ctx.section_sizes(),
+        shape.prompt_bytes,
+    );
+    let mut progress = ui::CallProgress::start(
+        shape.operation.label(),
+        provider.name(),
+        model,
+        shape.files,
+        shape.prompt_bytes,
+        json,
+    );
+    let outcome = provider.generate_plan(&ctx);
+    progress.finish();
+    let plan = outcome.map_err(|e| {
         // A missing or rejected key fails the single-commit fallback identically;
         // do not pretend to recover. Every other provider error degrades to the
         // single-commit path (the simpler message call may still succeed where the
@@ -568,9 +615,11 @@ fn build_plan(
         if fatal {
             BuildError::Fatal(GcmError::Provider(e))
         } else {
+            // The raw code comes from the untouched `ErrorKind`, so the
+            // frozen half of the JSON contract is unaffected by the prose.
             let raw_code = output::provider_error_code(&e);
             BuildError::Fallback {
-                reason: e.to_string(),
+                reason: diagnostics::describe(shape, &e).unwrap_or_else(|| e.to_string()),
                 raw_code,
             }
         }
@@ -624,14 +673,35 @@ fn commit_first_group(
                         );
                     }
                 };
-            match provider.generate_message(&gathered) {
+            let shape = CallShape {
+                operation: Operation::GroupMessage,
+                files: group1_files.len(),
+                prompt_bytes: gathered.approx_bytes(),
+            };
+            log_prompt_sections(
+                shape.operation.label(),
+                &gathered.section_sizes(),
+                shape.prompt_bytes,
+            );
+            let mut progress = ui::CallProgress::start(
+                shape.operation.label(),
+                provider.name(),
+                model,
+                shape.files,
+                shape.prompt_bytes,
+                args.json,
+            );
+            let outcome = provider.generate_message(&gathered);
+            progress.finish();
+            match outcome {
                 Ok(m) => m,
                 Err(e) => {
-                    return output::error(
-                        Some(provider_name),
-                        Some(model),
-                        Some(output::MODE_GROUPED),
-                        &GcmError::Provider(e),
+                    return provider_error_envelope(
+                        provider_name,
+                        model,
+                        output::MODE_GROUPED,
+                        shape,
+                        e,
                     );
                 }
             }
@@ -750,6 +820,7 @@ fn commit_group_flow(
 
 /// The single-commit path (CLO-486 tracer): used by `--all`, a clean
 /// merge-in-progress, and the grouping fallback. Commits all changes as one.
+#[allow(clippy::too_many_arguments)]
 fn single_commit_path(
     repo: &Repo,
     args: &Cli,
@@ -758,6 +829,7 @@ fn single_commit_path(
     privacy: &Privacy,
     provider_name: &str,
     model: &str,
+    operation: Operation,
 ) -> Envelope {
     let changed_paths: Vec<String> = changed.iter().map(|c| c.path.clone()).collect();
 
@@ -786,15 +858,30 @@ fn single_commit_path(
             );
         }
     };
-    let message = match provider.generate_message(&gathered) {
+    let shape = CallShape {
+        operation,
+        files: changed.len(),
+        prompt_bytes: gathered.approx_bytes(),
+    };
+    log_prompt_sections(
+        shape.operation.label(),
+        &gathered.section_sizes(),
+        shape.prompt_bytes,
+    );
+    let mut progress = ui::CallProgress::start(
+        shape.operation.label(),
+        provider.name(),
+        model,
+        shape.files,
+        shape.prompt_bytes,
+        args.json,
+    );
+    let outcome = provider.generate_message(&gathered);
+    progress.finish();
+    let message = match outcome {
         Ok(m) => m,
         Err(e) => {
-            return output::error(
-                Some(provider_name),
-                Some(model),
-                Some(output::MODE_SINGLE),
-                &GcmError::Provider(e),
-            );
+            return provider_error_envelope(provider_name, model, output::MODE_SINGLE, shape, e);
         }
     };
 
@@ -892,6 +979,31 @@ fn single_commit_flow(
     }
 }
 
+/// Turn a provider failure into an error envelope, substituting gcm-authored
+/// prose where the provider's own message is wrong or incomplete (CLO-798).
+/// `error.code` still comes from the untouched `ErrorKind`, so only the prose
+/// half of the JSON contract moves.
+fn provider_error_envelope(
+    provider_name: &str,
+    model: &str,
+    mode: &'static str,
+    shape: CallShape,
+    err: gcm::provider::ProviderError,
+) -> Envelope {
+    let replacement = diagnostics::describe(shape, &err);
+    let gcm_err = GcmError::Provider(err);
+    match replacement {
+        Some(message) => output::error_with_message(
+            Some(provider_name),
+            Some(model),
+            Some(mode),
+            &gcm_err,
+            message,
+        ),
+        None => output::error(Some(provider_name), Some(model), Some(mode), &gcm_err),
+    }
+}
+
 /// Run the single-commit fallback after a grouped-plan failure. If the fallback
 /// commit succeeds, the envelope is `status: "fallback"`; if it fails, the
 /// envelope is `status: "error"`.
@@ -907,10 +1019,21 @@ fn run_fallback(
     reason: String,
     raw_code: String,
 ) -> Envelope {
-    if !args.json {
-        eprintln!("gcm: {reason}. Falling back to single-commit mode.");
-    }
-    let env = single_commit_path(repo, args, provider, changed, privacy, provider_name, model);
+    // Announced under `--json` too (AC-11): a machine consumer otherwise sees two
+    // provider requests on stderr with no record of why the second one happened.
+    gcm::debug::progress::emit_line(&format!(
+        "gcm: {reason}. Falling back to single-commit mode."
+    ));
+    let env = single_commit_path(
+        repo,
+        args,
+        provider,
+        changed,
+        privacy,
+        provider_name,
+        model,
+        Operation::FallbackMessage,
+    );
     if env.status == output::STATUS_COMMITTED {
         // Re-wrap a successful single commit as a fallback envelope, preserving
         // the reason the grouping path was not used.
