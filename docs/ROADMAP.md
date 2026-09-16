@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-07-30 (CLO-598 merged — out-of-tree consumer check + public surface locked; Phase 6 complete)
+**Last Updated**: 2026-09-16 (CLO-797/CLO-798 filed and investigated, PR #57; both open)
 
 ## Summary
 
@@ -11,7 +11,7 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 3 | 3 | Complete |
+| Bug fixes (cross-cutting) | 5 | 3 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 3 | 3 | Complete |
 
@@ -94,6 +94,15 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | CLO-517 | Fix Ollama cloud model commit-plan parse failure (single-commit fallback) | Done | CLO-495 (related) |
 | CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini (unsupported `additionalProperties`) | Done | CLO-531 |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
+| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | Backlog | CLO-487 (related) |
+| [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or failing request is diagnosable | In Progress | CLO-488, CLO-493 (related) |
+
+Both were found in one investigation of a 515-file commit and are measured in
+[investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
+CLO-797 is the input side: the grouping prompt sends the same file path list three times, 59% of a
+189,377-token prompt against a 131,072-token window. CLO-798 is what the user sees when a provider
+call runs long: every log call site is `debug_log!`, off by default, so a 60s timeout produces no
+output at all. They are independent - neither blocks the other.
 
 ## Maintenance (cross-cutting)
 

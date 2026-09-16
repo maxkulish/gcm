@@ -1,19 +1,28 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-07-30 (CLO-598 merged — Phase 6 complete)
+**Last Updated**: 2026-09-16 (CLO-797/CLO-798 filed; investigation merged in PR #57)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | None blocked | — | CLO-598 merged 2026-07-30; Phase 6 complete, no tracked work remains |
+| — | None blocked | — | CLO-797 and CLO-798 are independent of each other and of all Done work |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| — | None waiting | — |
+| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | No dependencies; root cause measured and fix directions written | 2026-09-16 |
+| [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | No dependencies; cause reproduced and measured | 2026-09-16 |
 
+> **Two open bugs (2026-09-16).** CLO-797 (grouping prompt overflows the context window) and CLO-798
+> (a slow or failing provider call is silent) came out of one investigation of a 515-file commit; see
+> [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
+> Neither blocks the other. CLO-798 is in progress in the `gcm--fix-clo-798-silent` worktree. One
+> sequencing note: the proposed follow-up to return group assignments by index (unfiled) would remove
+> the ~36K-token output that makes the grouping call slow, so a CLO-798 fix built purely around a
+> longer timeout may be obsoleted by it - prefer visibility over raising `DEFAULT_TIMEOUT_SECS`.
+>
 > **Phase 6 (library extraction) is now complete.** CLO-598 merged in PR #52 (2026-07-30) — the out-of-tree `smoke/` consumer and `scripts/check-public-surface.sh` lock the public surface. No remaining Phase-6 blockers. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
 ## Recently Resolved Blockers
