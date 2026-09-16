@@ -62,6 +62,21 @@ fn git_init(dir: &Path) {
     }
 }
 
+/// Probe whether `git commit -S` works here (mirrors scripts/acceptance.sh
+/// `probe_signing`). gcm always signs (FR-4), so a test that lets a run reach
+/// the commit needs a key; CI runners have none and those assertions skip
+/// there, exactly as `tests/resolve_integration.rs` does.
+fn signing_available() -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    git_init(dir.path());
+    Command::new("git")
+        .args(["commit", "-S", "--allow-empty", "-q", "-m", "probe"])
+        .current_dir(dir.path())
+        .status()
+        .expect("run git")
+        .success()
+}
+
 /// A repo with `n` unstaged files, so the grouping path has something to send.
 fn repo_with_files(dir: &Path, n: usize) {
     git_init(dir);
@@ -544,7 +559,12 @@ fn json_contract_frozen() {
     assert_eq!(env3["mode"], "plan_only", "{stdout3}");
     assert_eq!(keys(&env3), ["mode", "status", "v"], "{stdout3}");
 
-    // `committed`: the happy path still emits exactly one envelope.
+    // `committed`: the happy path still emits exactly one envelope. Reaching it
+    // means signing a real commit, so it runs only where a key exists.
+    if !signing_available() {
+        eprintln!("skipping the committed envelope: signing unavailable");
+        return;
+    }
     let repo4 = tempfile::tempdir().unwrap();
     let cfg4 = tempfile::tempdir().unwrap();
     repo_with_files(repo4.path(), 2);
@@ -606,6 +626,17 @@ fn transition_announced_under_json() {
         stderr.contains("Falling back to single-commit mode."),
         "transition not announced under --json: {stderr}"
     );
+    // Two calls, two different operation labels.
+    assert!(stderr.contains("gcm: grouping:"), "{stderr}");
+    assert!(stderr.contains("gcm: fallback message:"), "{stderr}");
+    assert_plain(&stderr);
+
+    // The announcement above is what AC-11 is about and it precedes the commit.
+    // The envelope below only exists if that commit could be signed.
+    if !signing_available() {
+        eprintln!("skipping the fallback envelope: signing unavailable");
+        return;
+    }
     let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(env["status"], "fallback", "{stdout}");
     assert_eq!(env["fallback"]["raw_code"], "BadRequest", "{stdout}");
@@ -639,10 +670,6 @@ fn transition_announced_under_json() {
     }
     assert_eq!(env["commit"], env["fallback"]["commit"], "{stdout}");
     assert!(env["fallback"]["reason"].is_string(), "{stdout}");
-    // Two calls, two different operation labels.
-    assert!(stderr.contains("gcm: grouping:"), "{stderr}");
-    assert!(stderr.contains("gcm: fallback message:"), "{stderr}");
-    assert_plain(&stderr);
 }
 
 /// AC-12: a call that fails inside the provider, before any request goes out,
