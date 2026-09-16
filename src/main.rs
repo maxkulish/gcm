@@ -2,7 +2,6 @@ mod cache;
 mod cli;
 #[path = "config/facade.rs"]
 mod config;
-mod debug;
 mod diff;
 mod error;
 mod git;
@@ -23,6 +22,14 @@ use std::collections::HashSet;
 use std::io::IsTerminal;
 
 use clap::Parser;
+
+// The logger is the library's, not a second copy compiled into the binary
+// (CLO-798): `debug::progress` holds process-wide ticker state that the library's
+// own log calls consult, and two copies of `src/debug.rs` would give them two
+// different statics. `crate::debug_log!` keeps working because the exported
+// macro expands to `gcm::debug::...` paths.
+#[allow(unused_imports)]
+use gcm::{debug_log, log, warn_log};
 
 use cli::{Cli, Commands};
 use error::GcmError;

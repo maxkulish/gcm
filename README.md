@@ -306,7 +306,7 @@ large diffs. A `*:cloud` model is proxied to Ollama Cloud and is **not** zero-eg
 | `GCM_SECRET_SCAN` | `off` | Optional pre-send scan: `off`, `redact`, or `abort` (flag `--secret-scan` wins) |
 | `EDITOR` | `vim` | Editor for the `e` (edit) option |
 | `GCM_DEBUG` | (unset) | Legacy shortcut: when set to a non-empty, non-`0` value it enables debug-level logging (overridden by `GCM_LOG_LEVEL`) |
-| `GCM_LOG_LEVEL` | `off` | Logging level: `off`, `error`, `warn`, `info`, `debug`, `trace`. Precedence over `GCM_DEBUG`; all logs go to stderr |
+| `GCM_LOG_LEVEL` | `warn` | Logging level: `off`, `error`, `warn`, `info`, `debug`, `trace`. Precedence over `GCM_DEBUG`; all logs go to stderr. Set `off` to silence retry notices |
 | `GCM_RETRY_MAX` | `3` | Max retries for transient (429/5xx) failures |
 | `GCM_RETRY_BASE_MS` | `500` | Base backoff in ms (doubles per attempt) |
 | `GCM_RETRY_MAX_MS` | `8000` | Per-attempt backoff cap in ms |
