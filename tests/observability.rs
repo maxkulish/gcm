@@ -237,11 +237,12 @@ fn slow_endpoint_emits_progress() {
         stamps[0].0
     );
 
-    // The ticker's non-TTY interval is 5s; allow the scheduler a little slack.
+    // AC-1's bound exactly: the 4s interval leaves room for the render and the
+    // scheduler without the observed gap crossing 5s.
     let mut previous = Duration::ZERO;
     for (at, line) in &stamps {
         assert!(
-            *at - previous < Duration::from_millis(5_500),
+            *at - previous < Duration::from_secs(5),
             "{:?} of silence before {line:?}: {transcript:?}",
             *at - previous
         );
@@ -431,6 +432,14 @@ fn debug_logs_prompt_sections() {
 /// untouched `ErrorKind` even where the prose was replaced.
 #[test]
 fn json_contract_frozen() {
+    /// The envelope's own keys, sorted. A new top-level key, or a lost one, is
+    /// the shape change AC-7 freezes - the two prose fields live one level down.
+    fn keys(env: &serde_json::Value) -> Vec<String> {
+        let mut k: Vec<String> = env.as_object().unwrap().keys().cloned().collect();
+        k.sort();
+        k
+    }
+
     let repo = tempfile::tempdir().unwrap();
     let cfg = tempfile::tempdir().unwrap();
     repo_with_files(repo.path(), 2);
@@ -451,6 +460,19 @@ fn json_contract_frozen() {
     assert_eq!(env["v"], 1);
     assert_eq!(env["status"], "plan");
     assert_eq!(env["mode"], "dry_run");
+    assert_eq!(
+        keys(&env),
+        [
+            "cached",
+            "changed_files",
+            "mode",
+            "model",
+            "plan",
+            "provider",
+            "status",
+            "v"
+        ]
+    );
 
     // A replaced error message must not move `error.code`.
     let repo2 = tempfile::tempdir().unwrap();
@@ -471,6 +493,13 @@ fn json_contract_frozen() {
     let env2: serde_json::Value = serde_json::from_str(stdout2.trim()).unwrap();
     assert_eq!(env2["status"], "error");
     assert_eq!(env2["error"]["code"], "Provider");
+    assert_eq!(
+        keys(&env2),
+        ["error", "mode", "model", "provider", "status", "v"]
+    );
+    let mut error_keys: Vec<&String> = env2["error"].as_object().unwrap().keys().collect();
+    error_keys.sort();
+    assert_eq!(error_keys, ["code", "message"]);
     assert!(
         !env2["error"]["message"]
             .as_str()
@@ -488,6 +517,7 @@ fn json_contract_frozen() {
     let env3: serde_json::Value = serde_json::from_str(stdout3.trim()).unwrap();
     assert_eq!(env3["v"], 1);
     assert_eq!(env3["status"], "noop", "{stdout3}");
+    assert_eq!(keys(&env3), ["mode", "status", "v"], "{stdout3}");
 
     // `committed`: the happy path still emits exactly one envelope.
     let repo4 = tempfile::tempdir().unwrap();
@@ -505,6 +535,19 @@ fn json_contract_frozen() {
     assert_eq!(env4["v"], 1);
     assert_eq!(env4["status"], "committed", "{stdout4}");
     assert_eq!(env4["mode"], "grouped", "{stdout4}");
+    assert_eq!(
+        keys(&env4),
+        [
+            "commit",
+            "group_progress",
+            "mode",
+            "model",
+            "provider",
+            "status",
+            "v"
+        ],
+        "{stdout4}"
+    );
 }
 
 /// AC-11: a `--json` consumer sees two provider requests; it has to be told why
@@ -529,6 +572,9 @@ fn transition_announced_under_json() {
     let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(env["status"], "fallback", "{stdout}");
     assert_eq!(env["fallback"]["raw_code"], "BadRequest", "{stdout}");
+    let mut fallback_keys: Vec<&String> = env["fallback"].as_object().unwrap().keys().collect();
+    fallback_keys.sort();
+    assert_eq!(fallback_keys, ["commit", "raw_code", "reason"], "{stdout}");
     // Two calls, two different operation labels.
     assert!(stderr.contains("gcm: grouping:"), "{stderr}");
     assert!(stderr.contains("gcm: fallback message:"), "{stderr}");
@@ -564,7 +610,7 @@ fn fast_failure_leaves_no_ticker() {
         "no ticker should have fired: {stderr}"
     );
     assert!(
-        elapsed < Duration::from_millis(1_500),
+        elapsed < Duration::from_secs(1),
         "the ticker wait was not interruptible: {elapsed:?}"
     );
     assert_plain(&stderr);

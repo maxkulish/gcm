@@ -74,9 +74,25 @@ pub const CONTEXT_WINDOW_MARKER: &str = "context_window: ";
 /// arm therefore requires a token- or context-specific anchor.
 pub fn is_context_window_body(body: &str) -> bool {
     let b = body.to_lowercase();
-    // Output-budget rejections are worded almost identically and are the one
-    // class where "send a smaller prompt" is wrong advice, so they veto the
-    // whole check rather than merely failing to match it.
+
+    // Explicit input-side signals win outright, before any veto. A genuine
+    // context-window rejection often names the completion budget as well,
+    // because input and output share the same window: "9000 input tokens plus
+    // 1000 completion tokens exceed the 8192 token context limit" is one of
+    // these, not an output-budget failure.
+    if b.contains("context_length_exceeded")
+        || b.contains("string_above_max_length")
+        || b.contains("reduce the length of the messages")
+        || b.contains("please reduce the length")
+        || b.contains("prompt is too long")
+        || b.contains("input token count")
+        || b.contains("input length")
+    {
+        return true;
+    }
+
+    // With no input-side signal, output-budget wording means an output-budget
+    // rejection - the one class where "send a smaller prompt" is wrong advice.
     if b.contains("max_tokens")
         || b.contains("max_completion_tokens")
         || b.contains("max_output_tokens")
@@ -85,36 +101,18 @@ pub fn is_context_window_body(body: &str) -> bool {
     {
         return false;
     }
-    // OpenAI / Groq / most OpenAI-compatible backends: a machine code, in
-    // `error.code` or `error.type`, which survives regardless of message length.
-    // `string_above_max_length` is a per-field length limit rather than the
-    // context window as such, but the only oversized string gcm ever sends is
-    // the prompt, so the recovery is the same.
-    if b.contains("context_length_exceeded") || b.contains("string_above_max_length") {
+
+    // The payload-size wording a gateway in front of the provider uses. Not the
+    // context window as such, but the same recovery: send less.
+    if b.contains("request too large") {
         return true;
     }
-    // Groq / OpenAI prose form, plus the payload-size wording a gateway in front
-    // of the provider uses. Same recovery: send less.
-    if b.contains("reduce the length of the messages")
-        || b.contains("please reduce the length")
-        || b.contains("request too large")
-    {
-        return true;
-    }
-    // Anthropic.
-    if b.contains("prompt is too long") {
-        return true;
-    }
+
     // Gemini / Vertex: require a token-count anchor next to the "exceeds"
     // phrasing, never "exceeds the maximum" on its own.
-    let token_anchor = b.contains("input token count")
-        || b.contains("token count")
-        || b.contains("context length")
-        || b.contains("context window");
-    if token_anchor && (b.contains("exceed") || b.contains("too many") || b.contains("too large")) {
-        return true;
-    }
-    false
+    let token_anchor =
+        b.contains("token count") || b.contains("context length") || b.contains("context window");
+    token_anchor && (b.contains("exceed") || b.contains("too many") || b.contains("too large"))
 }
 
 /// One provider HTTP request (CLO-489 round-2 review pt 5): `auth` is an optional
@@ -497,6 +495,15 @@ mod tests {
         // Gemini / Vertex, with the token anchor present.
         assert!(is_context_window_body(
             r#"{"error":{"message":"The input token count (1200000) exceeds the maximum allowed"}}"#
+        ));
+        // A real context-window rejection commonly names the completion budget
+        // too, because input and output share the window. The explicit code (or
+        // the input-side wording) has to outrank the output-budget veto below.
+        assert!(is_context_window_body(
+            r#"{"error":{"code":"context_length_exceeded","message":"The input exceeds the context window: 9000 input tokens plus 1000 completion tokens exceed the 8192 token context limit."}}"#
+        ));
+        assert!(is_context_window_body(
+            r#"{"error":{"message":"input length and max_tokens exceed context limit"}}"#
         ));
 
         // Unrelated 400s must not trip it.

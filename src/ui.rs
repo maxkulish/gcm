@@ -293,9 +293,11 @@ pub struct CallProgress {
 /// Redraw interval on a terminal: fast enough to read as motion.
 const TICK_TTY: std::time::Duration = std::time::Duration::from_millis(100);
 /// Line interval when stderr is not a terminal. Whole lines, so they have to be
-/// rare enough not to flood a log, and frequent enough to satisfy AC-1's "never
-/// more than ~5s without output".
-const TICK_PLAIN: std::time::Duration = std::time::Duration::from_secs(5);
+/// rare enough not to flood a log and frequent enough to satisfy AC-1's "never
+/// more than 5s without output". Four, not five: the wait is relative, so each
+/// cycle also carries the render and whatever the scheduler adds, and a 5s
+/// interval would put the observed gap just over the bound it has to stay under.
+const TICK_PLAIN: std::time::Duration = std::time::Duration::from_secs(4);
 /// Braille spinner frames, matching the wizard's visual language.
 const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 

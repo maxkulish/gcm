@@ -1,27 +1,38 @@
 ## Verdict: FAIL
 
-Reviewed through `a421a45`. **Four round-one fixes hold; context-window detection remains only partially fixed.**
-
-All **551 tests**, formatting, Clippy, the no-default-features library build, and public-surface checks pass. A PTY reproduction also passed spinner/log coordination and cleanup.
+Reviewed through `483edd4`. All **553 tests**, formatting, Clippy, the no-default-features library build, and public-surface checks pass. One correctness defect remains.
 
 ## Findings
 
-1. **MEDIUM — Unrelated limits still become context-window errors.** [src/provider/http.rs:79](/Users/mk/Code/gcm--fix-clo-798-silent/src/provider/http.rs:79), [src/provider/http.rs:98](/Users/mk/Code/gcm--fix-clo-798-silent/src/provider/http.rs:98)  
-   The fix removes `max_tokens`, but retains unconditional matches for `string_above_max_length`, `request too large`, and generic `token count` plus `exceed`. Localhost CLI reproductions confirmed that a tool-description length error, proxy payload-size error, and **output**-token-count error all become “the prompt is larger than the model’s context window.” This leaves round-one finding 2 unresolved and violates **AC-5**.
+1. **MEDIUM — Output-budget veto suppresses genuine context-window errors.** [src/provider/http.rs:80](/Users/mk/Code/gcm--fix-clo-798-silent/src/provider/http.rs:80)  
+   The veto runs before checking `context_length_exceeded`. A context rejection can mention completion tokens because input and output share the context budget.
 
-The other fixes hold: renderer state and writes share one mutex; recovery advice can reduce the request; retry totals use `u64`; and documented silence matches the new gating. The condvar predicate prevents lost wakeups, `finish()` releases its mutex before joining, and cleanup is idempotent. I found no additional deadlock, JSON-output regression, breaking provider signature change, or hardcoded secret.
+   Reproduced against a localhost stub with:
+   ```json
+   {"error":{"code":"context_length_exceeded","message":"The input exceeds the context window: 9000 input tokens plus 1000 completion tokens exceed the 8192 token context limit."}}
+   ```
+   The CLI emits **“a gcm bug; please report it”**, without the operation-specific recovery advice. This violates **AC-5**. A combined `input length and max_tokens exceed context limit` fixture also fails.
+
+   The broader “too large … to accept” wording reasonably covers prompt-string and gateway payload limits. The unconditional veto does not hold: mentioning an output budget does not establish an output-only rejection.
+
+2. **LOW — Timing verification still permits gaps beyond the specification.** [src/ui.rs:298](/Users/mk/Code/gcm--fix-clo-798-silent/src/ui.rs:298), [tests/observability.rs:244](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:244), [tests/observability.rs:567](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:567)  
+   The five-second relative wait adds rendering and scheduling overhead; tests permit 5.5-second gaps. Immediate-failure tests permit 1.5 seconds versus the evaluation’s one-second bound.
+
+The threading fixes hold: the stop predicate prevents lost wakeups, `finish()` releases its mutex before joining, and cleanup is idempotent. Renderer state and stderr writes share one library mutex; the earlier coordination race is resolved. I found no JSON schema/code regression, breaking public signature change, or newly hardcoded secret.
 
 ## Missing Items
 
-All seven sub-tasks have implementations. **AC-5 remains incorrect.** Verification gaps also remain:
+All **seven sub-tasks** have implementations.
 
-- **AC-7:** [tests/observability.rs:433](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:433) now exercises all five statuses across two tests, but lacks committed golden comparisons. `fallback.raw_code` is still checked only for being a string.
-- **AC-1 / AC-12:** Timing assertions allow **6.5-second gaps** and **2-second immediate failures**, exceeding the specified five-second and one-second bounds.
-- **AC-4:** Model-discovery coverage injects `Timeout`; it does not exercise the required stalling endpoint.
-- **AC-10:** The committed test exercises renderer transitions, not concurrent writers. The implementation and separate PTY check support correctness.
+- **AC-5:** Genuine context-window errors containing output-budget wording remain mishandled.
+- **AC-7 verification:** [tests/observability.rs:433](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:433) exercises all five statuses across two tests, but still lacks the specified complete golden-envelope comparisons. The exact `fallback.raw_code` assertion is now present.
+- **AC-1 / AC-12 verification:** Timing bounds remain looser than specified.
+
+The previously missing transport-backed discovery timeout test and concurrent renderer test are now present.
 
 ## Recommendations
 
-- Require context-specific codes or explicit **input/context-window** wording. Add negative fixtures for all three reproduced false positives.
-- Complete golden-envelope comparisons, asserting exact codes and field presence.
-- Add transport-backed discovery timeout coverage and a concurrent renderer test; align timing verification with the specification.
+- Preserve explicit context-length codes and recognize combined input/output context exhaustion. Restrict the veto to output-only limit failures.
+- Add the reproduced fixtures as positive detector and CLI tests, retaining the output-only negative fixtures.
+- Give the ticker scheduling headroom below five seconds and align timing assertions with the specification.
+- Add normalized golden comparisons for all five JSON statuses, checking complete field presence and stable codes.
