@@ -1,38 +1,27 @@
-## Verdict: FAIL
+## Verdict: PASS_WITH_NOTES
 
-Reviewed through `483edd4`. All **553 tests**, formatting, Clippy, the no-default-features library build, and public-surface checks pass. One correctness defect remains.
+Reviewed `4c21f7e` against `main` and the specification. No blocking correctness, concurrency, security, or public API regression found.
+
+Round 5 re-verification:
+
+- **Detector fix verified:** both reported negative fixtures retain ordinary error diagnostics through the CLI. Mixed input/completion overflow remains correctly detected.
+- **JSON assertions verified:** nested keys, commit status, and error/noop `v` and `mode` checks are present and pass. A small verification gap remains below.
+
+The condvar handshake, join-on-drop, and cleanup are sound. Renderer state and writes share one library mutex; no lost wakeup or lock-cycle deadlock found. A PTY check confirmed retry-line coordination, ticker resumption, and final cleanup.
+
+All **553 tests**, formatting, Clippy with warnings denied, library-only build, and public-surface checks pass. Rustdoc reports existing link warnings.
 
 ## Findings
 
-1. **MEDIUM — Output-budget veto suppresses genuine context-window errors.** [src/provider/http.rs:80](/Users/mk/Code/gcm--fix-clo-798-silent/src/provider/http.rs:80)  
-   The veto runs before checking `context_length_exceeded`. A context rejection can mention completion tokens because input and output share the context budget.
-
-   Reproduced against a localhost stub with:
-   ```json
-   {"error":{"code":"context_length_exceeded","message":"The input exceeds the context window: 9000 input tokens plus 1000 completion tokens exceed the 8192 token context limit."}}
-   ```
-   The CLI emits **“a gcm bug; please report it”**, without the operation-specific recovery advice. This violates **AC-5**. A combined `input length and max_tokens exceed context limit` fixture also fails.
-
-   The broader “too large … to accept” wording reasonably covers prompt-string and gateway payload limits. The unconditional veto does not hold: mentioning an output budget does not establish an output-only rejection.
-
-2. **LOW — Timing verification still permits gaps beyond the specification.** [src/ui.rs:298](/Users/mk/Code/gcm--fix-clo-798-silent/src/ui.rs:298), [tests/observability.rs:244](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:244), [tests/observability.rs:567](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:567)  
-   The five-second relative wait adds rendering and scheduling overhead; tests permit 5.5-second gaps. Immediate-failure tests permit 1.5 seconds versus the evaluation’s one-second bound.
-
-The threading fixes hold: the stop predicate prevents lost wakeups, `finish()` releases its mutex before joining, and cleanup is idempotent. Renderer state and stderr writes share one library mutex; the earlier coordination race is resolved. I found no JSON schema/code regression, breaking public signature change, or newly hardcoded secret.
+- **LOW — JSON contract verification remains partial.** [tests/observability.rs:483](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:483), [tests/observability.rs:619](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:619): Selected assertions still replace the specified complete golden comparisons. For example, `summary`’s type and the fallback’s nested commit contents are unchecked. Such schema regressions could pass. No actual output-contract regression was found.
 
 ## Missing Items
 
-All **seven sub-tasks** have implementations.
+All seven sub-tasks are implemented, with no runtime implementation gap found across the 12 acceptance criteria.
 
-- **AC-5:** Genuine context-window errors containing output-budget wording remain mishandled.
-- **AC-7 verification:** [tests/observability.rs:433](/Users/mk/Code/gcm--fix-clo-798-silent/tests/observability.rs:433) exercises all five statuses across two tests, but still lacks the specified complete golden-envelope comparisons. The exact `fallback.raw_code` assertion is now present.
-- **AC-1 / AC-12 verification:** Timing bounds remain looser than specified.
-
-The previously missing transport-backed discovery timeout test and concurrent renderer test are now present.
+AC-7’s specified complete golden-envelope verification remains outstanding.
 
 ## Recommendations
 
-- Preserve explicit context-length codes and recognize combined input/output context exhaustion. Restrict the veto to output-only limit failures.
-- Add the reproduced fixtures as positive detector and CLI tests, retaining the output-only negative fixtures.
-- Give the ticker scheduling headroom below five seconds and align timing assertions with the specification.
-- Add normalized golden comparisons for all five JSON statuses, checking complete field presence and stable codes.
+- Compare normalized complete envelopes for all five statuses, accounting for dynamic hashes and permitted prose changes.
+- List additive public exports in the PR description, as AC-9 requires.

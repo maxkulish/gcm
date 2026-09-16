@@ -45,10 +45,10 @@ linear:
   priority: High
   labels: [Improvement]
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-09-16T20:27:39.000Z'
-  updated_at: '2026-09-16T22:40:00.000Z'
+  updated_at: '2026-09-16T23:55:00.000Z'
 phases:
   discovery:
     status: skipped
@@ -81,18 +81,36 @@ phases:
       - 'log_level() default moves Off -> Warn; GCM_LOG_LEVEL=off is the opt-out (without this AC-3 is a no-op)'
       - 'Timeout and context-window prose composed binary-side where the operation and its actual budget are known; ErrorKind shape frozen'
   implement:
-    status: in_progress
-    last_phase_completed: 'sub-task 7 (binary-side diagnostics + wiring) + evaluation tests'
+    status: complete
+    last_phase_completed: 'Codex validation gate (6 rounds)'
     sub_tasks_complete: [1, 2, 3, 4, 5, 6, 7]
     commits:
       - 231f303 feat(logging): default to warn level and coordinate stderr writes
       - d44f8f4 feat(provider): surface retries and mark context-window rejections
       - 60912a2 feat(ui): show in-flight provider progress and actionable failures
       - 5b0735c test(observability): cover the provider-call visibility criteria
-    tests_passing: 549
-    codex_validated: false
-    codex_verdict: null
+      - 479d1d0 fix(ui): register the ticker width before drawing the frame
+      - a421a45 fix(ui): address the Codex validation findings
+      - 483edd4 fix(provider): stop output-budget rejections reading as oversized prompts
+      - 36ed30f fix(provider): let explicit context-length signals outrank the output veto
+      - c67e4c8 fix(provider): let window evidence outrank the output-budget veto
+      - 4c21f7e fix(provider): require an overflow before reading a body as oversized
+      - 4d9e0d7 test(json): freeze the value types the key sets were only implying
+    tests_passing: 553
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
     codex_report: docs/reviews/clo-798-codex-validation.md
+    codex_rounds: 6
+    codex_round_reports:
+      - docs/reviews/clo-798-codex-validation-round1.md
+      - docs/reviews/clo-798-codex-validation-round2.md
+      - docs/reviews/clo-798-codex-validation-round3.md
+      - docs/reviews/clo-798-codex-validation-round4.md
+      - docs/reviews/clo-798-codex-validation-round5.md
+    codex_open_note: >-
+      One LOW note accepted, not fixed: the suite asserts envelope key sets and value types rather than
+      whole normalized golden envelopes. Comparing whole envelopes would freeze error.message and
+      fallback.reason, which the approved spec's JSON contract decision deliberately leaves free to change.
     gemini_validation_report: null
     gemini_skip_reason: 'gemini CLI not installed on this machine'
   pr:
@@ -192,3 +210,18 @@ history:
     action: pushed_to_remote
     phase: implement
     details: fix/clo-798-silent pushed to origin
+  - timestamp: '2026-09-16T23:50:00.000Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Six Codex rounds (gpt-6-astra, read-only). Rounds 1-5 returned FAIL; every verified finding was fixed:
+      the ticker/log coordination race (mutex-guarded Renderer in the library), four generations of
+      context-window detector false positives and false negatives, a retry-budget overflow at
+      GCM_RETRY_MAX=u32::MAX, advice that suggested staging (ineffective - the prompt is built from the whole
+      worktree) and raising GCM_DIFF_TOTAL_BYTES (backwards), a README overclaim about GCM_LOG_LEVEL=off,
+      and incomplete JSON contract assertions. Round 6 on 4d9e0d7 returned PASS_WITH_NOTES with one LOW note
+      accepted as a design decision. Gemini skipped - CLI not installed.
+  - timestamp: '2026-09-16T23:55:00.000Z'
+    action: phase_transition
+    phase: implement
+    details: Transitioned from implement to pr
