@@ -23,7 +23,7 @@ workflow:
   current_phase: implement
   status: active
   created_at: '2026-09-16T21:24:47.223Z'
-  updated_at: '2026-09-16T21:39:25.894Z'
+  updated_at: '2026-09-16T21:49:47.499Z'
 phases:
   discovery:
     status: complete
@@ -96,7 +96,70 @@ phases:
     plan_file: docs/plans/clo-799-enabled-model-pinning.md
     approved: true
   implement:
-    status: pending
+    status: complete
+    assumption_outcomes:
+      - evidence: src/config/mod.rs::tests::model_is_enabled_message_lists_known_catalog (message contains gpt-5.6-luna)
+        outcome: held
+        text: >-
+          The built-in static catalog is an adequate 'available models' list for the rejection message; a live fetch on
+          the error path is unnecessary.
+      - evidence: cargo build --no-default-features --lib exit 0
+        outcome: held
+        text: >-
+          static_fallback_models is transport-free and available without the cli feature, so config may call it in the
+          pure helper.
+      - evidence: cliclack 0.5.4 lib.rs:427 exposes note; cargo clippy --all-targets green; wizard is TTY-guarded
+        outcome: held
+        text: >-
+          cliclack::note(prompt, message) renders an always-visible bordered message in cliclack 0.5 and is safe on the
+          TTY-only wizard.
+      - evidence: tests/provider.rs::newly_enabled_model_passes_enforcement (error code != Config)
+        outcome: held
+        text: >-
+          Preserving the gate still satisfies AC1 because gcm provider is the documented non-hand-edit path, and once
+          enabled a model passes --model.
+      - evidence: >-
+          src/config/mod.rs::tests::wizard_model_list_* ; initial_enabled filters candidates against current_enabled
+          only
+        outcome: held
+        text: Unioning id.default_model() into the candidate list does not change which models are pre-selected.
+      - evidence: src/config/mod.rs::tests::initial_default_model_prefers_current_then_first and ::prefers_shipped_default
+        outcome: held
+        text: initial_default_model's new middle preference does not regress the current-default case.
+      - evidence: no ProviderConfig field changed; v1/v2 migration tests green in cargo test
+        outcome: held
+        text: 'No config migration is required: the schema, format version, and persisted fields are unchanged.'
+    assumptions_revalidated: true
+    commits:
+      - 3b0ece6
+      - '9732748'
+      - 8ba627e
+    codex_report: docs/reviews/clo-799-codex-validation.md
+    codex_validated: true
+    codex_verdict: FAIL
+    gemini_validation_report: docs/reviews/clo-799-gemini-validation.md
+    validation_fix_iteration_count: 0
+    validation_synthesis_report: docs/reviews/clo-799-validation-synthesis.md
+    validation_synthesis_verdict: PASS
+    token_usage:
+      - recorded_at: '2026-09-16T21:49:47.499Z'
+        provider: codex
+        model: gpt-5.5
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-codex
+      - recorded_at: '2026-09-16T21:49:47.499Z'
+        provider: gemini
+        model: gemini-3.5-flash
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-gemini
+      - recorded_at: '2026-09-16T21:49:47.499Z'
+        provider: claude
+        model: claude-opus-4
+        prompt_tokens: 0
+        completion_tokens: 0
+        task_label: pre-pr-validation-synthesis
   pr:
     status: pending
   complete:
@@ -191,5 +254,26 @@ history:
     action: phase_transition
     phase: plan
     details: Transitioned from plan to implement
+  - timestamp: '2026-09-16T21:45:53.688Z'
+    action: assumptions_revalidated
+    phase: implement
+    details: >-
+      7 assumptions reviewed. held: 7, violated: 0, untested: 0. The gate is preserved (CLO-516 D4/AC-6 intact); the
+      message lists the known catalog; no schema/migration change.
+  - timestamp: '2026-09-16T21:45:53.691Z'
+    action: implementation_complete
+    phase: implement
+    details: >-
+      All 4 sub-tasks landed (commits 3b0ece6, 9732748, 8ba627e). fmt + clippy --all-targets -D warnings + full cargo
+      test green (12 suites, 529 tests). Library boundary (--no-default-features --lib) and
+      scripts/check-public-surface.sh green.
+  - timestamp: '2026-09-16T21:49:47.499Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex: FAIL (1 MEDIUM on doc-hidden helper visibility + 1 LOW test-strength). Gemini: PASS. Synthesis: PASS, no
+      Must Fix items; Codex's FAIL basis classified as a false positive (every config helper is #[doc(hidden)] pub by
+      existing convention) and the LOW test nit as out-of-scope/shared with pre-existing tests. 0 fix iterations
+      applied.
 task_title: Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect
 task_url: https://linear.app/cloud-ai/issue/CLO-799/fix-the-enabled-model-set-pinning-gcm-to-one-model-so-a-newer-gemini
