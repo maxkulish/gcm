@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-09-16 (CLO-799 started; PR #57 merged — CLO-797/CLO-798 investigation recorded in `docs/investigations/`; **both issues remain open**, CLO-798 in progress)
+**Last Updated**: 2026-09-16 (CLO-799 fixed and merged in PR #59; PR #57 merged — CLO-797/CLO-798 investigation recorded in `docs/investigations/`; **both issues remain open**, CLO-798 in progress)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -101,7 +101,6 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or failing request is diagnosable | In Progress | Bug fixes | — (worktree `gcm--fix-clo-798-silent`, branch `fix/clo-798-silent`) |
-| [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | In Progress | Bug fixes | — (worktree `gcm--fix-clo-799-model-pining`, branch `fix/clo-799-model-pining`) |
 
 ## Up Next (Ready - no open blockers)
 
@@ -125,6 +124,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | 2026-09-16 | Bug fix (dev task, `/task:orchestrate`). The CLO-516 enabled-set whitelist gate is kept (D4/AC-6 intact), but its rejection message now names the provider's known catalog - the built-in baseline minus already-enabled entries, compared canonically and capped at 8 - so a `--model` outside the set is actionable rather than a dead end. `gcm provider`'s multiselect gained an unmissable SPACE/ENTER note: a filtered view hid the pre-selected rows, so filtering to a newer model and pressing Enter silently re-saved the old single entry (the self-perpetuating trap). The wizard candidate list now always unions the shipped `default_model()`, and `initial_default_model` prefers it after the current default, so the wizard and `ProviderId::default_model()` agree (AC3). `static_fallback_models` moved to `pub(crate)`; the locked public surface is unchanged (`scripts/check-public-surface.sh` green). Gemini validation PASS, Codex FAIL whose sole basis synthesis classified as a false positive -> synthesis PASS, no Must Fix. 529 tests (12 suites); fmt + clippy `-D warnings` clean; CI green on ubuntu + macos; no bots installed. PR #59 merged. |
 | [CLO-598](https://linear.app/cloud-ai/issue/CLO-598) | Verify the gcm library from an out-of-tree consumer and lock its public surface | 2026-07-30 | Phase-6 final slice (dev task, `/task:orchestrate`). Out-of-tree `smoke/` consumer compiles and passes against `gcm` by path under both `default-features = false` and `gcm-cli` feature states. Mechanical public-surface guard `scripts/check-public-surface.sh` recursively checks `cargo doc --lib --no-default-features` for forbidden commit-domain types. Root `Cargo.toml` adds `publish = false` per ADR-002 Decision 7. CI wired with library-only tests, both smoke feature combinations, surface check, and release build. 524 tests with `cli`, 126 without (`--no-default-features --lib`), 7 smoke tests each feature state; clippy `-D warnings` and `fmt --check` clean. PR #52 merged. Closes Phase 6. |
 | [CLO-597](https://linear.app/cloud-ai/issue/CLO-597) | Expose source-attributed status resolution through the gcm library | 2026-07-30 | Phase-6 slice 3 (dev task, `/task:orchestrate`). Library surface: `gcm::config`, `gcm::status`, `gcm::paths`; binary facades keep CLI-only concerns behind the `cli` feature. `gcm status` and `gcm status --json` verified **byte-identical to v0.6.0**, so the extraction is provably behaviour-preserving. 524 tests with `cli`, 126 without (`--no-default-features --lib`) incl. the `library_status_api` test that proves the surface stands alone; clippy `-D warnings` and `fmt --check` clean; CI green on ubuntu + macos. PRs #49 (code), #50 (docs), #51 (workflow cleanup) merged. Unblocks CLO-598, the final Phase-6 slice. |
 | [CLO-596](https://linear.app/cloud-ai/issue/CLO-596) | Expose provider identity and the live model registry through the gcm library | 2026-07-28 | Library extraction: `ProviderId`, `AuthMethod`, `ModelSource`, `resolve_model_with_source` and the live model registry exposed through the `gcm` library boundary. PR #48 merged. |

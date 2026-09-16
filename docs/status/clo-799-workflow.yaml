@@ -20,10 +20,10 @@ linear:
   priority: High
   branch_actual: fix/clo-799-model-pining
 workflow:
-  current_phase: pr
+  current_phase: complete
   status: active
   created_at: '2026-09-16T21:24:47.223Z'
-  updated_at: '2026-09-16T22:08:18.816Z'
+  updated_at: '2026-09-16T22:14:50.612Z'
 phases:
   discovery:
     status: complete
@@ -170,8 +170,25 @@ phases:
     reviews_addressed: true
     pre_merge_refetch_at: '2026-09-16T22:08:30Z'
     pre_merge_refetch_passed: true
+    merge_commit: 94763efb2e879f20328848ea8123791d2604b3ad
+    merged_at: '2026-09-16T22:12:36Z'
   complete:
     status: pending
+    merge_commit: 94763efb2e879f20328848ea8123791d2604b3ad
+    merged_at: '2026-09-16T22:12:36Z'
+    aggregation_files_updated: true
+    lessons_file: .pi/lessons/clo-799-model-pinning-lessons.md
+    lessons_learned:
+      - >-
+        L1 - Conditionally-skipped lok workflow steps must guard {{ steps.X.* }} with {% if steps.X is defined %} or the
+        whole workflow aborts
+      - >-
+        L2 - #[doc(hidden)] pub fn is the gcm config-helper convention, not a public-surface change; prove with
+        scripts/check-public-surface.sh
+      - L3 - static_fallback_models always inserts default_model(), so its catalog is never empty
+      - >-
+        L4 - PROJECT/ROADMAP/DEPENDENCIES edits race across sibling worktrees; expect and resolve conflicts at the PR
+        health gate
 history:
   - timestamp: '2026-09-16T21:24:47.223Z'
     action: workflow_started
@@ -321,5 +338,33 @@ history:
     details: >-
       Pre-merge re-fetch passed on PR #59 (head 6613989): no new inline comments since the last review_addressed event
       and no unresolved review threads.
+  - timestamp: '2026-09-16T22:12:27.746Z'
+    action: phase_transition
+    phase: pr
+    details: Transitioned from pr to complete
+  - timestamp: '2026-09-16T22:12:47.597Z'
+    action: pr_merged
+    phase: complete
+    details: 'PR #59 merged (squash). Merge commit 94763efb2e879f20328848ea8123791d2604b3ad.'
+  - timestamp: '2026-09-16T22:12:47.605Z'
+    action: pr_merged
+    phase: pr
+    details: Merge commit 94763efb2e879f20328848ea8123791d2604b3ad
+  - timestamp: '2026-09-16T22:14:07.646Z'
+    action: project_sync_complete
+    phase: complete
+    details: >-
+      PROJECT.md/ROADMAP.md/DEPENDENCIES.md synced via the /project:sync CLO-799 --complete procedure: PROJECT.md moved
+      CLO-799 from Active Work to Recently Completed, ROADMAP.md Bug fixes status -> Done, DEPENDENCIES.md note updated
+      to merged. No downstream tasks unblocked (CLO-799 had no dependents).
+  - timestamp: '2026-09-16T22:14:50.612Z'
+    action: lessons_extracted
+    phase: complete
+    details: >-
+      3 lessons recorded. New topic file .pi/lessons/lok-workflow-templates.md (L1: guard conditionally-skipped lok step
+      variables with {% if steps.X is defined %}) and per-task .pi/lessons/clo-799-model-pinning-lessons.md (L1:
+      #[doc(hidden)] pub is the config-helper convention, not a surface change; L2: static_fallback_models always
+      inserts default_model(); L3: aggregation-file edits race across sibling worktrees). No .session notes captured
+      this task (entries=0), so no propose/verify step.
 task_title: Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect
 task_url: https://linear.app/cloud-ai/issue/CLO-799/fix-the-enabled-model-set-pinning-gcm-to-one-model-so-a-newer-gemini
