@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-16 (CLO-799 started, removed from Unblocked & Ready; CLO-797/CLO-798 filed; investigation merged in PR #57)
+**Last Updated**: 2026-09-16 (CLO-799 fixed and merged in PR #59; CLO-797/CLO-798 filed; investigation merged in PR #57)
 
 ## Current Blockers
 
@@ -20,8 +20,9 @@
 > **Two open bugs (2026-09-16).** CLO-797 (grouping prompt overflows the context window) and CLO-798
 > (a slow or failing provider call is silent) came out of one investigation of a 515-file commit; see
 > [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
-> Neither blocks the other. CLO-798 is in progress in the `gcm--fix-clo-798-silent` worktree and CLO-799
-> in `gcm--fix-clo-799-model-pining`. One
+> Neither blocks the other. CLO-798 is in progress in the `gcm--fix-clo-798-silent` worktree; CLO-799
+> merged in PR #59 (2026-09-16), keeping the CLO-516 whitelist gate and making its rejection message
+> name the provider's known catalog. One
 > sequencing note: CLO-801 (return group assignments by index) would remove the ~36K-token output that
 > makes the grouping call slow, so a CLO-798 fix built purely around a longer timeout may be obsoleted
 > by it - prefer visibility over raising `DEFAULT_TIMEOUT_SECS`. The 798 session was briefed on this and
