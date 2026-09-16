@@ -100,6 +100,20 @@ pub struct GatheredDiff {
     pub body: String,
 }
 
+impl GatheredDiff {
+    /// Per-section byte counts, largest concern first (CLO-798). Logged at debug
+    /// so a prompt-size regression is diagnosable without a packet capture.
+    pub fn section_sizes(&self) -> Vec<(&'static str, usize)> {
+        vec![("stat", self.stat.len()), ("body", self.body.len())]
+    }
+
+    /// Total bytes of prompt text. Approximate by design: it counts the sections
+    /// gcm assembles, not the serialized request body a provider finally sees.
+    pub fn approx_bytes(&self) -> usize {
+        self.section_sizes().iter().map(|(_, n)| n).sum()
+    }
+}
+
 /// The richer context handed to the provider for grouping (CLO-487): the file
 /// list and porcelain status (both JSON arrays, so newline-containing paths stay
 /// discrete), the diff `--stat`, and the per-file-truncated full diff. Distinct
@@ -111,6 +125,41 @@ pub struct GroupingContext {
     pub status: String,
     pub stat: String,
     pub body: String,
+}
+
+impl GroupingContext {
+    /// Per-section byte counts (CLO-798), in prompt order. `body` is the section
+    /// that grows without bound on a large change set, so seeing the split is
+    /// what makes an oversized grouping prompt diagnosable.
+    pub fn section_sizes(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("file_list", self.file_list.len()),
+            ("status", self.status.len()),
+            ("stat", self.stat.len()),
+            ("body", self.body.len()),
+        ]
+    }
+
+    /// Total bytes of prompt text. Approximate by design: it counts the sections
+    /// gcm assembles, not the serialized request body a provider finally sees.
+    pub fn approx_bytes(&self) -> usize {
+        self.section_sizes().iter().map(|(_, n)| n).sum()
+    }
+}
+
+/// Render `bytes` for a human-facing status line (CLO-798): `820 B`, `48 KB`,
+/// `1.4 MB`. Deliberately coarse - the point is an order of magnitude, and exact
+/// counts stay in the debug lines.
+pub fn human_bytes(bytes: usize) -> String {
+    const KB: usize = 1024;
+    const MB: usize = KB * 1024;
+    if bytes < KB {
+        format!("{bytes} B")
+    } else if bytes < MB {
+        format!("{} KB", bytes / KB)
+    } else {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    }
 }
 
 /// Build the single-message diff for **one commit group** (CLO-491, FR-45): the

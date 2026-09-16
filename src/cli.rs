@@ -33,12 +33,13 @@ best-effort credential scanning before provider egress. With --provider=ollama a
 local model, nothing leaves the machine (zero-egress); an Ollama `:cloud` model routes\n\
 through Ollama Cloud and is NOT zero-egress. See the README for each provider's data policy.\n\
 \n\
-LOGGING: set GCM_LOG_LEVEL=off|error|warn|info|debug|trace (default off). The legacy\n\
-GCM_DEBUG=1 shortcut still enables debug-level output. Logs always go to stderr.\n\
+LOGGING: set GCM_LOG_LEVEL=off|error|warn|info|debug|trace (default warn, so retry\n\
+notices are visible; use off to silence them). The legacy GCM_DEBUG=1 shortcut still\n\
+enables debug-level output. Logs always go to stderr.\n\
 \n\
 RESILIENCE: transient provider failures (HTTP 429 rate limit, 5xx) are retried with\n\
-bounded exponential backoff; 400/auth errors fail fast. Set GCM_DEBUG=1 (or\n\
-GCM_LOG_LEVEL=debug) to print the typed error and retry attempts to stderr.";
+bounded exponential backoff; 400/auth errors fail fast. Retry attempts print to stderr\n\
+by default; set GCM_DEBUG=1 (or GCM_LOG_LEVEL=debug) to add the typed error.";
 
 #[derive(Parser, Debug)]
 #[command(

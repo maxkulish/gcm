@@ -276,6 +276,158 @@ pub fn preview_plan(message: &str, group_count: usize, remaining: usize) {
     }
 }
 
+/// In-flight progress for one provider call (CLO-798).
+///
+/// The transport is blocking (ADR-001 Decision 2), so the only way to show that
+/// a call is alive is a second thread. `start` prints a one-shot status line and
+/// then ticks until `finish`; `Drop` finishes too, so an early return on the
+/// error path cannot leave the thread running or a half-drawn line on screen.
+///
+/// The thread waits on a condvar rather than sleeping, so a call that fails in
+/// milliseconds does not pay the non-TTY tick interval before `finish` returns.
+pub struct CallProgress {
+    stop: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+/// Redraw interval on a terminal: fast enough to read as motion.
+const TICK_TTY: std::time::Duration = std::time::Duration::from_millis(100);
+/// Line interval when stderr is not a terminal. Whole lines, so they have to be
+/// rare enough not to flood a log and frequent enough to satisfy AC-1's "never
+/// more than 5s without output". Four, not five: the wait is relative, so each
+/// cycle also carries the render and whatever the scheduler adds, and a 5s
+/// interval would put the observed gap just over the bound it has to stay under.
+const TICK_PLAIN: std::time::Duration = std::time::Duration::from_secs(4);
+/// Braille spinner frames, matching the wizard's visual language.
+const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/// The one-shot line printed before the call. Pure.
+pub fn call_status_line(
+    operation: &str,
+    provider: &str,
+    model: &str,
+    files: usize,
+    prompt_bytes: usize,
+) -> String {
+    format!(
+        "gcm: {operation}: {provider} ({model}), {files} file(s), ~{} prompt",
+        crate::diff::human_bytes(prompt_bytes)
+    )
+}
+
+/// One in-place ticker frame for a terminal. Pure; the caller adds the `\r`.
+pub fn ticker_frame(operation: &str, elapsed_secs: u64, tick: usize) -> String {
+    format!(
+        "gcm: {} {operation}... {elapsed_secs}s",
+        FRAMES[tick % FRAMES.len()]
+    )
+}
+
+/// One whole-line progress note for a non-terminal stderr. Pure.
+pub fn waiting_line(operation: &str, elapsed_secs: u64) -> String {
+    format!("gcm: still waiting on {operation}... {elapsed_secs}s")
+}
+
+impl CallProgress {
+    /// Print the status line and start ticking. `json` suppresses only the
+    /// ticker: the status line is a whole line on stderr and never touches the
+    /// stdout envelope, so machine consumers keep it.
+    pub fn start(
+        operation: &str,
+        provider: &str,
+        model: &str,
+        files: usize,
+        prompt_bytes: usize,
+        json: bool,
+    ) -> Self {
+        let tty = std::io::stderr().is_terminal();
+        let stop = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+
+        // `GCM_LOG_LEVEL=off` is the documented way to ask gcm for silence, and a
+        // status line the user cannot switch off would make that promise false.
+        // The default is `Warn`, so this stays on unless someone opts out.
+        if !gcm::debug::enabled(gcm::debug::Level::Warn) {
+            return CallProgress { stop, handle: None };
+        }
+
+        gcm::debug::progress::emit_line(&call_status_line(
+            operation,
+            provider,
+            model,
+            files,
+            prompt_bytes,
+        ));
+
+        if json {
+            return CallProgress { stop, handle: None };
+        }
+
+        let thread_stop = std::sync::Arc::clone(&stop);
+        let operation = operation.to_string();
+        let handle = std::thread::spawn(move || {
+            let started = std::time::Instant::now();
+            let interval = if tty { TICK_TTY } else { TICK_PLAIN };
+            let (lock, cvar) = &*thread_stop;
+            let mut tick = 0usize;
+            let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+            loop {
+                // Checked before waiting as well as after: `finish` can set the
+                // flag before this thread ever reaches the condvar, and a
+                // notification sent then has no one to wake.
+                if *guard {
+                    return;
+                }
+                let (next, _) = cvar
+                    .wait_timeout(guard, interval)
+                    .unwrap_or_else(|e| e.into_inner());
+                if *next {
+                    return;
+                }
+                drop(next);
+
+                let elapsed = started.elapsed().as_secs();
+                if tty {
+                    // The renderer erases the previous frame, records this one and
+                    // writes the bytes under one lock, so a log line arriving from
+                    // the calling thread cannot slip between the state and the write.
+                    gcm::debug::progress::draw_frame(&ticker_frame(&operation, elapsed, tick));
+                } else {
+                    gcm::debug::progress::emit_line(&waiting_line(&operation, elapsed));
+                }
+                tick += 1;
+                guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+            }
+        });
+
+        CallProgress {
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    /// Stop the ticker, join it, and leave the cursor at column 0 on a clean
+    /// line. Idempotent, so `Drop` after an explicit `finish` is harmless.
+    pub fn finish(&mut self) {
+        let Some(handle) = self.handle.take() else {
+            return;
+        };
+        {
+            let (lock, cvar) = &*self.stop;
+            let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = true;
+            cvar.notify_all();
+        }
+        let _ = handle.join();
+        gcm::debug::progress::clear_live();
+    }
+}
+
+impl Drop for CallProgress {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,5 +575,64 @@ mod tests {
             w.contains("0 partially"),
             "names the partial count even when zero: {w}"
         );
+    }
+
+    /// CLO-798 AC-1: the pre-call line names the operation, the provider, the
+    /// model, how many files are in scope, and roughly how big the prompt is.
+    #[test]
+    fn status_line_names_the_call() {
+        let line = call_status_line("grouping", "Google", "gemini-3.5-flash-lite", 12, 49_152);
+        assert_eq!(
+            line,
+            "gcm: grouping: Google (gemini-3.5-flash-lite), 12 file(s), ~48 KB prompt"
+        );
+        assert!(!line.contains('\r'), "status line is a whole line: {line}");
+    }
+
+    /// CLO-798 AC-2: each frame carries the elapsed seconds, so a user watching
+    /// can tell a slow call from a hung one.
+    #[test]
+    fn ticker_frame_advances() {
+        let a = ticker_frame("grouping", 7, 0);
+        let b = ticker_frame("grouping", 7, 1);
+        assert_eq!(a, "gcm: ⠋ grouping... 7s");
+        assert_ne!(a, b, "the spinner glyph has to change between ticks");
+        assert_eq!(ticker_frame("grouping", 7, FRAMES.len()), a, "frames wrap");
+        assert!(ticker_frame("grouping", 15, 3).contains("15s"));
+    }
+
+    /// CLO-798 AC-8: off a TTY the progress note is a plain whole line - no `\r`,
+    /// no escape sequence, nothing that corrupts a redirected stderr.
+    #[test]
+    fn waiting_line_is_plain() {
+        let line = waiting_line("grouping", 15);
+        assert_eq!(line, "gcm: still waiting on grouping... 15s");
+        assert!(!line.contains('\x1b'));
+        assert!(!line.contains('\r'));
+    }
+
+    /// CLO-798 AC-12: a call that fails immediately must not pay the tick
+    /// interval. The ticker waits on a condvar, so `finish` returns as soon as
+    /// it is asked to - well inside the 5s non-TTY interval.
+    #[test]
+    fn finish_interrupts_the_wait() {
+        let started = std::time::Instant::now();
+        let mut p = CallProgress::start("grouping", "Google", "m", 1, 10, false);
+        p.finish();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "finish waited for a tick: {:?}",
+            started.elapsed()
+        );
+        // Idempotent: the Drop that follows must not double-join.
+        p.finish();
+    }
+
+    /// CLO-798 AC-7: under `--json` no ticker thread exists at all, so nothing
+    /// can interleave with the envelope on stdout.
+    #[test]
+    fn json_suppresses_the_ticker() {
+        let p = CallProgress::start("grouping", "Google", "m", 1, 10, true);
+        assert!(p.handle.is_none(), "--json must not spawn a ticker thread");
     }
 }

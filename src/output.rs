@@ -200,6 +200,23 @@ pub fn error(
     env
 }
 
+/// A runtime error whose human prose gcm composed itself (CLO-798). The
+/// `error.code` still derives from `err`, so the frozen half of the `--json`
+/// contract is untouched; only `error.message` carries the replacement.
+pub fn error_with_message(
+    provider: Option<&str>,
+    model: Option<&str>,
+    mode: Option<&'static str>,
+    err: &GcmError,
+    message: String,
+) -> Envelope {
+    let mut env = error(provider, model, mode, err);
+    if let Some(info) = env.error.as_mut() {
+        info.message = message;
+    }
+    env
+}
+
 /// Serialize and emit the envelope to stdout. This is the only place `--json`
 /// writes to stdout.
 pub fn emit(env: &Envelope) {
