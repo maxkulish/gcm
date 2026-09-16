@@ -36,11 +36,70 @@ const DEFAULT_RETRY_MAX: Duration = Duration::from_secs(8);
 #[cfg(feature = "cli")]
 const MODEL_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The generation-call budget in seconds: `GCM_HTTP_TIMEOUT_SECS` when set to a
+/// positive value, else [`DEFAULT_TIMEOUT_SECS`]. Public so the CLI can name the
+/// budget that actually applied when a call times out (CLO-798) instead of
+/// duplicating the default. Note this is **not** the budget for
+/// [`get_json`], which uses the fixed [`MODEL_FETCH_TIMEOUT`].
 #[cfg(feature = "cli")]
-fn timeout_secs() -> u64 {
+pub fn timeout_secs() -> u64 {
     env_u64("GCM_HTTP_TIMEOUT_SECS")
         .filter(|&v| v > 0)
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
+}
+
+/// The model-list discovery budget in seconds (CLO-798): fixed, not overridable,
+/// and deliberately far shorter than [`timeout_secs`].
+#[cfg(feature = "cli")]
+pub fn model_fetch_timeout_secs() -> u64 {
+    MODEL_FETCH_TIMEOUT.as_secs()
+}
+
+/// Marker prepended to a [`ErrorKind::BadRequest`] detail when the body is a
+/// context-window rejection rather than a malformed request (CLO-798).
+///
+/// `ErrorKind` is public library surface and cannot grow a variant, and the
+/// detail is the only channel from the transport to the CLI. Detection happens
+/// here, over the full body, because [`bad_request_detail`] keeps only
+/// `error.message` and truncates it - a signal carried in a sibling `code`, or
+/// sitting past the truncation point, would otherwise be lost before the CLI
+/// ever sees it. The CLI strips this prefix when composing user-facing prose.
+pub const CONTEXT_WINDOW_MARKER: &str = "context_window: ";
+
+/// Whether a 400 body is a context-window rejection (CLO-798). Pure.
+///
+/// Matching is deliberately anchored. A bare "exceeds the maximum" is **not**
+/// enough: providers use that phrasing for unrelated limits, and a false
+/// positive would tell the user to shrink a diff that is not the problem. Each
+/// arm therefore requires a token- or context-specific anchor.
+pub fn is_context_window_body(body: &str) -> bool {
+    let b = body.to_lowercase();
+    // OpenAI / Groq / most OpenAI-compatible backends: a machine code, in
+    // `error.code` or `error.type`, which survives regardless of message length.
+    if b.contains("context_length_exceeded") || b.contains("string_above_max_length") {
+        return true;
+    }
+    // Groq / OpenAI prose form.
+    if b.contains("reduce the length of the messages")
+        || b.contains("please reduce the length")
+        || b.contains("request too large")
+    {
+        return true;
+    }
+    // Anthropic.
+    if b.contains("prompt is too long") {
+        return true;
+    }
+    // Gemini / Vertex: require a token-count anchor next to the "exceeds"
+    // phrasing, never "exceeds the maximum" on its own.
+    let token_anchor = b.contains("input token count")
+        || b.contains("token count")
+        || b.contains("max_tokens")
+        || b.contains("context length");
+    if token_anchor && (b.contains("exceed") || b.contains("too many") || b.contains("too large")) {
+        return true;
+    }
+    false
 }
 
 /// One provider HTTP request (CLO-489 round-2 review pt 5): `auth` is an optional
@@ -245,23 +304,32 @@ fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
 
 /// Pull an actionable detail from a 400/blocked body: JSON `error.message` when
 /// present, else the raw body trimmed/truncated to 200 chars; `None` if empty.
+///
+/// When the **full** body is a context-window rejection the detail is prefixed
+/// with [`CONTEXT_WINDOW_MARKER`] (CLO-798). Detection has to happen here rather
+/// than downstream: `error.message` alone loses a sibling `error.code`, and the
+/// 200-char truncation can cut the phrase off entirely, so by the time the CLI
+/// receives the detail the evidence may be gone.
 pub fn bad_request_detail(body: &str) -> Option<String> {
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return None;
     }
-    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
-        if let Some(msg) = v
-            .get("error")
-            .and_then(|e| e.get("message"))
-            .and_then(|m| m.as_str())
-            .map(str::trim)
-            .filter(|m| !m.is_empty())
-        {
-            return Some(truncate(msg, 200));
-        }
+    let detail = serde_json::from_str::<Value>(trimmed)
+        .ok()
+        .and_then(|v| {
+            v.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+                .map(|m| truncate(m, 200))
+        })
+        .unwrap_or_else(|| truncate(trimmed, 200));
+    if is_context_window_body(body) {
+        return Some(format!("{CONTEXT_WINDOW_MARKER}{detail}"));
     }
-    Some(truncate(trimmed, 200))
+    Some(detail)
 }
 
 /// Truncate to at most `max` characters (char-safe).
@@ -309,6 +377,18 @@ fn backoff_delay(attempt: u32, hint: Option<Duration>, cfg: &RetryConfig) -> Dur
     cfg.base.saturating_mul(factor).min(cfg.max)
 }
 
+/// Short human reason for the default-on retry notice (CLO-798). Pure.
+/// [`is_retryable`] admits only rate limits and 5xx, so the fallback arm is
+/// defensive rather than reachable.
+#[cfg(feature = "cli")]
+fn retry_reason(kind: &ErrorKind) -> String {
+    match kind {
+        ErrorKind::RateLimit { .. } => "rate limited (HTTP 429)".to_string(),
+        ErrorKind::Server(status) => format!("server error (HTTP {status})"),
+        _ => "transient failure".to_string(),
+    }
+}
+
 /// Run `op`, retrying transient failures with bounded backoff. The sleeper is
 /// injected (`FnMut`) so tests record delays with no real sleep and no network.
 #[cfg(feature = "cli")]
@@ -326,12 +406,17 @@ fn retry_with<T>(
                     return Err(e);
                 }
                 let delay = backoff_delay(attempt, retry_after_hint(&e.kind), cfg);
-                crate::debug_log!(
-                    "{} attempt {} failed: {:?}; retrying in {delay:?}",
+                // Warn, not debug (CLO-798): four attempts each running to the
+                // 60s timeout is ~4 minutes, and this line is the only thing
+                // distinguishing that from a hung process.
+                crate::warn_log!(
+                    "{} {}; attempt {} of {}, retrying in {delay:?}",
                     e.provider,
+                    retry_reason(&e.kind),
                     attempt + 1,
-                    e.kind
+                    cfg.max_retries + 1
                 );
+                crate::debug_log!("{} retry detail: {:?}", e.provider, e.kind);
                 sleep(delay);
                 attempt += 1;
             }
@@ -367,6 +452,86 @@ mod tests {
             base: Duration::from_millis(base_ms),
             max: Duration::from_millis(max_ms),
         }
+    }
+
+    /// CLO-798 AC-5: the detector must fire on every real context-window
+    /// rejection and on none of the look-alikes. The two hazards it exists for
+    /// are a signal that lives only in a sibling `code`, and one that sits past
+    /// the 200-char truncation of `error.message`.
+    #[test]
+    fn context_window_detector() {
+        // Signal in the message (Groq / OpenAI prose).
+        assert!(is_context_window_body(
+            r#"{"error":{"message":"Please reduce the length of the messages"}}"#
+        ));
+        // Signal only in a sibling code - the message says nothing useful.
+        assert!(is_context_window_body(
+            r#"{"error":{"message":"Request too large","code":"context_length_exceeded"}}"#
+        ));
+        // Signal past character 200 of the message.
+        let long = format!(
+            r#"{{"error":{{"message":"{}  the prompt is too long for this model"}}}}"#,
+            "padding ".repeat(40)
+        );
+        assert!(long.len() > 200);
+        assert!(is_context_window_body(&long));
+        // Anthropic.
+        assert!(is_context_window_body(
+            r#"{"error":{"type":"invalid_request_error","message":"prompt is too long: 250000 tokens"}}"#
+        ));
+        // Gemini / Vertex, with the token anchor present.
+        assert!(is_context_window_body(
+            r#"{"error":{"message":"The input token count (1200000) exceeds the maximum allowed"}}"#
+        ));
+
+        // Unrelated 400s must not trip it.
+        for body in [
+            r#"{"error":{"message":"Unsupported parameter: 'response_format'"}}"#,
+            r#"{"error":{"message":"model `nope` does not exist","code":"model_not_found"}}"#,
+            "<html><body>400 Bad Request</body></html>",
+        ] {
+            assert!(!is_context_window_body(body), "false positive on {body}");
+        }
+        // The bare phrase without a token anchor is explicitly NOT enough: other
+        // limits are worded the same way and shrinking the diff would not help.
+        assert!(!is_context_window_body(
+            r#"{"error":{"message":"value exceeds the maximum allowed length"}}"#
+        ));
+    }
+
+    /// The marker has to reach the CLI on the same paths the detector fires on,
+    /// and must never appear otherwise.
+    #[test]
+    fn bad_request_detail_marks_context_window() {
+        let marked = bad_request_detail(
+            r#"{"error":{"message":"Request too large","code":"context_length_exceeded"}}"#,
+        )
+        .unwrap();
+        assert!(marked.starts_with(CONTEXT_WINDOW_MARKER), "got {marked:?}");
+        assert!(marked.ends_with("Request too large"));
+
+        let plain = bad_request_detail(r#"{"error":{"message":"Unsupported parameter"}}"#).unwrap();
+        assert!(!plain.contains(CONTEXT_WINDOW_MARKER));
+        assert_eq!(plain, "Unsupported parameter");
+
+        assert_eq!(bad_request_detail("   "), None);
+    }
+
+    /// CLO-798: the default-on retry notice names what went wrong in words,
+    /// not a Debug dump.
+    #[test]
+    fn retry_reason_is_human() {
+        assert_eq!(
+            retry_reason(&ErrorKind::RateLimit { retry_after: None }),
+            "rate limited (HTTP 429)"
+        );
+        assert_eq!(
+            retry_reason(&ErrorKind::Server(503)),
+            "server error (HTTP 503)"
+        );
+        // Every kind retry_with can actually see is covered above; the rest of
+        // the taxonomy still renders rather than panicking.
+        assert_eq!(retry_reason(&ErrorKind::Timeout), "transient failure");
     }
 
     #[test]
