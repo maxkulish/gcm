@@ -88,15 +88,20 @@ fn message_body() -> String {
     serde_json::json!({ "choices": [{ "message": { "content": "feat: test" } }] }).to_string()
 }
 
-/// A Groq-shaped 400 whose signal lives in the sibling `error.code` and past
-/// character 200 of `error.message` - the two extraction hazards from AC-5.
+/// The hardest real 400 to classify: no context-specific machine code, the
+/// signal past character 200 of `error.message` (where `bad_request_detail`
+/// truncates), and completion-token wording that a naive output-budget filter
+/// would veto even though input and output share the same window.
 fn context_window_400() -> String {
     let padding = "the request could not be served for the following reason: ".repeat(4);
     serde_json::json!({
         "error": {
-            "message": format!("{padding}please reduce the length of the messages"),
+            "message": format!(
+                "{padding}the input exceeds the context window: 9000 input tokens \
+                 plus 1000 completion tokens exceed the 8192 token context limit"
+            ),
             "type": "invalid_request_error",
-            "code": "context_length_exceeded"
+            "code": "invalid_request_error"
         }
     })
     .to_string()
@@ -572,6 +577,15 @@ fn transition_announced_under_json() {
     let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(env["status"], "fallback", "{stdout}");
     assert_eq!(env["fallback"]["raw_code"], "BadRequest", "{stdout}");
+    assert_eq!(env["v"], 1, "{stdout}");
+    assert_eq!(env["mode"], "grouped", "{stdout}");
+    let mut top: Vec<&String> = env.as_object().unwrap().keys().collect();
+    top.sort();
+    assert_eq!(
+        top,
+        ["commit", "fallback", "mode", "model", "provider", "status", "v"],
+        "{stdout}"
+    );
     let mut fallback_keys: Vec<&String> = env["fallback"].as_object().unwrap().keys().collect();
     fallback_keys.sort();
     assert_eq!(fallback_keys, ["commit", "raw_code", "reason"], "{stdout}");
@@ -583,7 +597,10 @@ fn transition_announced_under_json() {
 
 /// AC-12: a call that fails inside the provider, before any request goes out,
 /// must leave nothing behind and wait for nothing. The non-TTY ticker interval
-/// is 5s, so an uninterruptible wait would show up here as a 5s run.
+/// is 4s, so an uninterruptible wait shows up here as a run of at least that
+/// long; the bound sits at 2s, which is clear of the interval but still leaves
+/// room for a process spawn that shares the machine with the stalling tests
+/// running beside it.
 #[test]
 fn fast_failure_leaves_no_ticker() {
     let repo = tempfile::tempdir().unwrap();
@@ -610,7 +627,7 @@ fn fast_failure_leaves_no_ticker() {
         "no ticker should have fired: {stderr}"
     );
     assert!(
-        elapsed < Duration::from_secs(1),
+        elapsed < Duration::from_secs(2),
         "the ticker wait was not interruptible: {elapsed:?}"
     );
     assert_plain(&stderr);

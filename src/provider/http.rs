@@ -37,10 +37,10 @@ const DEFAULT_RETRY_MAX: Duration = Duration::from_secs(8);
 const MODEL_FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The generation-call budget in seconds: `GCM_HTTP_TIMEOUT_SECS` when set to a
-/// positive value, else [`DEFAULT_TIMEOUT_SECS`]. Public so the CLI can name the
+/// positive value, else `DEFAULT_TIMEOUT_SECS`. Public so the CLI can name the
 /// budget that actually applied when a call times out (CLO-798) instead of
 /// duplicating the default. Note this is **not** the budget for
-/// [`get_json`], which uses the fixed [`MODEL_FETCH_TIMEOUT`].
+/// [`get_json`], which uses the fixed `MODEL_FETCH_TIMEOUT`.
 #[cfg(feature = "cli")]
 pub fn timeout_secs() -> u64 {
     env_u64("GCM_HTTP_TIMEOUT_SECS")
@@ -75,13 +75,16 @@ pub const CONTEXT_WINDOW_MARKER: &str = "context_window: ";
 pub fn is_context_window_body(body: &str) -> bool {
     let b = body.to_lowercase();
 
-    // Explicit input-side signals win outright, before any veto. A genuine
-    // context-window rejection often names the completion budget as well,
-    // because input and output share the same window: "9000 input tokens plus
-    // 1000 completion tokens exceed the 8192 token context limit" is one of
-    // these, not an output-budget failure.
+    // Unambiguous evidence that the *window* is what was exceeded. Checked
+    // before the veto below, because input and output share that window: a real
+    // rejection routinely reads "9000 input tokens plus 1000 completion tokens
+    // exceed the 8192 token context limit", and vetoing it on the word
+    // "completion" would send the user back to "please report it".
     if b.contains("context_length_exceeded")
         || b.contains("string_above_max_length")
+        || b.contains("context window")
+        || b.contains("context limit")
+        || b.contains("context length")
         || b.contains("reduce the length of the messages")
         || b.contains("please reduce the length")
         || b.contains("prompt is too long")
@@ -91,8 +94,9 @@ pub fn is_context_window_body(body: &str) -> bool {
         return true;
     }
 
-    // With no input-side signal, output-budget wording means an output-budget
-    // rejection - the one class where "send a smaller prompt" is wrong advice.
+    // With no window evidence at all, output-budget wording means an
+    // output-budget rejection - the one class where "send a smaller prompt" is
+    // wrong advice, and the only reason this veto exists.
     if b.contains("max_tokens")
         || b.contains("max_completion_tokens")
         || b.contains("max_output_tokens")
@@ -108,11 +112,10 @@ pub fn is_context_window_body(body: &str) -> bool {
         return true;
     }
 
-    // Gemini / Vertex: require a token-count anchor next to the "exceeds"
-    // phrasing, never "exceeds the maximum" on its own.
-    let token_anchor =
-        b.contains("token count") || b.contains("context length") || b.contains("context window");
-    token_anchor && (b.contains("exceed") || b.contains("too many") || b.contains("too large"))
+    // Gemini / Vertex: a token-count anchor next to the "exceeds" phrasing,
+    // never "exceeds the maximum" on its own.
+    b.contains("token count")
+        && (b.contains("exceed") || b.contains("too many") || b.contains("too large"))
 }
 
 /// One provider HTTP request (CLO-489 round-2 review pt 5): `auth` is an optional
@@ -504,6 +507,11 @@ mod tests {
         ));
         assert!(is_context_window_body(
             r#"{"error":{"message":"input length and max_tokens exceed context limit"}}"#
+        ));
+        // The same overflow with no machine code at all: the prose names the
+        // window, so the completion-token mention must not veto it.
+        assert!(is_context_window_body(
+            r#"{"error":{"code":"invalid_request_error","message":"The input exceeds the context window: 9000 input tokens plus 1000 completion tokens exceed the 8192 token context limit."}}"#
         ));
 
         // Unrelated 400s must not trip it.
