@@ -129,10 +129,17 @@ fn is_timeout(kind: &ErrorKind) -> bool {
 
 /// Never says "a gcm bug; please report it": an oversized diff is the user's
 /// input, and there is a real recovery for it.
+///
+/// Worded "too large to accept" rather than "exceeds the context window". The
+/// transport's detector also matches per-string length limits and gateway
+/// payload-size rejections, which are not the context window but do have the
+/// same recovery; claiming the context window specifically would be wrong for
+/// those. Output-budget rejections, where the recovery would differ, never reach
+/// here - `http::is_context_window_body` vetoes them.
 fn context_window_message(shape: CallShape, provider: &str, detail: &str) -> String {
     let mut msg = format!(
-        "{provider} rejected the {} request: the prompt is larger than the model's \
-         context window ({} file(s), ~{}). {}",
+        "{provider} rejected the {} request: the prompt is too large for this model \
+         to accept ({} file(s), ~{}). {}",
         shape.operation.label(),
         shape.files,
         human_bytes(shape.prompt_bytes),
@@ -181,7 +188,7 @@ mod tests {
     fn context_window_message_is_gcm_authored() {
         let marked = format!("{}context_length_exceeded", http::CONTEXT_WINDOW_MARKER);
         let msg = describe(shape(Operation::Grouping), &bad_request(&marked)).unwrap();
-        assert!(msg.contains("context window"), "{msg}");
+        assert!(msg.contains("too large for this model"), "{msg}");
         assert!(msg.contains("12 file(s)"), "{msg}");
         assert!(msg.contains("~48 KB"), "{msg}");
         assert!(msg.contains("context_length_exceeded"), "{msg}");

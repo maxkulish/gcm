@@ -325,6 +325,54 @@ mod tests {
         assert_eq!(r.t_clear(), "", "clearing twice writes nothing");
     }
 
+    /// CLO-798 AC-10 under contention: the property the mutex buys is that no
+    /// write can be observed between another writer's state change and its bytes.
+    /// Two threads - one ticking, one logging - drive the shared renderer, and
+    /// every output is collected under the same lock, so the collected sequence
+    /// is exactly what stderr would have received. The invariant: whatever
+    /// follows a frame starts by erasing it.
+    #[test]
+    fn concurrent_writers_never_land_on_a_drawn_frame() {
+        use std::sync::{Arc, Mutex};
+
+        let shared = Arc::new(Mutex::new(progress::test_renderer()));
+        let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let mut handles = Vec::new();
+        for (is_ticker, label) in [(true, "tick"), (false, "log")] {
+            let shared = Arc::clone(&shared);
+            let log = Arc::clone(&log);
+            handles.push(std::thread::spawn(move || {
+                for i in 0..500 {
+                    let mut r = shared.lock().unwrap();
+                    let out = if is_ticker {
+                        r.t_frame(&format!("{label} {i}"))
+                    } else {
+                        r.t_line(&format!("{label} {i}"), true)
+                    };
+                    log.lock().unwrap().push(out);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let writes = log.lock().unwrap();
+        assert_eq!(writes.len(), 1000);
+        let mut frame_drawn = false;
+        for (i, out) in writes.iter().enumerate() {
+            if frame_drawn {
+                assert!(
+                    out.starts_with("\r\x1b[K"),
+                    "write {i} landed on a drawn frame: {out:?}"
+                );
+            }
+            // A frame has no trailing newline; a line does.
+            frame_drawn = !out.ends_with('\n');
+        }
+    }
+
     /// CLO-798 AC-8: off a TTY the renderer never emits `\r` or an escape, even
     /// with a frame recorded - the non-TTY ticker writes whole lines, so there is
     /// nothing to erase and a redirected stderr stays plain text.

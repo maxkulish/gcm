@@ -241,7 +241,7 @@ fn slow_endpoint_emits_progress() {
     let mut previous = Duration::ZERO;
     for (at, line) in &stamps {
         assert!(
-            *at - previous < Duration::from_millis(6_500),
+            *at - previous < Duration::from_millis(5_500),
             "{:?} of silence before {line:?}: {transcript:?}",
             *at - previous
         );
@@ -361,7 +361,7 @@ fn context_window_message_grouping() {
 
     let out = run(repo.path(), cfg.path(), &url, &["--dry-run", "--yes"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("context window"), "{stderr}");
+    assert!(stderr.contains("too large for this model"), "{stderr}");
     assert!(stderr.contains("4 file(s)"), "{stderr}");
     assert!(stderr.contains('~'), "names the prompt size: {stderr}");
     assert!(
@@ -528,7 +528,7 @@ fn transition_announced_under_json() {
     );
     let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(env["status"], "fallback", "{stdout}");
-    assert!(env["fallback"]["raw_code"].is_string(), "{stdout}");
+    assert_eq!(env["fallback"]["raw_code"], "BadRequest", "{stdout}");
     // Two calls, two different operation labels.
     assert!(stderr.contains("gcm: grouping:"), "{stderr}");
     assert!(stderr.contains("gcm: fallback message:"), "{stderr}");
@@ -564,7 +564,7 @@ fn fast_failure_leaves_no_ticker() {
         "no ticker should have fired: {stderr}"
     );
     assert!(
-        elapsed < Duration::from_secs(2),
+        elapsed < Duration::from_millis(1_500),
         "the ticker wait was not interruptible: {elapsed:?}"
     );
     assert_plain(&stderr);

@@ -74,12 +74,27 @@ pub const CONTEXT_WINDOW_MARKER: &str = "context_window: ";
 /// arm therefore requires a token- or context-specific anchor.
 pub fn is_context_window_body(body: &str) -> bool {
     let b = body.to_lowercase();
+    // Output-budget rejections are worded almost identically and are the one
+    // class where "send a smaller prompt" is wrong advice, so they veto the
+    // whole check rather than merely failing to match it.
+    if b.contains("max_tokens")
+        || b.contains("max_completion_tokens")
+        || b.contains("max_output_tokens")
+        || b.contains("output token")
+        || b.contains("completion token")
+    {
+        return false;
+    }
     // OpenAI / Groq / most OpenAI-compatible backends: a machine code, in
     // `error.code` or `error.type`, which survives regardless of message length.
+    // `string_above_max_length` is a per-field length limit rather than the
+    // context window as such, but the only oversized string gcm ever sends is
+    // the prompt, so the recovery is the same.
     if b.contains("context_length_exceeded") || b.contains("string_above_max_length") {
         return true;
     }
-    // Groq / OpenAI prose form.
+    // Groq / OpenAI prose form, plus the payload-size wording a gateway in front
+    // of the provider uses. Same recovery: send less.
     if b.contains("reduce the length of the messages")
         || b.contains("please reduce the length")
         || b.contains("request too large")
@@ -92,9 +107,6 @@ pub fn is_context_window_body(body: &str) -> bool {
     }
     // Gemini / Vertex: require a token-count anchor next to the "exceeds"
     // phrasing, never "exceeds the maximum" on its own.
-    // `max_tokens` is deliberately absent: it names the *output* budget, and
-    // "max_tokens exceeds the model limit" is an unrelated 400 that shrinking the
-    // prompt would not fix.
     let token_anchor = b.contains("input token count")
         || b.contains("token count")
         || b.contains("context length")
@@ -500,11 +512,14 @@ mod tests {
         assert!(!is_context_window_body(
             r#"{"error":{"message":"value exceeds the maximum allowed length"}}"#
         ));
-        // An *output* budget rejection is not a context-window rejection. Telling
-        // the user to send a smaller diff would not fix it.
+        // An *output* budget rejection is not an oversized request. Telling the
+        // user to send a smaller diff would not fix it, so these veto the check
+        // even when they also carry input-side wording.
         for body in [
             r#"{"error":{"message":"max_tokens: 200000 exceeds the model limit","type":"invalid_request_error"}}"#,
             r#"{"error":{"message":"max_completion_tokens is too large"}}"#,
+            r#"{"error":{"message":"the output token count exceeds the maximum for this model"}}"#,
+            r#"{"error":{"message":"completion token count (9000) exceeds max_output_tokens"}}"#,
         ] {
             assert!(!is_context_window_body(body), "false positive on {body}");
         }

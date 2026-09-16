@@ -886,6 +886,56 @@ mod tests {
         assert!(matches!(out.source, FetchSource::Fallback));
     }
 
+    /// CLO-798 AC-4 (evaluation row 8), transport-backed: a real endpoint that
+    /// accepts and then never answers. The fixed discovery budget - not
+    /// `GCM_HTTP_TIMEOUT_SECS`, which is deliberately raised here to prove it has
+    /// no effect - is what ends the wait, and the wizard falls back rather than
+    /// hanging the spinner.
+    #[test]
+    fn model_fetch_stalling_endpoint_falls_back_on_its_own_budget() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let thread_stop = std::sync::Arc::clone(&stop);
+        let handle = thread::spawn(move || {
+            listener.set_nonblocking(true).ok();
+            while !thread_stop.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Ok((stream, _)) = listener.accept() {
+                    // Hold the connection open, answering nothing, until the
+                    // client gives up on its own budget.
+                    while !thread_stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    drop(stream);
+                    return;
+                }
+                thread::sleep(std::time::Duration::from_millis(10));
+            }
+        });
+
+        let started = std::time::Instant::now();
+        let out = fetch_supported_models_with(
+            ProviderId::Groq,
+            Some("sk-123"),
+            Some(&format!("http://127.0.0.1:{port}")),
+            None,
+            http::get_json,
+        );
+        let elapsed = started.elapsed();
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = handle.join();
+
+        assert!(matches!(out.source, FetchSource::Fallback));
+        let warning = out.warning.expect("a stalled fetch warns");
+        assert!(warning.contains("discovery budget"), "{warning}");
+        assert!(!warning.contains("GCM_HTTP_TIMEOUT_SECS"), "{warning}");
+        // One light retry over a 5s budget; well under the 60s generation budget.
+        assert!(
+            elapsed < std::time::Duration::from_secs(30),
+            "discovery used the generation budget: {elapsed:?}"
+        );
+    }
+
     /// CLO-798 AC-4 (evaluation row 8): model discovery runs on its own fixed
     /// budget, and `GCM_HTTP_TIMEOUT_SECS` does not move it. Describing the
     /// failure with the 60s generation budget would point the user at a knob
