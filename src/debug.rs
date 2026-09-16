@@ -121,7 +121,7 @@ macro_rules! warn_log {
 ///
 /// The ticker redraws one line in place with a leading `\r`. Any other write
 /// that arrives mid-call would otherwise land on top of that partially drawn
-/// line. Writers therefore go through [`emit_line`], which erases a live ticker
+/// line. Writers therefore go through [`progress::emit_line`], which erases a live ticker
 /// line first and then writes its own message whole.
 ///
 /// The live-line width is a single process-wide static. This module must have

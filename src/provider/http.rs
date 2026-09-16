@@ -55,7 +55,7 @@ pub fn model_fetch_timeout_secs() -> u64 {
     MODEL_FETCH_TIMEOUT.as_secs()
 }
 
-/// Marker prepended to a [`ErrorKind::BadRequest`] detail when the body is a
+/// Marker prepended to a `BadRequest` detail when the body is a
 /// context-window rejection rather than a malformed request (CLO-798).
 ///
 /// `ErrorKind` is public library surface and cannot grow a variant, and the

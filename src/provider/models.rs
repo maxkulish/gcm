@@ -137,22 +137,8 @@ pub fn fetch_supported_models_with(
                  project lacks permission) - run `gcloud auth application-default \
                  login` or check the project; using the built-in list"
                     .to_string()
-            } else if matches!(e.kind, super::ErrorKind::Timeout) {
-                // Model discovery has its own fixed budget, not the generation
-                // timeout, and `GCM_HTTP_TIMEOUT_SECS` does not move it (CLO-798
-                // AC-4). Naming the wrong number would send the user to a knob
-                // that changes nothing here.
-                format!(
-                    "could not fetch {} models (no answer within the {}s discovery budget); \
-                     using the built-in list",
-                    id.as_str(),
-                    http::model_fetch_timeout_secs()
-                )
             } else {
-                format!(
-                    "could not fetch {} models ({e}); using the built-in list",
-                    id.as_str()
-                )
+                fetch_failure_warning(id, &e)
             };
             ModelFetchOutcome {
                 models: static_fallback_models(id),
@@ -161,6 +147,38 @@ pub fn fetch_supported_models_with(
             }
         }
     }
+}
+
+/// Why a model-list fetch fell back to the static list.
+///
+/// Discovery runs on its own fixed budget, not the generation timeout, and
+/// `GCM_HTTP_TIMEOUT_SECS` does not move it (CLO-798 AC-4) - naming that number
+/// here would send the user to a knob that changes nothing.
+#[cfg(feature = "cli")]
+fn fetch_failure_warning(id: ProviderId, e: &super::ProviderError) -> String {
+    if matches!(e.kind, super::ErrorKind::Timeout) {
+        format!(
+            "could not fetch {} models (no answer within the {}s discovery budget); \
+             using the built-in list",
+            id.as_str(),
+            http::model_fetch_timeout_secs()
+        )
+    } else {
+        format!(
+            "could not fetch {} models ({e}); using the built-in list",
+            id.as_str()
+        )
+    }
+}
+
+/// Without the CLI feature the discovery budget does not exist, so neither does
+/// the timeout it would name.
+#[cfg(not(feature = "cli"))]
+fn fetch_failure_warning(id: ProviderId, e: &super::ProviderError) -> String {
+    format!(
+        "could not fetch {} models ({e}); using the built-in list",
+        id.as_str()
+    )
 }
 
 /// Query the live model-list endpoint and parse it into raw ids (unfiltered).
@@ -866,6 +884,32 @@ mod tests {
         let out =
             fetch_supported_models_with(ProviderId::Openai, Some("sk-123"), None, None, fetch_err);
         assert!(matches!(out.source, FetchSource::Fallback));
+    }
+
+    /// CLO-798 AC-4 (evaluation row 8): model discovery runs on its own fixed
+    /// budget, and `GCM_HTTP_TIMEOUT_SECS` does not move it. Describing the
+    /// failure with the 60s generation budget would point the user at a knob
+    /// that changes nothing here.
+    #[test]
+    fn model_fetch_timeout_names_its_own_budget() {
+        let timed_out = |_req: &HttpGet| -> Result<String, crate::provider::ProviderError> {
+            Err(crate::provider::ProviderError {
+                provider: "Groq",
+                kind: crate::provider::ErrorKind::Timeout,
+            })
+        };
+        let out =
+            fetch_supported_models_with(ProviderId::Groq, Some("sk-123"), None, None, timed_out);
+        let warning = out.warning.expect("a timed-out fetch warns");
+        assert!(
+            warning.contains(&format!(
+                "{}s discovery budget",
+                http::model_fetch_timeout_secs()
+            )),
+            "{warning}"
+        );
+        assert!(!warning.contains("60s"), "{warning}");
+        assert!(!warning.contains("GCM_HTTP_TIMEOUT_SECS"), "{warning}");
     }
 
     #[test]
