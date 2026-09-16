@@ -261,7 +261,8 @@ timeout names the budget that expired and `GCM_HTTP_TIMEOUT_SECS`, and a prompt 
 large for the model's context window gets advice specific to the call that failed
 rather than a request to file a bug.
 
-`GCM_LOG_LEVEL=off` silences all of it; `GCM_LOG_LEVEL=debug` adds the per-section
+`GCM_LOG_LEVEL=off` silences the status lines, the ticker, retry notices and the
+fallback announcement (errors still print); `GCM_LOG_LEVEL=debug` adds the per-section
 byte split of each prompt. Under `--json` the spinner does not run, but the status
 lines, retry notices and the grouping-to-single-commit announcement still reach
 stderr - stdout stays exactly one envelope.

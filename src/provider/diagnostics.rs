@@ -51,19 +51,30 @@ impl Operation {
     }
 
     /// What the user can actually do about an oversized prompt on this path.
+    ///
+    /// Staging is deliberately not suggested: `gather_for_grouping` builds its
+    /// file set from every change in the worktree - staged, unstaged and
+    /// untracked alike (`src/diff.rs:204`) - so staging a subset sends exactly
+    /// the same bytes and the call fails again. Lowering the budget or removing
+    /// paths from the set is what actually shrinks the request.
     fn oversize_advice(self) -> &'static str {
         match self {
+            // The grouping prompt carries a file list, a status block and a
+            // per-file-truncated diff; the single-message prompt carries only the
+            // stat and the diff, so --all really is the smaller request.
             Operation::Grouping => {
-                "Retry with --all to send one message for everything, or stage fewer files."
+                "Retry with --all, which sends a smaller prompt, or lower \
+                 GCM_DIFF_TOTAL_BYTES to send less of the diff."
             }
-            // Not --all: the diff here is one group's files, and --all would send
-            // the whole worktree instead - strictly more.
+            // Not --all: that would widen the request back to the whole worktree.
             Operation::GroupMessage => {
-                "Stage fewer files, or raise GCM_DIFF_TOTAL_BYTES if the model can take more."
+                "Lower GCM_DIFF_TOTAL_BYTES to send less of the diff, or exclude \
+                 generated paths with .gcmignore."
             }
             Operation::SingleMessage | Operation::FallbackMessage => {
-                "Everything is already in one message, so commit in smaller batches \
-                 (stage a subset and run gcm again), or raise GCM_DIFF_TOTAL_BYTES."
+                "Everything is already in one message, so lower GCM_DIFF_TOTAL_BYTES \
+                 to send less of the diff, exclude generated paths with .gcmignore, \
+                 or commit the unrelated work separately first."
             }
         }
     }
@@ -195,11 +206,26 @@ mod tests {
             assert!(!msg.contains("--all"), "{op:?} still suggests --all: {msg}");
             assert!(msg.contains(op.label()), "{msg}");
         }
-        assert!(
-            describe(shape(Operation::SingleMessage), &bad_request(&marked))
-                .unwrap()
-                .contains("smaller batches")
-        );
+        // The advice has to name something that actually shrinks the request.
+        // Staging never does: the prompt is built from the whole worktree
+        // (`diff::gather_for_grouping`), so a staged subset sends the same bytes.
+        for op in [
+            Operation::Grouping,
+            Operation::GroupMessage,
+            Operation::SingleMessage,
+            Operation::FallbackMessage,
+        ] {
+            let msg = describe(shape(op), &bad_request(&marked)).unwrap();
+            assert!(
+                !msg.to_lowercase().contains("stage"),
+                "{op:?} suggests staging, which does not narrow the prompt: {msg}"
+            );
+            assert!(msg.contains("GCM_DIFF_TOTAL_BYTES"), "{msg}");
+            assert!(
+                !msg.contains("raise GCM_DIFF_TOTAL_BYTES"),
+                "raising the budget makes an oversized prompt larger: {msg}"
+            );
+        }
     }
 
     /// An ordinary 400 keeps the provider's own message: gcm has nothing better

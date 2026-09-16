@@ -129,54 +129,100 @@ macro_rules! warn_log {
 /// into the library only and the binary reaches it as `gcm::debug::progress`.
 pub mod progress {
     use std::io::{IsTerminal, Write};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
 
-    /// Column width of the ticker line currently drawn on stderr; 0 when none is
-    /// live. Only meaningful on a TTY - the non-TTY ticker writes whole lines and
-    /// so never needs erasing.
-    static LIVE_WIDTH: AtomicUsize = AtomicUsize::new(0);
-
-    /// Record that a ticker line of `width` columns is drawn on stderr.
-    pub fn set_live(width: usize) {
-        LIVE_WIDTH.store(width, Ordering::SeqCst);
-    }
-
-    /// Record that no ticker line is drawn.
-    pub fn clear_live() {
-        LIVE_WIDTH.store(0, Ordering::SeqCst);
-    }
-
-    /// The width currently registered, 0 when nothing is live.
-    pub fn live_width() -> usize {
-        LIVE_WIDTH.load(Ordering::SeqCst)
-    }
-
-    /// Pure: the exact bytes that put `msg` on its own clean line.
+    /// Whether a ticker frame is currently drawn on stderr, and therefore has to
+    /// be erased before anything else is written there.
     ///
-    /// With nothing live, or off a TTY, that is just the message and a newline -
-    /// which is why a redirected stderr never receives a `\r` or an escape
-    /// sequence (CLO-798 AC-8).
-    ///
-    /// With a ticker line drawn on a TTY, the cursor returns to column 0 and the
-    /// rest of the line is erased with `ESC[K`. Blanking with `live_width` spaces
-    /// instead would look equivalent but corrupts on a terminal resized narrower
-    /// mid-call, since the recorded width no longer matches the real line.
-    /// `live_width` is therefore only consulted as "is a line drawn".
-    pub fn line_with_clear(msg: &str, live_width: usize, tty: bool) -> String {
-        if live_width == 0 || !tty {
-            return format!("{msg}\n");
+    /// This is state **and** the write it describes. Holding them apart - an
+    /// atomic flag plus an unsynchronized write - leaves an interleaving where a
+    /// logger reads "nothing is drawn", the ticker then draws, and the logger's
+    /// line lands on top of the frame. So every write to stderr on this path goes
+    /// through [`RENDERER`], which mutates the flag and writes the bytes under one
+    /// lock. The lock is held only for the duration of one small write.
+    #[derive(Default)]
+    pub(in crate::debug) struct Renderer {
+        live: bool,
+    }
+
+    /// Return to column 0 and erase to end of line. Preferred over blanking with
+    /// the recorded width, which corrupts on a terminal resized narrower during
+    /// the call.
+    const CLEAR: &str = "\r\x1b[K";
+
+    impl Renderer {
+        /// The exact bytes that put `msg` on its own clean line, and the state
+        /// that leaves behind. Pure, so the interleaving is testable without a
+        /// terminal or a second thread.
+        fn line(&mut self, msg: &str, tty: bool) -> String {
+            let prefix = if self.live && tty { CLEAR } else { "" };
+            self.live = false;
+            format!("{prefix}{msg}\n")
         }
-        format!("\r\x1b[K{msg}\n")
+
+        /// The bytes for one in-place ticker frame. Off a TTY the caller uses
+        /// [`Renderer::line`] instead, so this never emits an escape there.
+        fn frame(&mut self, msg: &str) -> String {
+            self.live = true;
+            format!("{CLEAR}{msg}")
+        }
+
+        /// The bytes that remove a drawn frame, if any.
+        fn clear(&mut self) -> String {
+            if !std::mem::take(&mut self.live) {
+                return String::new();
+            }
+            CLEAR.to_string()
+        }
     }
 
-    /// Write `msg` to stderr as a whole line, erasing a live ticker line first.
-    /// The ticker is marked not-live: its next tick redraws below the message.
-    pub fn emit_line(msg: &str) {
+    static RENDERER: Mutex<Renderer> = Mutex::new(Renderer { live: false });
+
+    fn with_renderer(f: impl FnOnce(&mut Renderer, bool) -> String) {
         let mut err = std::io::stderr();
-        let out = line_with_clear(msg, live_width(), err.is_terminal());
+        let tty = err.is_terminal();
+        let mut guard = RENDERER.lock().unwrap_or_else(|e| e.into_inner());
+        let out = f(&mut guard, tty);
+        if out.is_empty() {
+            return;
+        }
         let _ = err.write_all(out.as_bytes());
         let _ = err.flush();
-        clear_live();
+    }
+
+    /// Write `msg` to stderr as a whole line, erasing a live ticker frame first.
+    /// The frame is marked gone: the ticker redraws below the message.
+    pub fn emit_line(msg: &str) {
+        with_renderer(|r, tty| r.line(msg, tty));
+    }
+
+    /// Draw one in-place ticker frame (TTY only; the caller uses [`emit_line`]
+    /// off a TTY). A frame carries no newline, hence the flush inside.
+    pub fn draw_frame(msg: &str) {
+        with_renderer(|r, _| r.frame(msg));
+    }
+
+    /// Erase a drawn frame and leave the cursor at column 0. Idempotent.
+    pub fn clear_live() {
+        with_renderer(|r, _| r.clear());
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_renderer() -> Renderer {
+        Renderer::default()
+    }
+
+    #[cfg(test)]
+    impl Renderer {
+        pub(super) fn t_line(&mut self, msg: &str, tty: bool) -> String {
+            self.line(msg, tty)
+        }
+        pub(super) fn t_frame(&mut self, msg: &str) -> String {
+            self.frame(msg)
+        }
+        pub(super) fn t_clear(&mut self) -> String {
+            self.clear()
+        }
     }
 }
 
@@ -243,47 +289,52 @@ mod tests {
         assert_eq!(resolve_level(Some("off"), Some("1")), Level::Off);
     }
 
-    /// CLO-798 AC-10: a log line written while the ticker is live erases the
-    /// ticker line first, then writes its own message whole.
+    /// CLO-798 AC-10: the clear and the message are one transaction. The
+    /// renderer owns both the "a frame is drawn" flag and the bytes that act on
+    /// it, so the sequence below is the only one a concurrent writer can observe -
+    /// an atomic flag read separately from the write would allow a log line to
+    /// land on top of a frame drawn between the read and the write.
     #[test]
     fn emit_line_clears_progress_first() {
-        // Nothing live: a plain line, no control characters at all.
+        let mut r = progress::test_renderer();
+        // Nothing drawn: a plain line, no control characters at all.
         assert_eq!(
-            progress::line_with_clear("gcm: [warn] retrying", 0, true),
+            r.t_line("gcm: [warn] retrying", true),
             "gcm: [warn] retrying\n"
         );
-        // Live ticker on a TTY: return to column 0, erase the rest of the line,
-        // then the message. Erasing rather than space-padding keeps this correct
-        // when the terminal was resized narrower during the call.
+        // A frame, then a log line: the frame is erased in the same write.
         assert_eq!(
-            progress::line_with_clear("gcm: [warn] retrying", 4, true),
+            r.t_frame("gcm: | grouping... 7s"),
+            "\r\x1b[Kgcm: | grouping... 7s"
+        );
+        assert_eq!(
+            r.t_line("gcm: [warn] retrying", true),
             "\r\x1b[Kgcm: [warn] retrying\n"
         );
-        // The recorded width is only a liveness flag: a different width produces
-        // the same bytes, so a stale width cannot corrupt the line.
+        // The frame is gone, so a second log line does not erase again.
         assert_eq!(
-            progress::line_with_clear("gcm: [warn] retrying", 120, true),
-            progress::line_with_clear("gcm: [warn] retrying", 4, true)
+            r.t_line("gcm: [warn] retrying", true),
+            "gcm: [warn] retrying\n"
         );
-        // Not a TTY: never emit `\r` or an escape, even with a width registered
-        // (AC-8).
-        for width in [0, 4, 120] {
-            let out = progress::line_with_clear("gcm: [warn] retrying", width, false);
-            assert_eq!(out, "gcm: [warn] retrying\n");
-            assert!(!out.contains('\x1b'), "escape leaked off-TTY: {out:?}");
-            assert!(!out.contains('\r'), "CR leaked off-TTY: {out:?}");
-        }
-        // Nothing live means a plain line even on a TTY.
-        assert!(!progress::line_with_clear("m", 0, true).contains('\x1b'));
+        // The ticker resumes below the message.
+        assert_eq!(
+            r.t_frame("gcm: / grouping... 8s"),
+            "\r\x1b[Kgcm: / grouping... 8s"
+        );
+        assert_eq!(r.t_clear(), "\r\x1b[K");
+        assert_eq!(r.t_clear(), "", "clearing twice writes nothing");
     }
 
+    /// CLO-798 AC-8: off a TTY the renderer never emits `\r` or an escape, even
+    /// with a frame recorded - the non-TTY ticker writes whole lines, so there is
+    /// nothing to erase and a redirected stderr stays plain text.
     #[test]
-    fn progress_width_registration_roundtrips() {
-        progress::clear_live();
-        assert_eq!(progress::live_width(), 0);
-        progress::set_live(12);
-        assert_eq!(progress::live_width(), 12);
-        progress::clear_live();
-        assert_eq!(progress::live_width(), 0);
+    fn non_tty_output_carries_no_control_characters() {
+        let mut r = progress::test_renderer();
+        r.t_frame("gcm: | grouping... 7s");
+        let out = r.t_line("gcm: [warn] retrying", false);
+        assert_eq!(out, "gcm: [warn] retrying\n");
+        assert!(!out.contains('\x1b'), "escape leaked off-TTY: {out:?}");
+        assert!(!out.contains('\r'), "CR leaked off-TTY: {out:?}");
     }
 }

@@ -92,10 +92,13 @@ pub fn is_context_window_body(body: &str) -> bool {
     }
     // Gemini / Vertex: require a token-count anchor next to the "exceeds"
     // phrasing, never "exceeds the maximum" on its own.
+    // `max_tokens` is deliberately absent: it names the *output* budget, and
+    // "max_tokens exceeds the model limit" is an unrelated 400 that shrinking the
+    // prompt would not fix.
     let token_anchor = b.contains("input token count")
         || b.contains("token count")
-        || b.contains("max_tokens")
-        || b.contains("context length");
+        || b.contains("context length")
+        || b.contains("context window");
     if token_anchor && (b.contains("exceed") || b.contains("too many") || b.contains("too large")) {
         return true;
     }
@@ -413,8 +416,8 @@ fn retry_with<T>(
                     "{} {}; attempt {} of {}, retrying in {delay:?}",
                     e.provider,
                     retry_reason(&e.kind),
-                    attempt + 1,
-                    cfg.max_retries + 1
+                    u64::from(attempt) + 1,
+                    u64::from(cfg.max_retries) + 1
                 );
                 crate::debug_log!("{} retry detail: {:?}", e.provider, e.kind);
                 sleep(delay);
@@ -497,6 +500,14 @@ mod tests {
         assert!(!is_context_window_body(
             r#"{"error":{"message":"value exceeds the maximum allowed length"}}"#
         ));
+        // An *output* budget rejection is not a context-window rejection. Telling
+        // the user to send a smaller diff would not fix it.
+        for body in [
+            r#"{"error":{"message":"max_tokens: 200000 exceeds the model limit","type":"invalid_request_error"}}"#,
+            r#"{"error":{"message":"max_completion_tokens is too large"}}"#,
+        ] {
+            assert!(!is_context_window_body(body), "false positive on {body}");
+        }
     }
 
     /// The marker has to reach the CLI on the same paths the detector fires on,

@@ -288,7 +288,6 @@ pub fn preview_plan(message: &str, group_count: usize, remaining: usize) {
 pub struct CallProgress {
     stop: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
     handle: Option<std::thread::JoinHandle<()>>,
-    tty: bool,
 }
 
 /// Redraw interval on a terminal: fast enough to read as motion.
@@ -339,6 +338,16 @@ impl CallProgress {
         prompt_bytes: usize,
         json: bool,
     ) -> Self {
+        let tty = std::io::stderr().is_terminal();
+        let stop = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+
+        // `GCM_LOG_LEVEL=off` is the documented way to ask gcm for silence, and a
+        // status line the user cannot switch off would make that promise false.
+        // The default is `Warn`, so this stays on unless someone opts out.
+        if !gcm::debug::enabled(gcm::debug::Level::Warn) {
+            return CallProgress { stop, handle: None };
+        }
+
         gcm::debug::progress::emit_line(&call_status_line(
             operation,
             provider,
@@ -347,14 +356,8 @@ impl CallProgress {
             prompt_bytes,
         ));
 
-        let tty = std::io::stderr().is_terminal();
-        let stop = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
         if json {
-            return CallProgress {
-                stop,
-                handle: None,
-                tty,
-            };
+            return CallProgress { stop, handle: None };
         }
 
         let thread_stop = std::sync::Arc::clone(&stop);
@@ -382,19 +385,10 @@ impl CallProgress {
 
                 let elapsed = started.elapsed().as_secs();
                 if tty {
-                    let line = ticker_frame(&operation, elapsed, tick);
-                    // Registered before the write, not after: a log line racing
-                    // this frame must see a live ticker even if the frame's bytes
-                    // have not landed yet. Clearing a line that turns out not to
-                    // be drawn costs nothing; not clearing one that is corrupts it.
-                    gcm::debug::progress::set_live(line.chars().count());
-                    // One `write_all` of one buffer, so the frame cannot be split
-                    // around another thread's write. A frame carries no trailing
-                    // newline, so it needs an explicit flush to appear at all.
-                    let frame = format!("\r\x1b[K{line}");
-                    let mut err = std::io::stderr();
-                    let _ = err.write_all(frame.as_bytes());
-                    let _ = err.flush();
+                    // The renderer erases the previous frame, records this one and
+                    // writes the bytes under one lock, so a log line arriving from
+                    // the calling thread cannot slip between the state and the write.
+                    gcm::debug::progress::draw_frame(&ticker_frame(&operation, elapsed, tick));
                 } else {
                     gcm::debug::progress::emit_line(&waiting_line(&operation, elapsed));
                 }
@@ -406,7 +400,6 @@ impl CallProgress {
         CallProgress {
             stop,
             handle: Some(handle),
-            tty,
         }
     }
 
@@ -423,11 +416,6 @@ impl CallProgress {
             cvar.notify_all();
         }
         let _ = handle.join();
-        if self.tty && gcm::debug::progress::live_width() > 0 {
-            let mut err = std::io::stderr();
-            let _ = write!(err, "\r\x1b[K");
-            let _ = err.flush();
-        }
         gcm::debug::progress::clear_live();
     }
 }
@@ -636,7 +624,6 @@ mod tests {
         );
         // Idempotent: the Drop that follows must not double-join.
         p.finish();
-        assert_eq!(gcm::debug::progress::live_width(), 0);
     }
 
     /// CLO-798 AC-7: under `--json` no ticker thread exists at all, so nothing

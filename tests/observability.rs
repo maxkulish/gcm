@@ -390,8 +390,12 @@ fn context_window_advice_is_operation_specific() {
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("single-commit message"), "{stderr}");
-    assert!(stderr.contains("smaller batches"), "{stderr}");
+    assert!(stderr.contains("GCM_DIFF_TOTAL_BYTES"), "{stderr}");
     assert!(!stderr.contains("--all"), "circular advice: {stderr}");
+    assert!(
+        !stderr.to_lowercase().contains("stage"),
+        "staging does not narrow the prompt: {stderr}"
+    );
     assert!(!stderr.contains("gcm bug"), "{stderr}");
     assert_plain(&stderr);
 }
@@ -474,6 +478,33 @@ fn json_contract_frozen() {
             .contains("gcm bug"),
         "{stdout2}"
     );
+
+    // `noop`: no provider call at all, so nothing new can reach stdout.
+    let repo3 = tempfile::tempdir().unwrap();
+    let cfg3 = tempfile::tempdir().unwrap();
+    git_init(repo3.path());
+    let out3 = run(repo3.path(), cfg3.path(), "http://127.0.0.1:1", &["--json"]);
+    let stdout3 = String::from_utf8_lossy(&out3.stdout);
+    let env3: serde_json::Value = serde_json::from_str(stdout3.trim()).unwrap();
+    assert_eq!(env3["v"], 1);
+    assert_eq!(env3["status"], "noop", "{stdout3}");
+
+    // `committed`: the happy path still emits exactly one envelope.
+    let repo4 = tempfile::tempdir().unwrap();
+    let cfg4 = tempfile::tempdir().unwrap();
+    repo_with_files(repo4.path(), 2);
+    let url4 = stub(vec![Act::Reply(
+        Duration::ZERO,
+        200,
+        plan_body(&["f0.txt", "f1.txt"]),
+    )]);
+    let out4 = run(repo4.path(), cfg4.path(), &url4, &["--yes", "--json"]);
+    let stdout4 = String::from_utf8_lossy(&out4.stdout);
+    assert_eq!(stdout4.trim().lines().count(), 1, "one envelope: {stdout4}");
+    let env4: serde_json::Value = serde_json::from_str(stdout4.trim()).unwrap();
+    assert_eq!(env4["v"], 1);
+    assert_eq!(env4["status"], "committed", "{stdout4}");
+    assert_eq!(env4["mode"], "grouped", "{stdout4}");
 }
 
 /// AC-11: a `--json` consumer sees two provider requests; it has to be told why
@@ -533,8 +564,54 @@ fn fast_failure_leaves_no_ticker() {
         "no ticker should have fired: {stderr}"
     );
     assert!(
-        elapsed < Duration::from_secs(3),
+        elapsed < Duration::from_secs(2),
         "the ticker wait was not interruptible: {elapsed:?}"
     );
     assert_plain(&stderr);
+}
+
+/// `GCM_LOG_LEVEL=off` is the documented opt-out, so it has to silence the whole
+/// feature - status line, ticker, retry notices and the fallback announcement -
+/// not just the lines that happen to go through the `log!` macro.
+#[test]
+fn log_level_off_silences_progress() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 2);
+    let url = stub(vec![
+        Act::Reply(Duration::ZERO, 400, context_window_400()),
+        Act::Reply(Duration::ZERO, 200, message_body()),
+    ]);
+
+    let out = command(repo.path(), cfg.path(), &url, &["--yes"])
+        .env("GCM_LOG_LEVEL", "off")
+        .output()
+        .expect("run gcm");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    for noise in ["gcm: grouping:", "Falling back", "still waiting"] {
+        assert!(!stderr.contains(noise), "{noise:?} survived off: {stderr}");
+    }
+}
+
+/// An absurd retry budget must not panic. `attempt of total` is computed in
+/// `u64`, so `GCM_RETRY_MAX=u32::MAX` prints a silly number rather than
+/// overflowing and taking the run down with it.
+#[test]
+fn extreme_retry_budget_does_not_overflow() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 1);
+    let url = stub(vec![
+        Act::Reply(Duration::ZERO, 429, "{}".to_string()),
+        Act::Reply(Duration::ZERO, 200, plan_body(&["f0.txt"])),
+    ]);
+
+    let out = command(repo.path(), cfg.path(), &url, &["--dry-run", "--yes"])
+        .env("GCM_RETRY_MAX", "4294967295")
+        .env("GCM_RETRY_BASE_MS", "1")
+        .output()
+        .expect("run gcm");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "run failed: {stderr}");
+    assert!(stderr.contains("attempt 1 of 4294967296"), "{stderr}");
 }

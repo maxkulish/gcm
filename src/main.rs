@@ -1021,9 +1021,12 @@ fn run_fallback(
 ) -> Envelope {
     // Announced under `--json` too (AC-11): a machine consumer otherwise sees two
     // provider requests on stderr with no record of why the second one happened.
-    gcm::debug::progress::emit_line(&format!(
-        "gcm: {reason}. Falling back to single-commit mode."
-    ));
+    // `GCM_LOG_LEVEL=off` still silences it, like the rest of the progress output.
+    if gcm::debug::enabled(gcm::debug::Level::Warn) {
+        gcm::debug::progress::emit_line(&format!(
+            "gcm: {reason}. Falling back to single-commit mode."
+        ));
+    }
     let env = single_commit_path(
         repo,
         args,
