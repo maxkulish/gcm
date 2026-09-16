@@ -14,6 +14,8 @@
 |------|------------------------|-------------|
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | No dependencies; root cause measured and fix directions written | 2026-09-16 |
 | [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | No dependencies; cause reproduced and measured | 2026-09-16 |
+| [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | No dependencies; root cause traced through the wizard and the enabled-set gate | 2026-09-16 |
+| [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | No dependencies; one-line cause in `merge_provider_config` | 2026-09-16 |
 
 > **Two open bugs (2026-09-16).** CLO-797 (grouping prompt overflows the context window) and CLO-798
 > (a slow or failing provider call is silent) came out of one investigation of a 515-file commit; see

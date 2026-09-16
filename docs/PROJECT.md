@@ -108,7 +108,8 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 |----------|------|-------|--------------|--------|
 | 1 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window on large commits | none (root cause measured, fix directions written) | — |
 | 2 | (unfiled) | Return group assignments by index instead of making the model echo every path | CLO-797 (related — same prompt, output side) | — |
-| 3 | (unfiled) | Reconcile `ProviderId::Google.default_model()` with the enabled model list | none | — |
+| 3 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | none | — |
+| 4 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | none | — |
 
 > Two open bugs lead the queue: **CLO-797** (input side - the grouping prompt repeats the path list three times) and **CLO-798** (visibility - a slow or failing provider call prints nothing). Phase 6 (library extraction) is **complete** after CLO-598 merged PR #52. The public surface is locked by `scripts/check-public-surface.sh` and verified by an out-of-tree `smoke/` consumer. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), `gcm resolve` Phase 1-4 (CLO-531 + fixes CLO-534/535 + CLO-533 + CLO-555 + CLO-554), provider expansion (CLO-537) and maintenance (CLO-545/547/564).
 >

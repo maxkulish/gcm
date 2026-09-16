@@ -11,7 +11,7 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 5 | 3 | In Progress |
+| Bug fixes (cross-cutting) | 7 | 3 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 3 | 3 | Complete |
 
@@ -96,6 +96,8 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | Backlog | CLO-487 (related) |
 | [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or failing request is diagnosable | In Progress | CLO-488, CLO-493 (related) |
+| [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | Backlog | CLO-516, CLO-547 (related) |
+| [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Backlog | CLO-555 (related) |
 
 Both were found in one investigation of a 515-file commit and are measured in
 [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
