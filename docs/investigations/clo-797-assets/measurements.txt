@@ -1,0 +1,21 @@
+gcm 0.7.0+72e10a6 | model openai/gpt-oss-120b | tokenizer o200k_base
+captured payload bytes on the wire: 528,926 (re-serialized: 529,103)
+
+     section     tokens      chars  chars/token
+   file_list     36,029     83,356         2.31
+      status     36,541     84,879         2.32
+        stat         55        203         3.69
+        body    116,465    338,834         2.91
+      system        287      1,205         4.20
+       TOTAL    189,377
+
+gpt-oss-120b context window (Groq): 131,072
+overflow: +58,305 tokens (1.44x)
+
+body composition:
+  name-only untracked stubs: 463 files, 39,649 tokens, 102,607 chars
+  real content read:         50 files, 76,816 tokens
+  cap_total fired:           False  (338,834 of 350,000 bytes)
+
+path text repeated three times:
+  file_list + status + name-only stubs = 112,219 tokens (59% of prompt)
