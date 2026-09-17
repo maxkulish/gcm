@@ -45,8 +45,8 @@ linear:
   priority: High
   labels: [Improvement]
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-09-16T20:27:39.000Z'
   updated_at: '2026-09-16T23:55:00.000Z'
 phases:
@@ -114,11 +114,20 @@ phases:
     gemini_validation_report: null
     gemini_skip_reason: 'gemini CLI not installed on this machine'
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/60
     pr_number: 60
+    merged_at: '2026-09-16T22:12:56.000Z'
+    merge_commit: 96116ed
+    ci: 'green on ubuntu-latest and macos-latest (run 35156185862)'
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-09-16T22:12:56.000Z'
+    follow_ups_open:
+      - 'gcm resolve provider calls are still silent (src/resolve/mod.rs:966, :1151); CallProgress is reusable there'
+      - 'Timeout scaling with expected work - a Linear scope bullet the spec Must-not list excluded'
+      - 'Anthropic hardcoded max_tokens: 4096 on the plan call (src/provider/anthropic.rs:161) - same exclusion'
 history:
   - timestamp: '2026-09-16T20:27:39.000Z'
     action: workflow_started
@@ -245,3 +254,16 @@ history:
       with `git commit -S` first, the pattern tests/resolve_integration.rs:802 already uses, and the AC-11
       announcement is asserted before the guard because it is printed before the commit is attempted.
       Verified locally both ways - with a key, and with GIT_CONFIG_GLOBAL=/dev/null to force the skip.
+  - timestamp: '2026-09-17T00:55:00.000Z'
+    action: pr_merged
+    phase: pr
+    details: >-
+      PR #60 squash-merged as 96116ed after CI went green on both runners. Linear CLO-798 moved to Done
+      with a closing comment that names the two Scope bullets the approved spec deliberately excluded.
+  - timestamp: '2026-09-17T01:00:00.000Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Aggregation files synced on branch docs/clo-798-finalize rather than in the main checkout: this
+      session runs in the gcm--fix-clo-798-silent worktree and is not to operate in ../gcm, so the
+      PROJECT.md / ROADMAP.md / DEPENDENCIES.md updates go through their own small PR.
