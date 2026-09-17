@@ -1,4 +1,6 @@
 task_id: clo-798
+task_title: Add progress and failure visibility to provider calls so a slow or retrying request is not silent
+task_url: https://linear.app/cloud-ai/issue/CLO-798
 task_type: specification
 classification:
   recommended: specification
@@ -37,6 +39,7 @@ linear:
   team: Cloud-ai
   project: GCM
   status_at_start: Backlog
+  status_at_complete: Done
   blocks: []
   blocked_by: []
   related: [CLO-797]
@@ -101,6 +104,7 @@ phases:
     codex_verdict: PASS_WITH_NOTES
     codex_report: docs/reviews/clo-798-codex-validation.md
     codex_rounds: 6
+    validation_fix_iteration_count: 5
     codex_round_reports:
       - docs/reviews/clo-798-codex-validation-round1.md
       - docs/reviews/clo-798-codex-validation-round2.md
@@ -120,10 +124,17 @@ phases:
     merged_at: '2026-09-16T22:12:56.000Z'
     merge_commit: 96116ed
     ci: 'green on ubuntu-latest and macos-latest (run 35156185862)'
+    ci_passed: true
+    review_comment_threads_resolved: 0
+    reviews_addressed: true
+    bot_review_wait_completed: false   # no review bots installed on this repo
+    pre_merge_refetch_passed: true     # full gate re-run after the rebase onto v0.7.1, then CI green
   complete:
     status: complete
     aggregation_files_updated: true
     merged_at: '2026-09-16T22:12:56.000Z'
+    merge_commit: 96116ed45de7e26f70618303044f47f742ce100c
+    aggregation_pr: https://github.com/maxkulish/gcm/pull/63
     follow_ups_open:
       - 'gcm resolve provider calls are still silent (src/resolve/mod.rs:966, :1151); CallProgress is reusable there'
       - 'Timeout scaling with expected work - a Linear scope bullet the spec Must-not list excluded'
