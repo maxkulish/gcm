@@ -88,17 +88,19 @@ phases:
     last_phase_completed: 'Codex validation gate (6 rounds)'
     sub_tasks_complete: [1, 2, 3, 4, 5, 6, 7]
     commits:
-      - 231f303 feat(logging): default to warn level and coordinate stderr writes
-      - d44f8f4 feat(provider): surface retries and mark context-window rejections
-      - 60912a2 feat(ui): show in-flight provider progress and actionable failures
-      - 5b0735c test(observability): cover the provider-call visibility criteria
-      - 479d1d0 fix(ui): register the ticker width before drawing the frame
-      - a421a45 fix(ui): address the Codex validation findings
-      - 483edd4 fix(provider): stop output-budget rejections reading as oversized prompts
-      - 36ed30f fix(provider): let explicit context-length signals outrank the output veto
-      - c67e4c8 fix(provider): let window evidence outrank the output-budget veto
-      - 4c21f7e fix(provider): require an overflow before reading a body as oversized
-      - 4d9e0d7 test(json): freeze the value types the key sets were only implying
+      # Pre-rebase SHAs, kept as the record of how the work was split. The branch
+      # was rebased onto v0.7.1 and squash-merged, so main carries 96116ed alone.
+      - '231f303 feat(logging): default to warn level and coordinate stderr writes'
+      - 'd44f8f4 feat(provider): surface retries and mark context-window rejections'
+      - '60912a2 feat(ui): show in-flight provider progress and actionable failures'
+      - '5b0735c test(observability): cover the provider-call visibility criteria'
+      - '479d1d0 fix(ui): register the ticker width before drawing the frame'
+      - 'a421a45 fix(ui): address the Codex validation findings'
+      - '483edd4 fix(provider): stop output-budget rejections reading as oversized prompts'
+      - '36ed30f fix(provider): let explicit context-length signals outrank the output veto'
+      - 'c67e4c8 fix(provider): let window evidence outrank the output-budget veto'
+      - '4c21f7e fix(provider): require an overflow before reading a body as oversized'
+      - '4d9e0d7 test(json): freeze the value types the key sets were only implying'
     tests_passing: 553
     codex_validated: true
     codex_verdict: PASS_WITH_NOTES
