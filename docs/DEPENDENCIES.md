@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-17 (CLO-802 merged in PR #64 and released in v0.8.1; CLO-797 now in progress in a separate session/worktree)
+**Last Updated**: 2026-09-17 (CLO-800 in review, PR #65; CLO-797 in progress in a separate session/worktree)
 
 ## Current Blockers
 
@@ -14,11 +14,16 @@
 |------|-------|-------|
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Separate session/worktree `gcm-fix-clo-797-fix-grouping-prompt-72` | 2026-09-17 |
 
+## In Review
+
+| Task | PR | Since |
+|------|-----|-------|
+| [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | [#65](https://github.com/maxkulish/gcm/pull/65) | 2026-09-17 |
+
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | No dependencies; one-line cause in `merge_provider_config` | 2026-09-16 |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas (blocked on CLO-797 landing first - shares the grouping-call output) | 2026-09-16 |
 
 > **One open bug left of the three (2026-09-16).** CLO-797 (the grouping prompt overflows the context
