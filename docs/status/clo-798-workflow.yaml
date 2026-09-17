@@ -1,4 +1,6 @@
 task_id: clo-798
+task_title: Add progress and failure visibility to provider calls so a slow or retrying request is not silent
+task_url: https://linear.app/cloud-ai/issue/CLO-798
 task_type: specification
 classification:
   recommended: specification
@@ -37,6 +39,7 @@ linear:
   team: Cloud-ai
   project: GCM
   status_at_start: Backlog
+  status_at_complete: Done
   blocks: []
   blocked_by: []
   related: [CLO-797]
@@ -45,8 +48,8 @@ linear:
   priority: High
   labels: [Improvement]
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-09-16T20:27:39.000Z'
   updated_at: '2026-09-16T23:55:00.000Z'
 phases:
@@ -85,22 +88,25 @@ phases:
     last_phase_completed: 'Codex validation gate (6 rounds)'
     sub_tasks_complete: [1, 2, 3, 4, 5, 6, 7]
     commits:
-      - 231f303 feat(logging): default to warn level and coordinate stderr writes
-      - d44f8f4 feat(provider): surface retries and mark context-window rejections
-      - 60912a2 feat(ui): show in-flight provider progress and actionable failures
-      - 5b0735c test(observability): cover the provider-call visibility criteria
-      - 479d1d0 fix(ui): register the ticker width before drawing the frame
-      - a421a45 fix(ui): address the Codex validation findings
-      - 483edd4 fix(provider): stop output-budget rejections reading as oversized prompts
-      - 36ed30f fix(provider): let explicit context-length signals outrank the output veto
-      - c67e4c8 fix(provider): let window evidence outrank the output-budget veto
-      - 4c21f7e fix(provider): require an overflow before reading a body as oversized
-      - 4d9e0d7 test(json): freeze the value types the key sets were only implying
+      # Pre-rebase SHAs, kept as the record of how the work was split. The branch
+      # was rebased onto v0.7.1 and squash-merged, so main carries 96116ed alone.
+      - '231f303 feat(logging): default to warn level and coordinate stderr writes'
+      - 'd44f8f4 feat(provider): surface retries and mark context-window rejections'
+      - '60912a2 feat(ui): show in-flight provider progress and actionable failures'
+      - '5b0735c test(observability): cover the provider-call visibility criteria'
+      - '479d1d0 fix(ui): register the ticker width before drawing the frame'
+      - 'a421a45 fix(ui): address the Codex validation findings'
+      - '483edd4 fix(provider): stop output-budget rejections reading as oversized prompts'
+      - '36ed30f fix(provider): let explicit context-length signals outrank the output veto'
+      - 'c67e4c8 fix(provider): let window evidence outrank the output-budget veto'
+      - '4c21f7e fix(provider): require an overflow before reading a body as oversized'
+      - '4d9e0d7 test(json): freeze the value types the key sets were only implying'
     tests_passing: 553
     codex_validated: true
     codex_verdict: PASS_WITH_NOTES
     codex_report: docs/reviews/clo-798-codex-validation.md
     codex_rounds: 6
+    validation_fix_iteration_count: 5
     codex_round_reports:
       - docs/reviews/clo-798-codex-validation-round1.md
       - docs/reviews/clo-798-codex-validation-round2.md
@@ -114,11 +120,27 @@ phases:
     gemini_validation_report: null
     gemini_skip_reason: 'gemini CLI not installed on this machine'
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/60
     pr_number: 60
+    merged_at: '2026-09-16T22:12:56.000Z'
+    merge_commit: 96116ed
+    ci: 'green on ubuntu-latest and macos-latest (run 35156185862)'
+    ci_passed: true
+    review_comment_threads_resolved: 0
+    reviews_addressed: true
+    bot_review_wait_completed: false   # no review bots installed on this repo
+    pre_merge_refetch_passed: true     # full gate re-run after the rebase onto v0.7.1, then CI green
   complete:
-    status: pending
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-09-16T22:12:56.000Z'
+    merge_commit: 96116ed45de7e26f70618303044f47f742ce100c
+    aggregation_pr: https://github.com/maxkulish/gcm/pull/63
+    follow_ups_open:
+      - 'gcm resolve provider calls are still silent (src/resolve/mod.rs:966, :1151); CallProgress is reusable there'
+      - 'Timeout scaling with expected work - a Linear scope bullet the spec Must-not list excluded'
+      - 'Anthropic hardcoded max_tokens: 4096 on the plan call (src/provider/anthropic.rs:161) - same exclusion'
 history:
   - timestamp: '2026-09-16T20:27:39.000Z'
     action: workflow_started
@@ -245,3 +267,16 @@ history:
       with `git commit -S` first, the pattern tests/resolve_integration.rs:802 already uses, and the AC-11
       announcement is asserted before the guard because it is printed before the commit is attempted.
       Verified locally both ways - with a key, and with GIT_CONFIG_GLOBAL=/dev/null to force the skip.
+  - timestamp: '2026-09-17T00:55:00.000Z'
+    action: pr_merged
+    phase: pr
+    details: >-
+      PR #60 squash-merged as 96116ed after CI went green on both runners. Linear CLO-798 moved to Done
+      with a closing comment that names the two Scope bullets the approved spec deliberately excluded.
+  - timestamp: '2026-09-17T01:00:00.000Z'
+    action: workflow_complete
+    phase: complete
+    details: >-
+      Aggregation files synced on branch docs/clo-798-finalize rather than in the main checkout: this
+      session runs in the gcm--fix-clo-798-silent worktree and is not to operate in ../gcm, so the
+      PROJECT.md / ROADMAP.md / DEPENDENCIES.md updates go through their own small PR.

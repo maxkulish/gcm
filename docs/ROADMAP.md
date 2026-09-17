@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-09-16 (CLO-797/CLO-798 filed and investigated, PR #57; both open)
+**Last Updated**: 2026-09-16 (CLO-798 merged in PR #60; CLO-797 still open)
 
 ## Summary
 
@@ -11,7 +11,7 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 8 | 3 | In Progress |
+| Bug fixes (cross-cutting) | 8 | 4 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 3 | 3 | Complete |
 
@@ -95,7 +95,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini (unsupported `additionalProperties`) | Done | CLO-531 |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | Backlog | CLO-487 (related) |
-| [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or failing request is diagnosable | In Progress | CLO-488, CLO-493 (related) |
+| [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or retrying request is not silent | Done | CLO-488, CLO-493 (related) |
 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | Done | CLO-516, CLO-547 (related) |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Backlog | CLO-555 (related) |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | Backlog | CLO-797, CLO-798 (related) |
@@ -103,9 +103,10 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 Both were found in one investigation of a 515-file commit and are measured in
 [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
 CLO-797 is the input side: the grouping prompt sends the same file path list three times, 59% of a
-189,377-token prompt against a 131,072-token window. CLO-798 is what the user sees when a provider
-call runs long: every log call site is `debug_log!`, off by default, so a 60s timeout produces no
-output at all. They are independent - neither blocks the other.
+189,377-token prompt against a 131,072-token window, and it is still open. CLO-798 was what the user
+saw when a provider call ran long - every log call site was `debug_log!`, off by default, so a 60s
+timeout produced no output at all; PR #60 gave the call a status line, a ticker, visible retries and
+failure prose that explains itself. They were independent, and CLO-797 still is.
 
 ## Maintenance (cross-cutting)
 

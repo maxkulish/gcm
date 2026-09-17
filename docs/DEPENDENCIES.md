@@ -1,33 +1,30 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-16 (CLO-799 fixed and merged in PR #59; CLO-797/CLO-798 filed; investigation merged in PR #57)
+**Last Updated**: 2026-09-16 (CLO-798 merged in PR #60; CLO-799 in PR #59; CLO-797 still open)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | None blocked | — | CLO-797 and CLO-798 are independent of each other and of all Done work |
+| — | None blocked | — | CLO-797 is independent of all Done work |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | No dependencies; root cause measured and fix directions written | 2026-09-16 |
-| [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | No dependencies; cause reproduced and measured | 2026-09-16 |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | No dependencies; one-line cause in `merge_provider_config` | 2026-09-16 |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas | 2026-09-16 |
 
-> **Two open bugs (2026-09-16).** CLO-797 (grouping prompt overflows the context window) and CLO-798
-> (a slow or failing provider call is silent) came out of one investigation of a 515-file commit; see
+> **One open bug left of the three (2026-09-16).** CLO-797 (the grouping prompt overflows the context
+> window) is still open; it came out of the same investigation of a 515-file commit as CLO-798, see
 > [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
-> Neither blocks the other. CLO-798 is in progress in the `gcm--fix-clo-798-silent` worktree; CLO-799
-> merged in PR #59 (2026-09-16), keeping the CLO-516 whitelist gate and making its rejection message
-> name the provider's known catalog. One
-> sequencing note: CLO-801 (return group assignments by index) would remove the ~36K-token output that
-> makes the grouping call slow, so a CLO-798 fix built purely around a longer timeout may be obsoleted
-> by it - prefer visibility over raising `DEFAULT_TIMEOUT_SECS`. The 798 session was briefed on this and
-> confirmed its spec already forbids touching the timeout, retry and `is_retryable` constants, so the two
-> do not collide.
+> CLO-798 merged in PR #60 (2026-09-16) and CLO-799 in PR #59. The sequencing note that shaped CLO-798
+> held: CLO-801 (return group assignments by index) would remove the ~36K-token output that makes the
+> grouping call slow, so a fix built purely around a longer timeout risked being obsoleted by it. CLO-798
+> shipped visibility and left `DEFAULT_TIMEOUT_SECS`, the retry constants and `is_retryable` untouched,
+> so CLO-801 can still land without undoing it - and a 515-file grouping call still needs
+> `GCM_HTTP_TIMEOUT_SECS` until one of the two input-side fixes lands.
 >
 > **Phase 6 (library extraction) is now complete.** CLO-598 merged in PR #52 (2026-07-30) — the out-of-tree `smoke/` consumer and `scripts/check-public-surface.sh` lock the public surface. No remaining Phase-6 blockers. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
