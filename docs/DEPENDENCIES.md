@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-17 (CLO-800 in review, PR #65; CLO-797 in progress in a separate session/worktree)
+**Last Updated**: 2026-09-17 (CLO-800 merged in PR #65; CLO-797 in progress in a separate session/worktree)
 
 ## Current Blockers
 
@@ -13,12 +13,6 @@
 | Task | Where | Since |
 |------|-------|-------|
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Separate session/worktree `gcm-fix-clo-797-fix-grouping-prompt-72` | 2026-09-17 |
-
-## In Review
-
-| Task | PR | Since |
-|------|-----|-------|
-| [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | [#65](https://github.com/maxkulish/gcm/pull/65) | 2026-09-17 |
 
 ## Unblocked & Ready
 
@@ -40,9 +34,11 @@
 > shipped in v0.8.0 and fixed the step it targeted - the enable-models multiselect. The user hit the
 > same symptom again, because `gcm provider` decides the default in a second prompt that CLO-799 never
 > touched. CLO-802 fixed that prompt, merged in PR #64 and released in v0.8.1. The lesson for the two
-> wizard issues still open: a fix to one step of this flow does not clear a symptom reported against
-> the flow as a whole, so verify end to end on the saved file. CLO-800 also lives in this wizard
-> (`merge_provider_config` resets `[conflict]`) and is untouched by CLO-802.
+> wizard issues that were still open: a fix to one step of this flow does not clear a symptom reported
+> against the flow as a whole, so verify end to end on the saved file. **CLO-800 also lived in this
+> wizard** (`merge_provider_config` reset `[conflict]` to defaults on every save, dropping a customized
+> `validate_cmd`/`sensitive_paths`) and was untouched by CLO-802; it merged separately in PR #65
+> (2026-09-17).
 >
 > **Phase 6 (library extraction) is now complete.** CLO-598 merged in PR #52 (2026-07-30) — the out-of-tree `smoke/` consumer and `scripts/check-public-surface.sh` lock the public surface. No remaining Phase-6 blockers. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
@@ -50,6 +46,7 @@
 
 | Task | Previous Blocker | Resolved |
 |------|-----------------|----------|
+| CLO-800 | None (independent, one-line cause) | 2026-09-17 (merged PR #65) |
 | CLO-598 | CLO-597 (source-attributed status resolution) | 2026-07-30 (merged PR #49) |
 | CLO-597 | CLO-596 (provider identity + model registry) | 2026-07-28 (merged PR #48, released v0.6.0) |
 | CLO-596 | CLO-595 (secret scanner as library API) | 2026-07-28 (merged PR #45/#46) |
