@@ -731,16 +731,35 @@ pub fn wizard_model_hint(
     }
 }
 
-/// The pre-selected default model (CLO-799 AC3): the current default if it survived
-/// into `selected` (canonical match, review L1), else the provider's shipped
-/// `default_model()` if that is selected, else the first selected (None only when
-/// `selected` is empty). Returns the matching `selected` entry. Pure.
+/// The pre-selected default model: a model the user just enabled (CLO-802), else the
+/// current default if it survived into `selected` (canonical match, review L1), else
+/// the provider's shipped `default_model()` if that is selected (CLO-799 AC3), else
+/// the first selected (None only when `selected` is empty). Returns the matching
+/// `selected` entry. Pure.
+///
+/// The newly-enabled rule exists because step 4 is additive: enabling a second model
+/// leaves the incumbent checked, so without it the radio pre-selects the incumbent and
+/// Enter silently keeps the model the user was trying to move off. It applies only when
+/// `current_enabled` is non-empty, so first-time configuration still lands on the
+/// shipped default rather than on whatever the catalog happened to list first.
 #[doc(hidden)]
 pub fn initial_default_model(
     id: ProviderId,
     selected: &[String],
+    current_enabled: &[String],
     current_default: Option<&str>,
 ) -> Option<String> {
+    if !current_enabled.is_empty() {
+        let newly_enabled = selected.iter().find(|m| {
+            let c = canonicalize_model(id, m);
+            !current_enabled
+                .iter()
+                .any(|e| canonicalize_model(id, e) == c)
+        });
+        if let Some(hit) = newly_enabled {
+            return Some(hit.clone());
+        }
+    }
     if let Some(d) = current_default {
         let c = canonicalize_model(id, d);
         if let Some(hit) = selected.iter().find(|m| canonicalize_model(id, m) == c) {
@@ -1972,24 +1991,62 @@ mod tests {
     fn initial_default_model_prefers_current_then_first() {
         let id = ProviderId::Openai;
         let selected = vec!["x".to_string(), "y".to_string()];
+        // nothing newly enabled (both were already in the enabled set) -> current wins
         assert_eq!(
-            initial_default_model(id, &selected, Some("y")).as_deref(),
+            initial_default_model(id, &selected, &selected, Some("y")).as_deref(),
             Some("y")
         );
         // current default no longer selected -> fall back to the first selected
         assert_eq!(
-            initial_default_model(id, &selected, Some("z")).as_deref(),
+            initial_default_model(id, &selected, &selected, Some("z")).as_deref(),
             Some("x")
         );
         assert_eq!(
-            initial_default_model(id, &selected, None).as_deref(),
+            initial_default_model(id, &selected, &selected, None).as_deref(),
             Some("x")
         );
-        assert_eq!(initial_default_model(id, &[], Some("z")), None);
+        assert_eq!(initial_default_model(id, &[], &selected, Some("z")), None);
         // canonical match: a tagless current default selects the `:latest` entry
         let sel = vec!["llama3:latest".to_string()];
         assert_eq!(
-            initial_default_model(ProviderId::Ollama, &sel, Some("llama3")).as_deref(),
+            initial_default_model(ProviderId::Ollama, &sel, &sel, Some("llama3")).as_deref(),
+            Some("llama3:latest")
+        );
+    }
+
+    #[test]
+    fn initial_default_model_prefers_a_newly_enabled_model() {
+        // CLO-802: the user was pinned to 3.1 and just enabled 3.5. Step 4 is additive,
+        // so 3.1 stays checked; without this rule the radio pre-selects 3.1 and Enter
+        // keeps the model the user was trying to move off.
+        let id = ProviderId::Google;
+        let current_enabled = vec!["gemini-3.1-flash-lite".to_string()];
+        let selected = vec![
+            "gemini-3.1-flash-lite".to_string(),
+            "gemini-3.5-flash-lite".to_string(),
+        ];
+        assert_eq!(
+            initial_default_model(
+                id,
+                &selected,
+                &current_enabled,
+                Some("gemini-3.1-flash-lite")
+            )
+            .as_deref(),
+            Some("gemini-3.5-flash-lite"),
+            "newly enabled 3.5 preferred over the incumbent default 3.1"
+        );
+        // Enabling nothing new leaves the incumbent default alone.
+        assert_eq!(
+            initial_default_model(id, &selected, &selected, Some("gemini-3.1-flash-lite"))
+                .as_deref(),
+            Some("gemini-3.1-flash-lite")
+        );
+        // Canonical match: an already-enabled `:latest` entry is not "newly enabled".
+        let ol = ProviderId::Ollama;
+        let sel = vec!["llama3:latest".to_string()];
+        assert_eq!(
+            initial_default_model(ol, &sel, &["llama3".to_string()], Some("llama3")).as_deref(),
             Some("llama3:latest")
         );
     }
@@ -2003,20 +2060,24 @@ mod tests {
             "gemini-3.1-flash-lite".to_string(),
             "gemini-3.5-flash-lite".to_string(),
         ];
+        // First-time configuration: no prior enabled set, so the CLO-802 rule stays out
+        // of the way and the shipped default still wins.
         assert_eq!(
-            initial_default_model(id, &selected, None).as_deref(),
+            initial_default_model(id, &selected, &[], None).as_deref(),
             Some("gemini-3.5-flash-lite"),
             "shipped default (3.5) preferred over the first selected (3.1)"
         );
-        // An explicit current default still wins over the shipped one.
+        // An explicit current default still wins over the shipped one when the user
+        // enabled nothing new.
         assert_eq!(
-            initial_default_model(id, &selected, Some("gemini-3.1-flash-lite")).as_deref(),
+            initial_default_model(id, &selected, &selected, Some("gemini-3.1-flash-lite"))
+                .as_deref(),
             Some("gemini-3.1-flash-lite")
         );
         // Shipped default not selected -> first selected (no forced enable).
         let only_old = vec!["gemini-3.1-flash-lite".to_string()];
         assert_eq!(
-            initial_default_model(id, &only_old, None).as_deref(),
+            initial_default_model(id, &only_old, &[], None).as_deref(),
             Some("gemini-3.1-flash-lite")
         );
     }
