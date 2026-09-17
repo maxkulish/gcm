@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-09-16 (CLO-798 merged in PR #60; CLO-797 still open)
+**Last Updated**: 2026-09-17 (CLO-802 merged in PR #64, released v0.8.1; CLO-797 now in progress in a separate session/worktree)
 
 ## Summary
 
@@ -94,7 +94,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | CLO-517 | Fix Ollama cloud model commit-plan parse failure (single-commit fallback) | Done | CLO-495 (related) |
 | CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini (unsupported `additionalProperties`) | Done | CLO-531 |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
-| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | Backlog | CLO-487 (related) |
+| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | In Progress | CLO-487 (related) |
 | [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or retrying request is not silent | Done | CLO-488, CLO-493 (related) |
 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | Done | CLO-516, CLO-547 (related) |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Backlog | CLO-555 (related) |
