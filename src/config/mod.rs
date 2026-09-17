@@ -604,7 +604,7 @@ pub fn merge_provider_config(
         existing.map(|c| c.default).unwrap_or(updated.id)
     };
     Config {
-        conflict: ConflictConfig::default(),
+        conflict: existing.map(|c| c.conflict.clone()).unwrap_or_default(),
         version: CONFIG_FORMAT_VERSION,
         default,
         providers,
@@ -1840,6 +1840,26 @@ mod tests {
             .find(|p| p.id == ProviderId::Ollama)
             .unwrap();
         assert_eq!(ollama.endpoint.as_deref(), Some("http://h:1"));
+    }
+
+    #[test]
+    fn merge_provider_config_preserves_conflict_settings() {
+        let existing = Config {
+            conflict: ConflictConfig {
+                temperature: 0.4,
+                validate_cmd: Some("cargo check".to_string()),
+                sensitive_paths: vec!["secrets/**".to_string()],
+                auto_policy: AutoPolicy::Complex,
+                mergiraf: false,
+                max_rounds: 3,
+            },
+            version: CONFIG_FORMAT_VERSION,
+            default: ProviderId::Groq,
+            providers: vec![pcw(ProviderId::Groq, Some("g"), &["g"])],
+        };
+        let updated = pcw(ProviderId::Groq, Some("g2"), &["g2"]);
+        let merged = merge_provider_config(Some(&existing), updated, false);
+        assert_eq!(merged.conflict, existing.conflict);
     }
 
     #[test]
