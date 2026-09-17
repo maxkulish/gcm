@@ -256,7 +256,9 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
         .items(&default_items)
         .filter_mode()
         .max_rows(15);
-    if let Some(d) = initial_default_model(id, &selected, current_model.as_deref()) {
+    if let Some(d) =
+        initial_default_model(id, &selected, &current_enabled, current_model.as_deref())
+    {
         default_select = default_select.initial_value(d);
     }
     let default_model = match default_select.interact() {
