@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-09-16 (CLO-798 fixed and merged in PR #60; CLO-799 in PR #59; **CLO-797 remains open**)
+**Last Updated**: 2026-09-17 (CLO-802 in review in PR #64; v0.8.0 released; **CLO-797 remains open**)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -100,7 +100,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | None active | — | — | — (CLO-797 leads the queue) |
+| [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | In Review | Bug fix | none |
 
 ## Up Next (Ready - no open blockers)
 
@@ -110,7 +110,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | 2 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | CLO-797/798 (related — same call, output side) | — |
 | 3 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | none | — |
 
-> All three WIP slots are free. **CLO-798** (visibility) merged in PR #60 and **CLO-799** (the enabled-model set pinned gcm to one model) in PR #59, leaving **CLO-797** (input side - the grouping prompt repeats the path list three times) at the head of the queue. Phase 6 (library extraction) is **complete** after CLO-598 merged PR #52. The public surface is locked by `scripts/check-public-surface.sh` and verified by an out-of-tree `smoke/` consumer. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), `gcm resolve` Phase 1-4 (CLO-531 + fixes CLO-534/535 + CLO-533 + CLO-555 + CLO-554), provider expansion (CLO-537) and maintenance (CLO-545/547/564).
+> **CLO-802** is in review in PR #64 and holds one WIP slot; the other two are free. It is the third turn of the same complaint - "it doesn't matter which model I choose" - and the first one whose cause is the wizard's **Default model** radio rather than the enabled set. CLO-799 fixed the multiselect and shipped in v0.8.0; the old default survived one step later, pre-selected, so Enter kept it. **CLO-798** (visibility) merged in PR #60 and **CLO-799** in PR #59, leaving **CLO-797** (input side - the grouping prompt repeats the path list three times) at the head of the queue once CLO-802 lands. Phase 6 (library extraction) is **complete** after CLO-598 merged PR #52. The public surface is locked by `scripts/check-public-surface.sh` and verified by an out-of-tree `smoke/` consumer. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), `gcm resolve` Phase 1-4 (CLO-531 + fixes CLO-534/535 + CLO-533 + CLO-555 + CLO-554), provider expansion (CLO-537) and maintenance (CLO-545/547/564).
 >
 > **CLO-497** (cross-platform releases + alias cutover) merged PR #20 (squash) 2026-06-24 → Done. It was the last open v1 slice: **the bash→Rust migration is complete**. The release pipeline (`.github/workflows/release.yml`) ships static-musl Linux + native macOS binaries on `v*` tags; cutover documented in `docs/guides/cutover-from-bash.md`. **CLO-514** (secret-scanner rule-pack + entropy engine) merged PR #18 2026-06-23 — new FR-60, hardens FR-50. All feature work Done: **CLO-514** secret-scanner rule-pack (PR #18), **CLO-496** onboarding (PR #17), **CLO-490** secret scanning + `gcmignore` (PR #16), **CLO-488** typed errors + retries (PR #6, `9052a7e`), **CLO-494** Anthropic (PR #11), **CLO-495** Ollama (PR #14), CLO-491 plan cache (PR #7), **CLO-492** validation (PR #9), **CLO-493** automation surface (PR #12), **CLO-489** provider trait (PR #10).
 

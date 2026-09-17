@@ -99,6 +99,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | Done | CLO-516, CLO-547 (related) |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Backlog | CLO-555 (related) |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | Backlog | CLO-797, CLO-798 (related) |
+| [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | In Review | CLO-799 (related - same complaint, next wizard step) |
 
 Both were found in one investigation of a 515-file commit and are measured in
 [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).

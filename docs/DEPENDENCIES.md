@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-16 (CLO-798 merged in PR #60; CLO-799 in PR #59; CLO-797 still open)
+**Last Updated**: 2026-09-17 (CLO-802 in review in PR #64; CLO-797 still open)
 
 ## Current Blockers
 
@@ -15,6 +15,7 @@
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | No dependencies; root cause measured and fix directions written | 2026-09-16 |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | No dependencies; one-line cause in `merge_provider_config` | 2026-09-16 |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas | 2026-09-16 |
+| [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | No dependencies; cause isolated to `initial_default_model` and reproduced via PTY | 2026-09-17 |
 
 > **One open bug left of the three (2026-09-16).** CLO-797 (the grouping prompt overflows the context
 > window) is still open; it came out of the same investigation of a 515-file commit as CLO-798, see
@@ -25,6 +26,14 @@
 > shipped visibility and left `DEFAULT_TIMEOUT_SECS`, the retry constants and `is_retryable` untouched,
 > so CLO-801 can still land without undoing it - and a 515-file grouping call still needs
 > `GCM_HTTP_TIMEOUT_SECS` until one of the two input-side fixes lands.
+>
+> **CLO-799 did not close the complaint, and that is a dependency worth naming (2026-09-17).** CLO-799
+> shipped in v0.8.0 and fixed the step it targeted - the enable-models multiselect. The user hit the
+> same symptom again, because `gcm provider` decides the default in a second prompt that CLO-799 never
+> touched. CLO-802 fixes that prompt and depends on CLO-799 only in the sense that it works on the
+> surface CLO-799 left behind; the two do not conflict. CLO-800 also lives in this wizard
+> (`merge_provider_config` resets `[conflict]`) and is untouched by CLO-802, so it can land in either
+> order.
 >
 > **Phase 6 (library extraction) is now complete.** CLO-598 merged in PR #52 (2026-07-30) — the out-of-tree `smoke/` consumer and `scripts/check-public-surface.sh` lock the public surface. No remaining Phase-6 blockers. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
