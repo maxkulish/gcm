@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-17 (CLO-800 merged in PR #65; CLO-797 in progress in a separate session/worktree)
+**Last Updated**: 2026-09-18 (CLO-805 filed - third occurrence of the "wrong model saved" complaint family; CLO-797 in progress in a separate session/worktree)
 
 ## Current Blockers
 
@@ -19,6 +19,7 @@
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas (blocked on CLO-797 landing first - shares the grouping-call output) | 2026-09-16 |
+| [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | No dependencies; root cause confirmed by PTY reproduction, candidate directions written | 2026-09-18 |
 
 > **One open bug left of the three (2026-09-16).** CLO-797 (the grouping prompt overflows the context
 > window) is still open; it came out of the same investigation of a 515-file commit as CLO-798, see
@@ -39,6 +40,8 @@
 > wizard** (`merge_provider_config` reset `[conflict]` to defaults on every save, dropping a customized
 > `validate_cmd`/`sensitive_paths`) and was untouched by CLO-802; it merged separately in PR #65
 > (2026-09-17).
+>
+> **The "wrong model saved" complaint has a third occurrence, and it is not a code bug this time (2026-09-18).** A user filtered `gcm provider`'s Ollama Enable-models list to `deepseek`, pressed ENTER without SPACE, and got the stale `nemotron-3-nano:30b-cloud` back - a model the live Ollama catalog no longer even serves. PTY reproduction confirmed the wizard behaves exactly as coded: SPACE+ENTER on the filtered row saves correctly (CLO-802's newly-enabled-wins-default logic worked), ENTER alone leaves the previously-checked model untouched. CLO-799's on-screen warning about this exact trap did not prevent a third occurrence, so **CLO-805** asks for a structural fix rather than another warning.
 >
 > **Phase 6 (library extraction) is now complete.** CLO-598 merged in PR #52 (2026-07-30) — the out-of-tree `smoke/` consumer and `scripts/check-public-surface.sh` lock the public surface. No remaining Phase-6 blockers. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). **CLO-554** (rebase resolve-until-clean loop) merged in PR #47 (2026-07-28), built on the **CLO-555** transaction engine from PR #35 — **Phase 4 (`gcm resolve`) is complete** and it blocked nothing downstream. **CLO-545** (OpenAI GPT-5.6 model refresh) merged in PR #34 (2026-07-11); the owner's live API smokes (AC7, need `OPENAI_API_KEY`) are the only remaining step. **CLO-547** (provider-wide model-discovery hardening, split from the CLO-545 review) merged in PR #38 (2026-07-22). **CLO-537** (Vertex AI provider, keyless ADC) merged in PR #32 (2026-07-09) — the only remaining step is the maintainer's live ADC end-to-end check (**HITL**). All prior tracked gcm work is Done; CLO-533 (`gcm resolve` remote MR/PR orchestration, Phase 2) merged in PR #30.
 
