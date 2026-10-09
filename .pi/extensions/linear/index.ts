@@ -7,6 +7,7 @@ import {
   formatSize,
   truncateHead,
   type ExtensionAPI,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
@@ -52,26 +53,34 @@ type MCPTool = {
   inputSchema?: unknown;
 };
 
-export default function (pi: ExtensionAPI) {
-  const apiKey = process.env.LINEAR_API_KEY;
-  if (!apiKey) {
-    pi.sendUserMessage(
-      "LINEAR_API_KEY not set. Linear tools unavailable. Set it: export LINEAR_API_KEY=lin_api_...",
-      { deliverAs: "followUp" },
-    );
+// Status notices must not go through sendUserMessage: that starts a model turn,
+// and in print mode it collides with the prompt already being processed.
+function notifyStatus(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error" = "info"): void {
+  if (ctx.hasUI) {
+    ctx.ui.notify(message, level);
     return;
   }
+  console.error(message);
+}
+
+export default function (pi: ExtensionAPI) {
+  const apiKey = process.env.LINEAR_API_KEY;
 
   // pi fires session_start on first start and on reload — single entry point avoids
   // racing two concurrent registrations against the same activeLinearClient.
-  pi.on("session_start", async () => {
-    const connected = await registerLinearTools(pi, apiKey).catch((err: Error) => {
-      pi.sendUserMessage(`Linear MCP connection failed: ${err.message}`, { deliverAs: "followUp" });
+  pi.on("session_start", async (_event, ctx: ExtensionContext) => {
+    if (!apiKey) {
+      notifyStatus(ctx, "LINEAR_API_KEY not set. Linear tools unavailable. Set it: export LINEAR_API_KEY=lin_api_...", "warning");
+      return;
+    }
+
+    const connected = await registerLinearTools(pi, ctx, apiKey).catch((err: Error) => {
+      notifyStatus(ctx, `Linear MCP connection failed: ${err.message}`, "error");
       return false;
     });
 
     if (!connected) {
-      pi.sendUserMessage("Linear MCP unavailable. Keeping previously registered tools.", { deliverAs: "followUp" });
+      notifyStatus(ctx, "Linear MCP unavailable. Keeping previously registered tools.", "warning");
     }
   });
 
@@ -166,12 +175,12 @@ function schemaToTypeBox(schema: unknown): unknown {
   }
 }
 
-async function registerLinearTools(pi: ExtensionAPI, apiKey: string): Promise<boolean> {
+async function registerLinearTools(pi: ExtensionAPI, ctx: ExtensionContext, apiKey: string): Promise<boolean> {
   await closeActiveLinearClient();
   const client = await ensureLinearClient(apiKey);
   const { tools } = await client.listTools();
   if (!tools || tools.length === 0) {
-    pi.sendUserMessage("Linear MCP: connected but no tools discovered.", { deliverAs: "followUp" });
+    notifyStatus(ctx, "Linear MCP: connected but no tools discovered.", "warning");
     return false;
   }
 
@@ -284,9 +293,9 @@ async function registerLinearTools(pi: ExtensionAPI, apiKey: string): Promise<bo
 
   const surfaceMode = fullSurface ? "full" : "approved-subset";
   const refreshedSuffix = refreshedCount > 0 ? `, ${refreshedCount} refreshed` : "";
-  pi.sendUserMessage(
+  notifyStatus(
+    ctx,
     `Linear MCP: registered ${registeredCount}${refreshedSuffix} (${registeredLinearTools.size} tracked / ${discoveredCount} discovered, ${surfaceMode}).`,
-    { deliverAs: "followUp" },
   );
   return true;
 }
