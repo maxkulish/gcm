@@ -6,9 +6,9 @@
   "main": "index.ts",
   "scripts": {},
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.87.1",
-    "@earendil-works/pi-coding-agent": "^0.87.1",
-    "@earendil-works/pi-tui": "^0.87.1",
+    "@earendil-works/pi-ai": "^1.1.0",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
+    "@earendil-works/pi-tui": "^1.1.0",
     "js-yaml": "^4.3.2",
     "typebox": "^1.1.24"
   },
