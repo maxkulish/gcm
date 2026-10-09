@@ -5,8 +5,8 @@
   "type": "module",
   "main": "index.ts",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.87.1",
-    "@earendil-works/pi-tui": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
+    "@earendil-works/pi-tui": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "typebox": "^1.1.24"
   },
