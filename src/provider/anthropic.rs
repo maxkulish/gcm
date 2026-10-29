@@ -137,6 +137,12 @@ impl Provider for Anthropic {
 // Payload builders
 // ---------------------------------------------------------------------------
 
+/// `max_tokens` for the plan call. The prompt budget reads it too (CLO-797),
+/// so the payload and the path-echo check cannot drift apart.
+pub(crate) const PLAN_MAX_TOKENS: usize = 4096;
+/// `max_tokens` for the message call; also read by the message budget.
+pub(crate) const MESSAGE_MAX_TOKENS: usize = 1024;
+
 fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
     json!({
         "model": model,
@@ -162,7 +168,7 @@ fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
 fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
     json!({
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": PLAN_MAX_TOKENS,
         "system": super::GROUPING_SYSTEM_PROMPT,
         "messages": [
             { "role": "user", "content": super::grouping_user_content(ctx) }
@@ -180,7 +186,7 @@ fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
 fn build_message_payload(user_content: &str, model: &str) -> Value {
     json!({
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": MESSAGE_MAX_TOKENS,
         "system": super::SYSTEM_PROMPT,
         "messages": [
             { "role": "user", "content": user_content }

@@ -1,3 +1,6 @@
+// Wired into the call sites by the CLO-797 pre-flight check.
+#[allow(dead_code)]
+mod budget;
 mod cache;
 mod cli;
 #[path = "config/facade.rs"]

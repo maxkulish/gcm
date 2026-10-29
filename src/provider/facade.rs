@@ -21,6 +21,11 @@ pub(crate) mod ollama;
 mod openai;
 mod vertex;
 
+pub(crate) use anthropic::{
+    MESSAGE_MAX_TOKENS as ANTHROPIC_MESSAGE_MAX_TOKENS,
+    PLAN_MAX_TOKENS as ANTHROPIC_PLAN_MAX_TOKENS,
+};
+
 pub use gcm::provider::http;
 #[doc(hidden)]
 pub use gcm::provider::identity::{is_cloud_model, OPENAI_SUPPORTED_MODELS};
