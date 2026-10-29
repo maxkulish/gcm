@@ -8,6 +8,7 @@
 //! every path back; a message call sends only the stat and the diff.
 
 use crate::error::GcmError;
+use crate::provider::diagnostics::Operation;
 use crate::provider::ProviderId;
 
 /// The window assumed for a model the table does not list. Deliberately
@@ -255,16 +256,80 @@ pub enum GroupingRejected {
     OutputCap { echo_tokens: usize, cap: usize },
 }
 
-impl std::fmt::Display for GroupingRejected {
+/// Why gcm refused to send a prompt (CLO-797).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptCause {
+    /// The grouping prompt does not fit even with inventory and stat only.
+    GroupingCannotFit,
+    /// The plan's path echo exceeds the provider's plan output cap.
+    GroupingOutputCap { echo_tokens: usize, cap: usize },
+    /// A message prompt does not fit the window.
+    MessageCannotFit,
+}
+
+/// A prompt gcm refused to send because the model cannot hold it. No
+/// provider request was made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PromptTooLarge {
+    pub cause: PromptCause,
+    pub operation: Operation,
+    pub files: usize,
+    pub estimate: usize,
+    pub available: usize,
+    pub window: usize,
+}
+
+impl std::fmt::Display for PromptTooLarge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GroupingRejected::OutputCap { echo_tokens, cap } => write!(
+        let label = self.operation.label();
+        match self.cause {
+            PromptCause::GroupingOutputCap { echo_tokens, cap } => write!(
                 f,
-                "the plan would echo about {echo_tokens} tokens of paths, more than the \
-                 provider's {cap}-token plan output cap"
+                "the {label} reply would echo about {echo_tokens} tokens of paths for {} \
+                 file(s), more than the provider's {cap}-token plan output cap; no {label} \
+                 request was sent",
+                self.files
+            ),
+            PromptCause::GroupingCannotFit | PromptCause::MessageCannotFit => write!(
+                f,
+                "the {label} prompt for {} file(s) is about {} tokens, more than the {} \
+                 tokens a {}-token context window leaves for it; no {label} request was \
+                 sent. {} If the model's window is larger, set {WINDOW_ENV}.",
+                self.files,
+                self.estimate,
+                self.available,
+                self.window,
+                self.operation.oversize_advice()
             ),
         }
     }
+}
+
+/// The pre-flight check (CLO-797 D5): refuse `rendered`, the user content a
+/// provider call would send, when it exceeds `budget`. Pure; no network.
+pub fn ensure_prompt_fits(
+    rendered: &str,
+    budget: &PromptBudget,
+    operation: Operation,
+    files: usize,
+) -> Result<(), GcmError> {
+    let estimate = estimate_tokens(rendered);
+    let available = budget.available();
+    if estimate <= available {
+        return Ok(());
+    }
+    let cause = match budget.kind {
+        BudgetKind::Grouping => PromptCause::GroupingCannotFit,
+        BudgetKind::Message => PromptCause::MessageCannotFit,
+    };
+    Err(GcmError::PromptTooLarge(PromptTooLarge {
+        cause,
+        operation,
+        files,
+        estimate,
+        available,
+        window: budget.window_tokens,
+    }))
 }
 
 impl PromptBudget {
@@ -484,5 +549,44 @@ mod tests {
     fn kinds_available_saturates() {
         let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
         assert_eq!(PromptBudget::message(100, &t).available(), 0);
+    }
+
+    #[test]
+    fn preflight_passes_a_prompt_that_fits() {
+        let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
+        let m = PromptBudget::message(131_072, &t);
+        assert!(ensure_prompt_fits("small", &m, Operation::SingleMessage, 1).is_ok());
+    }
+
+    #[test]
+    fn preflight_refuses_an_oversized_prompt_with_its_numbers() {
+        let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
+        let m = PromptBudget::message(8_192, &t);
+        let prompt = "x".repeat(40_000);
+        let err = ensure_prompt_fits(&prompt, &m, Operation::GroupMessage, 3).unwrap_err();
+        let GcmError::PromptTooLarge(e) = &err else {
+            panic!("expected PromptTooLarge, got {err:?}");
+        };
+        assert_eq!(e.cause, PromptCause::MessageCannotFit);
+        assert_eq!(e.estimate, 20_000);
+        assert_eq!(e.window, 8_192);
+        let text = err.to_string();
+        assert!(text.contains("group message"), "{text}");
+        assert!(text.contains("no group message request was sent"), "{text}");
+        assert!(text.contains(WINDOW_ENV), "{text}");
+    }
+
+    #[test]
+    fn preflight_cause_follows_the_budget_kind() {
+        let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
+        let g = PromptBudget::grouping(4_096, &t, "[]").unwrap();
+        let err = ensure_prompt_fits(&"x".repeat(40_000), &g, Operation::Grouping, 9).unwrap_err();
+        assert!(matches!(
+            err,
+            GcmError::PromptTooLarge(PromptTooLarge {
+                cause: PromptCause::GroupingCannotFit,
+                ..
+            })
+        ));
     }
 }

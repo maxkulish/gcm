@@ -57,7 +57,7 @@ impl Operation {
     /// untracked alike (`src/diff.rs:204`) - so staging a subset sends exactly
     /// the same bytes and the call fails again. Lowering the budget or removing
     /// paths from the set is what actually shrinks the request.
-    fn oversize_advice(self) -> &'static str {
+    pub(crate) fn oversize_advice(self) -> &'static str {
         match self {
             // The grouping prompt carries the changed-file inventory and a
             // per-file-truncated diff; the single-message prompt carries only the

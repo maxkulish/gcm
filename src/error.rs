@@ -63,6 +63,9 @@ pub enum GcmError {
         op: String,
         detail: String,
     },
+    /// gcm refused to send a prompt the model's context window cannot hold
+    /// (CLO-797). No provider request was made, so nothing was staged.
+    PromptTooLarge(crate::budget::PromptTooLarge),
 }
 
 impl GcmError {
@@ -139,6 +142,7 @@ impl fmt::Display for GcmError {
                 f,
                 "could not finish the {op}: {detail}. Staged resolutions are kept - fix the issue and run `git {op} --continue`."
             ),
+            GcmError::PromptTooLarge(e) => write!(f, "{e}"),
         }
     }
 }
