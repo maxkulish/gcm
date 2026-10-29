@@ -20,7 +20,7 @@ linear:
   blocked_by: []
   branch_suggested: kmamemo/clo-797-fix-grouping-prompt-exceeding-the-model-context-window-when
   priority: High
-  branch_actual: fix/clo-797-fix-grouping-prompt
+  branch_actual: fix/clo-797-grouping-prompt   # original fix/clo-797-fix-grouping-prompt worktree lost; resumed 2026-10-29
 classification:
   recommended: development
   chosen: development
@@ -55,9 +55,9 @@ classification:
     blast radius - the full cycle earns its cost on the budget decision.
 workflow:
   current_phase: plan
-  status: in_progress
+  status: checkpoint
   created_at: '2026-09-17T00:00:00Z'
-  updated_at: '2026-09-17T01:20:00Z'
+  updated_at: '2026-10-29T19:30:00Z'
 phases:
   discovery:
     status: skipped
@@ -107,7 +107,10 @@ phases:
       - 'P2-13 test plan 7 -> 15 cases: rename, encodings, collisions, env validation, fallback matrix, no-network, visibility'
     flagged_suggestions: []      # no suggestion contradicted a documented prior decision
   plan:
-    status: pending
+    status: checkpoint
+    plan_file: docs/plans/clo-797-grouping-prompt-budget.md
+    approved: false
+    sub_tasks: 7
   implement:
     status: pending
   pr:
@@ -184,5 +187,19 @@ history:
       Finalized; Linear comment posted with the six decisions and the two carry-forward findings (unsatisfiable AC2,
       Anthropic's 4096 output cap blocking a large plan regardless of window). No open questions remain. Advancing to
       plan.
+  - timestamp: '2026-09-17T13:39:00Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      docs/plans/clo-797-grouping-prompt-budget.md - seven sub-tasks ST1-ST7 over design decisions D1-D6. Written in
+      the original worktree but never committed.
+  - timestamp: '2026-10-29T19:30:00Z'
+    action: workflow_resumed
+    phase: plan
+    details: >-
+      Original worktree and branch fix/clo-797-fix-grouping-prompt were lost. Owner chose to restore: design commit
+      07119ff cherry-picked onto fix/clo-797-grouping-prompt (aggregation files kept at main's newer versions and
+      re-pointed at this worktree), plan text recovered verbatim from transcript fb1a73a2 seq316. src/ changed only in
+      config/mod.rs since the design base 23fb0b9; plan file:line references re-verified. Plan awaits approval.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit
