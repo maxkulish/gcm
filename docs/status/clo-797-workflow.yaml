@@ -113,7 +113,19 @@ phases:
     approved_commit: 709193e
     sub_tasks: 7
   implement:
-    status: pending
+    status: in_progress
+    status_file: docs/status/clo-797-grouping-prompt-budget.md
+    last_phase_completed: ST7 Integration coverage
+    commits:
+      - 9000f5f
+      - 382e83a
+      - 044fd01
+      - 6fe4920
+      - fb4d33f
+      - c576368
+      - 5d76db7
+      - 23533f4
+    red_run: ac1_grouping_payload_fits_the_window failed on 7c7cb28 at ~212714 estimated tokens vs 131072
   pr:
     status: pending
   complete:
@@ -219,5 +231,20 @@ history:
     details: >-
       Owner approved the revised ST1-ST7 at commit 709193e. Implementation starts with ST1 and follows the documented
       dependencies, the red-before-fix regression requirement and the validation gates.
+  - timestamp: '2026-10-29T22:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: >-
+      ST1-ST7 committed (382e83a..23533f4) after the baseline golden test 9000f5f. The AC1 guard failed on pre-fix
+      main 7c7cb28 and passes on the branch. Pre-merge gate green: fmt, clippy -D warnings, 595 tests,
+      check-public-surface.sh untouched, no-default-features lib build.
+  - timestamp: '2026-10-29T22:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: All seven sub-tasks done; validation gate next.
+  - timestamp: '2026-10-29T22:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: fix/clo-797-grouping-prompt pushed to origin.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit
