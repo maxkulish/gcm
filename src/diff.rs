@@ -356,7 +356,7 @@ pub fn gather_for_grouping(
     // marker is kept when there is room for it and dropped when there is not.
     let (mut ctx, _) = parts.render(None)?;
     let mut estimate = measure(&ctx);
-    if estimate > available {
+    if !fits(&ctx, estimate) {
         ctx.body.clear();
         estimate = measure(&ctx);
     }
@@ -1065,6 +1065,18 @@ mod tests {
         assert_eq!(g.rung, GroupingRung::PathsOnly);
         assert!(g.ctx.body.is_empty());
         assert_eq!(g.estimate, exact);
+    }
+
+    #[test]
+    fn ladder_paths_only_drops_the_marker_past_the_byte_ceiling() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let diff_budget = DiffBudget {
+            total_bytes: 1,
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let g = gather_for_grouping(&repo, &changed, &diff_budget, &roomy()).unwrap();
+        assert_eq!(g.rung, GroupingRung::PathsOnly);
+        assert!(g.ctx.body.is_empty());
     }
 
     #[test]
