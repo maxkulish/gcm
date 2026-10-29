@@ -54,8 +54,8 @@ classification:
     Mechanical dedup plus one genuine architecture decision (budget derived from model context window) over a >5-file
     blast radius - the full cycle earns its cost on the budget decision.
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-09-17T00:00:00Z'
   updated_at: '2026-10-30T00:30:00Z'
 phases:
@@ -139,12 +139,17 @@ phases:
     follow_ups: [CLO-921]
     gemini_validation_report: unavailable   # Gemini CLI not installed
   pr:
-    status: in_progress
+    status: complete
+    approved: true
+    ci_passed: true
     pr_url: https://github.com/maxkulish/gcm/pull/73
     pr_number: 73
     session_wrap: proposed (4 lessons, .pi/lessons/clo-797-grouping-prompt-budget-lessons.md, committed by the post-merge docs PR)
   complete:
-    status: pending
+    status: complete
+    merged_at: '2026-10-29T22:46:32Z'
+    merge_commit: 4500810
+    aggregation_files_updated: true
 history:
   - timestamp: '2026-09-17T00:00:00Z'
     action: workflow_started
@@ -299,5 +304,25 @@ history:
     action: pr_created
     phase: pr
     details: PR #73 created; Linear CLO-797 moved to In Review.
+  - timestamp: '2026-10-29T22:20:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: fmt, clippy -D warnings, 604 tests, check-public-surface.sh and the --no-default-features lib build passed on ee8de89; 9ed44a7 changed only this file.
+  - timestamp: '2026-10-29T22:45:00Z'
+    action: ci_passed
+    phase: pr
+    details: build / test passed on macos-latest and ubuntu-latest for PR #73.
+  - timestamp: '2026-10-29T22:46:32Z'
+    action: pr_merged
+    phase: complete
+    details: Owner squash-merged PR #73 as 4500810.
+  - timestamp: '2026-10-29T22:55:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: CLO-797 moved to Recently Completed; CLO-801 unblocked; CLO-921 added to Up Next.
+  - timestamp: '2026-10-29T22:55:00Z'
+    action: workflow_complete
+    phase: complete
+    details: Lessons committed to .pi/lessons/clo-797-grouping-prompt-budget-lessons.md with the aggregation update.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit

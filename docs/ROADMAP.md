@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-09-17 (CLO-800 merged in PR #65; CLO-797 in progress in a separate session/worktree)
+**Last Updated**: 2026-10-29 (CLO-797 merged in PR #73; CLO-921 filed)
 
 ## Summary
 
@@ -94,21 +94,22 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | CLO-517 | Fix Ollama cloud model commit-plan parse failure (single-commit fallback) | Done | CLO-495 (related) |
 | CLO-534 | Fix `gcm resolve` HTTP 400 on Gemini (unsupported `additionalProperties`) | Done | CLO-531 |
 | CLO-535 | Fix `gcm resolve` splice: missing trailing newline joins the following line | Done | CLO-531 (related) |
-| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | In Progress | CLO-487 (related) |
+| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window when a commit touches many files | Done | CLO-487 (related) |
 | [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or retrying request is not silent | Done | CLO-488, CLO-493 (related) |
 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | Done | CLO-516, CLO-547 (related) |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Done | CLO-555 (related) |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | Backlog | CLO-797, CLO-798 (related) |
 | [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | Done | CLO-799 (related - same complaint, next wizard step) |
 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | Backlog | CLO-799, CLO-802 (related - third occurrence of the same complaint family) |
+| [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | Backlog | CLO-797 (follow-up) |
 
 Both were found in one investigation of a 515-file commit and are measured in
 [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
 CLO-797 is the input side: the grouping prompt sends the same file path list three times, 59% of a
-189,377-token prompt against a 131,072-token window, and it is still open. CLO-798 was what the user
+189,377-token prompt against a 131,072-token window; PR #73 fixed it on 2026-10-29. CLO-798 was what the user
 saw when a provider call ran long - every log call site was `debug_log!`, off by default, so a 60s
 timeout produced no output at all; PR #60 gave the call a status line, a ticker, visible retries and
-failure prose that explains itself. They were independent, and CLO-797 still is.
+failure prose that explains itself. They were independent.
 
 ## Maintenance (cross-cutting)
 

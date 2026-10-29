@@ -8,7 +8,7 @@
 
 ---
 
-## Current Status: Validation passed with notes, ready for the PR
+## Current Status: Complete - merged in PR #73 (4500810) on 2026-10-29
 
 **Overall Progress**: 100% (7/7 sub-tasks)
 **Branch**: fix/clo-797-grouping-prompt

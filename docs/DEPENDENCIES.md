@@ -1,28 +1,29 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-09-18 (CLO-805 filed - third occurrence of the "wrong model saved" complaint family; CLO-797 in progress in a separate session/worktree)
+**Last Updated**: 2026-10-29 (CLO-797 merged in PR #73; CLO-801 unblocked; CLO-921 filed)
 
 ## Current Blockers
 
 | Blocked Task | Blocked By | Blocker Status | Notes |
 |--------------|------------|----------------|-------|
-| — | None blocked | — | CLO-797 is independent of all Done work |
+| — | None blocked | — | — |
 
 ## In Progress (elsewhere)
 
 | Task | Where | Since |
 |------|-------|-------|
-| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Worktree `gcm--fix-clo-797-grouping-prompt` (resumed 2026-10-29; design restored from orphaned 07119ff) | 2026-09-17 |
+| — | Nothing in progress | — |
 
 ## Unblocked & Ready
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas (blocked on CLO-797 landing first - shares the grouping-call output) | 2026-09-16 |
+| [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas (CLO-797 landed in PR #73 - shares the grouping call) | 2026-10-29 |
 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | No dependencies; root cause confirmed by PTY reproduction, candidate directions written | 2026-09-18 |
+| [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | CLO-797 merged; owner decision needed on replacing the D4 estimator | 2026-10-29 |
 
-> **One open bug left of the three (2026-09-16).** CLO-797 (the grouping prompt overflows the context
-> window) is still open; it came out of the same investigation of a 515-file commit as CLO-798, see
+> **All three bugs of 2026-09-16 are closed.** CLO-797 (the grouping prompt overflowed the context
+> window) merged in PR #73 on 2026-10-29; it came out of the same investigation of a 515-file commit as CLO-798, see
 > [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
 > CLO-798 merged in PR #60 (2026-09-16) and CLO-799 in PR #59. The sequencing note that shaped CLO-798
 > held: CLO-801 (return group assignments by index) would remove the ~36K-token output that makes the
