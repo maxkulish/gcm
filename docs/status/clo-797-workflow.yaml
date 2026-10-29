@@ -54,10 +54,10 @@ classification:
     Mechanical dedup plus one genuine architecture decision (budget derived from model context window) over a >5-file
     blast radius - the full cycle earns its cost on the budget decision.
 workflow:
-  current_phase: plan
-  status: checkpoint
+  current_phase: implement
+  status: in_progress
   created_at: '2026-09-17T00:00:00Z'
-  updated_at: '2026-10-29T20:05:00Z'
+  updated_at: '2026-10-29T20:20:00Z'
 phases:
   discovery:
     status: skipped
@@ -107,9 +107,10 @@ phases:
       - 'P2-13 test plan 7 -> 15 cases: rename, encodings, collisions, env validation, fallback matrix, no-network, visibility'
     flagged_suggestions: []      # no suggestion contradicted a documented prior decision
   plan:
-    status: checkpoint
+    status: complete
     plan_file: docs/plans/clo-797-grouping-prompt-budget.md
-    approved: false
+    approved: true
+    approved_commit: 709193e
     sub_tasks: 7
   implement:
     status: pending
@@ -212,5 +213,11 @@ history:
       separately. ST5 guards four call sites, including the cached group-1 regeneration at main.rs:663. ST7 adds a
       successful message fallback after a grouping-output rejection, and zero-request tests for each pre-flight
       rejection. AC2 interpretation and DEFAULT_WINDOW 32,768 unchanged.
+  - timestamp: '2026-10-29T20:20:00Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Owner approved the revised ST1-ST7 at commit 709193e. Implementation starts with ST1 and follows the documented
+      dependencies, the red-before-fix regression requirement and the validation gates.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit

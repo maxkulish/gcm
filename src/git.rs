@@ -58,6 +58,13 @@ impl Repo {
         &self.root
     }
 
+    /// A repo handle at a known root, for tests outside this module that build
+    /// their own temporary repository.
+    #[cfg(test)]
+    pub(crate) fn at(root: PathBuf) -> Repo {
+        Repo { root }
+    }
+
     /// Construct a `Repo` at an explicit path (used by tests outside this module).
     #[allow(dead_code)]
     pub(crate) fn at_root(root: PathBuf) -> Repo {

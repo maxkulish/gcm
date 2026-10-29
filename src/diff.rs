@@ -634,4 +634,107 @@ mod tests {
         assert!(out.contains("[diff omitted:"), "big file elided");
         assert!(!out.contains("filler filler"), "big file body dropped");
     }
+
+    fn git(root: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+
+    /// A repository whose message-path diff exercises every gathering branch:
+    /// a text edit, a binary edit, a rename, and more untracked files than
+    /// `MAX_UNTRACKED_FILES`. Repo-local config pins the diff format so a
+    /// developer's global git config cannot change the output.
+    fn message_fixture() -> (tempfile::TempDir, Repo) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        for (k, v) in [
+            ("user.email", "t@t"),
+            ("user.name", "T"),
+            ("diff.noprefix", "false"),
+            ("diff.mnemonicPrefix", "false"),
+            ("diff.renames", "true"),
+            ("diff.algorithm", "myers"),
+            ("core.autocrlf", "false"),
+        ] {
+            git(root, &["config", k, v]);
+        }
+        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(root.join("old.md"), "# title\n\nbody text\n").unwrap();
+        std::fs::write(root.join("img.bin"), [0u8, 1, 2, 3, 0, 5]).unwrap();
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-q", "-m", "init"]);
+
+        let mut a = String::from("fn a() {}\n");
+        for i in 0..40 {
+            a.push_str(&format!("fn added_{i}() {{ let x = {i}; }}\n"));
+        }
+        std::fs::write(root.join("a.rs"), a).unwrap();
+        git(root, &["mv", "old.md", "new.md"]);
+        std::fs::write(root.join("img.bin"), [0u8, 9, 8, 7, 0, 6, 0]).unwrap();
+        for i in 0..(MAX_UNTRACKED_FILES + 5) {
+            std::fs::write(
+                root.join(format!("u{i:02}.txt")),
+                format!("untracked {i}\n"),
+            )
+            .unwrap();
+        }
+        let repo = Repo::at(root.to_path_buf());
+        (dir, repo)
+    }
+
+    fn render_gathered(label: &str, g: &GatheredDiff) -> String {
+        format!(
+            "=== {label} stat ===\n{}=== {label} body ===\n{}",
+            g.stat, g.body
+        )
+    }
+
+    /// Single-commit and per-group message gathering stay byte-identical to the
+    /// output captured before CLO-797 touched this file. Set
+    /// `GCM_BLESS_MESSAGE_GOLDEN=1` to rewrite the golden after an intended change.
+    #[test]
+    fn message_gathering_unchanged() {
+        let (_dir, repo) = message_fixture();
+        let changed = repo.changed_files().unwrap();
+        let standard = DiffBudget {
+            total_bytes: DiffBudget::STANDARD_TOTAL,
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let tight = DiffBudget {
+            total_bytes: 600,
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let subset: Vec<&ChangedFile> = changed
+            .iter()
+            .filter(|c| c.path == "a.rs" || c.path.starts_with("u0"))
+            .collect();
+
+        let mut actual = String::new();
+        actual.push_str(&render_gathered(
+            "gather_for_changed standard",
+            &gather_for_changed(&repo, &changed, &standard).unwrap(),
+        ));
+        actual.push_str(&render_gathered(
+            "gather_for_changed tight",
+            &gather_for_changed(&repo, &changed, &tight).unwrap(),
+        ));
+        actual.push_str(&render_gathered(
+            "gather_for_files subset",
+            &gather_for_files(&repo, &subset, &standard).unwrap(),
+        ));
+
+        let golden =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata/message_gathering.golden");
+        if std::env::var_os("GCM_BLESS_MESSAGE_GOLDEN").is_some() {
+            std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
+            std::fs::write(&golden, &actual).unwrap();
+        }
+        let expected = std::fs::read_to_string(&golden).expect("golden present");
+        assert_eq!(actual, expected, "message gathering output changed");
+    }
 }
