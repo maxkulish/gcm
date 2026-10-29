@@ -8,7 +8,7 @@
 
 ---
 
-## Current Status: Validation checkpoint, awaiting owner decision on Codex findings
+## Current Status: Validation passed with notes, ready for the PR
 
 **Overall Progress**: 100% (7/7 sub-tasks)
 **Branch**: fix/clo-797-grouping-prompt
@@ -31,6 +31,8 @@
 | ST7 | 23533f4 | `tests/grouping_budget.rs`: AC1, AC2, AC4, zero-request cases, output-cap fallback |
 | ST3 fix | 53139a6 | Groq `qwen/qwen3` and `openai/gpt-oss-` prefixes at 131,072 from Groq's `/models` |
 | D5 addendum | ed5e019 | Message refusal measures at 4 bytes per token; grouping keeps 2 |
+| Codex fixes | 0700eae | Terminal rung decided on paths and stat; cut untracked files counted; CannotFit-then-fallback test |
+| Codex fix | ee8de89 | Omitted-body marker dropped past the byte ceiling too |
 
 ---
 
@@ -57,6 +59,14 @@ invalid_plan_falls_back_to_a_sent_message                  left: 1  right: 2
 ```
 
 They pass on ed5e019.
+
+The two ladder regressions for the first Codex review were run with the fixes removed
+from `src/diff.rs` in a temporary worktree at edf6d3f. Both failed:
+
+```
+ladder_counts_truncated_untracked_files_as_reduced ... FAILED
+ladder_paths_only_drops_the_marker_when_only_paths_and_stat_fit ... FAILED
+```
 
 ---
 
@@ -94,6 +104,11 @@ They pass on ed5e019.
 
 ## Next Steps
 
-- Codex validated 53139a6: FAIL (docs/reviews/clo-797-codex-validation.md). Gemini CLI
-  is not installed and is recorded as unavailable.
-- Owner decision on the Codex findings, then the PR phase.
+- Codex validated 53139a6: FAIL (docs/reviews/clo-797-codex-validation.md). The owner
+  chose to fix the in-design findings and defer the emoji undercount to CLO-921.
+- Codex re-validated 0700eae: PASS_WITH_NOTES (docs/reviews/clo-797-codex-validation-2.md).
+  Its one new LOW finding is fixed in ee8de89. Gemini CLI is not installed and is
+  recorded as unavailable.
+- Follow-ups: CLO-921 (emoji undercount, including the path-echo reserve and the output-cap
+  check); primary sources for the Gemini and OpenAI window entries.
+- `/session:wrap`, then the PR phase.

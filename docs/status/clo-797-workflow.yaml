@@ -54,10 +54,10 @@ classification:
     Mechanical dedup plus one genuine architecture decision (budget derived from model context window) over a >5-file
     blast radius - the full cycle earns its cost on the budget decision.
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-09-17T00:00:00Z'
-  updated_at: '2026-10-29T23:30:00Z'
+  updated_at: '2026-10-30T00:30:00Z'
 phases:
   discovery:
     status: skipped
@@ -113,7 +113,7 @@ phases:
     approved_commit: 709193e
     sub_tasks: 7
   implement:
-    status: in_progress
+    status: complete
     status_file: docs/status/clo-797-grouping-prompt-budget.md
     last_phase_completed: ST7 Integration coverage
     commits:
@@ -127,12 +127,16 @@ phases:
       - 23533f4
       - 53139a6
       - ed5e019
+      - 0700eae
+      - ee8de89
     red_run: ac1_grouping_payload_fits_the_window failed on 7c7cb28 at ~212714 estimated tokens vs 131072
     red_run_generous: three message tests failed on 53139a6 with zero requests sent (pre-flight refusal); pass on ed5e019
     codex_validated: true
-    codex_verdict: FAIL
-    codex_reviewed_revision: 53139a6 (before generous refusal)
-    codex_report: docs/reviews/clo-797-codex-validation.md
+    codex_verdict: PASS_WITH_NOTES
+    codex_reviewed_revision: 0700eae (first review of 53139a6 was FAIL)
+    codex_report: docs/reviews/clo-797-codex-validation-2.md
+    codex_report_first: docs/reviews/clo-797-codex-validation.md
+    follow_ups: [CLO-921]
     gemini_validation_report: unavailable   # Gemini CLI not installed
   pr:
     status: pending
@@ -270,5 +274,23 @@ history:
       keeps 2. Gate green on ed5e019 (fmt, clippy -D warnings, 600 tests, check-public-surface.sh, no-default-features
       lib). Live Groq dry-run on the 515-file tree: --all and grouped fallback both sent and answered on
       qwen/qwen3.8-27b and openai/gpt-oss-120b. Awaiting the owner at the validation checkpoint.
+  - timestamp: '2026-10-30T00:00:00Z'
+    action: commit_created
+    phase: implement
+    details: >-
+      Owner chose fix-in-design. 0700eae fixes the paths-only boundary and the untracked count and adds the
+      CannotFit-then-successful-fallback test; both ladder regressions were red with the fixes removed. HIGH emoji
+      undercount filed as CLO-921.
+  - timestamp: '2026-10-30T00:20:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex re-validated 0700eae: PASS_WITH_NOTES. New LOW (marker past the byte ceiling) fixed in ee8de89; CLO-921
+      extended to the path-echo reserve and output-cap check. Gemini unavailable. Gate green on ee8de89: fmt, clippy
+      -D warnings, 604 tests, check-public-surface.sh, no-default-features lib, no signing skips.
+  - timestamp: '2026-10-30T00:30:00Z'
+    action: implementation_complete
+    phase: implement
+    details: Validation gate passed with notes; PR phase next.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit
