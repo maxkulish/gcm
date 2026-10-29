@@ -454,3 +454,100 @@ fn output_cap_rejection_falls_back_to_one_message_request() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("plan output cap"), "{stderr}");
 }
+
+/// A Groq chat reply whose content is `text`.
+fn groq_reply(text: &str) -> (u16, String) {
+    let body = serde_json::json!({ "choices": [{ "message": { "content": text } }] });
+    (200, body.to_string())
+}
+
+/// The message check uses the generous estimate: the 515-file `--all` message,
+/// ~144K tokens at 2 bytes per token, is ~72K at 4 and reaches the provider.
+#[test]
+fn single_commit_message_under_the_generous_estimate_is_sent() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let (url, captured) = capture(vec![groq_reply("feat: add the sidebar sections")]);
+
+    let out = run(groq(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--all", "--dry-run"],
+    ));
+    assert_eq!(captured.lock().unwrap().len(), 1, "one message request");
+    let env = envelope(&out);
+    assert_eq!(env["status"], "plan", "{env}");
+    assert_eq!(env["mode"], "single");
+}
+
+/// An invalid plan for the 515-file tree still ends in a sent, successful
+/// fallback message rather than a pre-flight refusal.
+#[test]
+fn invalid_plan_falls_back_to_a_sent_message() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let plan = serde_json::json!({
+        "groups": [{ "files": [], "summary": "empty", "commit_message": "feat: nothing" }]
+    })
+    .to_string();
+    let (url, captured) = capture(vec![
+        groq_reply(&plan),
+        groq_reply("feat: add the sidebar sections"),
+    ]);
+
+    let out = run(groq(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--dry-run"],
+    ));
+    let requests = captured.lock().unwrap().clone();
+    assert_eq!(
+        requests.len(),
+        2,
+        "the plan call, then the fallback message"
+    );
+    let message: serde_json::Value = serde_json::from_str(&requests[1]).unwrap();
+    assert!(
+        message.get("response_format").is_none(),
+        "not the plan call"
+    );
+    let env = envelope(&out);
+    assert_eq!(env["status"], "plan", "{env}");
+    assert_eq!(env["mode"], "single");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Falling back to single-commit mode"),
+        "{stderr}"
+    );
+}
+
+/// A message the generous estimate lets through can still overflow the real
+/// window; the provider's context-window error keeps its recovery advice.
+#[test]
+fn provider_context_window_error_stays_actionable() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let body = serde_json::json!({
+        "error": { "message": "Request too large", "code": "context_length_exceeded" }
+    });
+    let (url, captured) = capture(vec![(400, body.to_string())]);
+
+    let out = run(groq(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--all", "--dry-run"],
+    ));
+    assert_eq!(captured.lock().unwrap().len(), 1, "one message request");
+    let env = envelope(&out);
+    assert_eq!(env["status"], "error", "{env}");
+    assert_ne!(env["error"]["code"], "PromptTooLarge");
+    let message = env["error"]["message"].as_str().unwrap();
+    assert!(message.contains("too large for this model"), "{message}");
+    assert!(message.contains("single-commit message"), "{message}");
+}

@@ -43,6 +43,19 @@ pub fn estimate_tokens(text: &str) -> usize {
     }
 }
 
+/// Estimate the tokens `text` costs when the question is whether to refuse a
+/// message prompt: 4 bytes per token, whatever the script. Measured diffs
+/// tokenize at about 2.8 bytes per token, so this errs low on purpose: a
+/// message is refused only when even this estimate overflows, and a prompt it
+/// lets through that the model cannot hold ends in the provider's
+/// context-window error. Non-ASCII text is counted by bytes too, so CJK and
+/// emoji are undercounted rather than refused. Still a heuristic: text that
+/// tokenizes above 4 bytes per token, such as long runs of whitespace or
+/// repeated words, can be refused although the model would accept it.
+pub fn estimate_tokens_generous(text: &str) -> usize {
+    text.len().div_ceil(4)
+}
+
 /// The provider and model a run sends to.
 #[derive(Debug, Clone)]
 pub struct Target {
@@ -360,14 +373,19 @@ impl std::fmt::Display for PromptTooLarge {
 }
 
 /// The pre-flight check (CLO-797 D5): refuse `rendered`, the user content a
-/// provider call would send, when it exceeds `budget`. Pure; no network.
+/// provider call would send, when it exceeds `budget`. A grouping prompt is
+/// measured with [`estimate_tokens`], the estimate its ladder fitted it to; a
+/// message prompt with [`estimate_tokens_generous`]. Pure; no network.
 pub fn ensure_prompt_fits(
     rendered: &str,
     budget: &PromptBudget,
     operation: Operation,
     files: usize,
 ) -> Result<(), GcmError> {
-    let estimate = estimate_tokens(rendered);
+    let estimate = match budget.kind {
+        BudgetKind::Grouping => estimate_tokens(rendered),
+        BudgetKind::Message => estimate_tokens_generous(rendered),
+    };
     let available = budget.available();
     if estimate <= available {
         return Ok(());
@@ -460,6 +478,14 @@ mod tests {
         let text = "файл привет";
         assert_eq!(estimate_tokens(text), text.chars().count());
         assert!(estimate_tokens(text) > text.len() / 2 / 2);
+    }
+
+    #[test]
+    fn estimate_generous_is_four_bytes_per_token_for_any_script() {
+        assert_eq!(estimate_tokens_generous(""), 0);
+        assert_eq!(estimate_tokens_generous("abcde"), 2);
+        let text = "файл привет";
+        assert_eq!(estimate_tokens_generous(text), text.len().div_ceil(4));
     }
 
     const COLLISION: &[WindowEntry] = &[
@@ -621,10 +647,22 @@ mod tests {
     }
 
     #[test]
+    fn preflight_message_uses_the_generous_estimate_and_grouping_does_not() {
+        let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
+        let m = PromptBudget::message(131_072, &t);
+        let g = PromptBudget::grouping(131_072, &t, "[]").unwrap();
+        let three_x = "x".repeat(m.available() * 3);
+        assert!(ensure_prompt_fits(&three_x, &m, Operation::SingleMessage, 1).is_ok());
+        assert!(ensure_prompt_fits(&three_x, &g, Operation::Grouping, 1).is_err());
+        let five_x = "x".repeat(m.available() * 5);
+        assert!(ensure_prompt_fits(&five_x, &m, Operation::SingleMessage, 1).is_err());
+    }
+
+    #[test]
     fn preflight_refuses_an_oversized_prompt_with_its_numbers() {
         let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
         let m = PromptBudget::message(8_192, &t);
-        let prompt = "x".repeat(40_000);
+        let prompt = "x".repeat(80_000);
         let err = ensure_prompt_fits(&prompt, &m, Operation::GroupMessage, 3).unwrap_err();
         let GcmError::PromptTooLarge(e) = &err else {
             panic!("expected PromptTooLarge, got {err:?}");
