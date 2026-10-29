@@ -133,6 +133,11 @@ fn large_tree(dir: &Path) -> Vec<String> {
 
 /// `n` untracked files shaped like [`large_tree`]'s.
 fn tree(dir: &Path, n: usize) -> Vec<String> {
+    tree_of(dir, n, 120)
+}
+
+/// `n` untracked files under [`large_tree`]'s paths, `lines` lines each.
+fn tree_of(dir: &Path, n: usize, lines: usize) -> Vec<String> {
     git_init(dir);
     let base = "frontend/packages/design-system/src/components/navigation/sidebar/sections";
     let mut paths = Vec::new();
@@ -143,7 +148,7 @@ fn tree(dir: &Path, n: usize) -> Vec<String> {
         );
         let full = dir.join(&rel);
         std::fs::create_dir_all(full.parent().unwrap()).unwrap();
-        let content: String = (0..120)
+        let content: String = (0..lines)
             .map(|line| format!("export const value_{i}_{line} = {line};\n"))
             .collect();
         std::fs::write(full, content).unwrap();
@@ -550,4 +555,35 @@ fn provider_context_window_error_stays_actionable() {
     let message = env["error"]["message"].as_str().unwrap();
     assert!(message.contains("too large for this model"), "{message}");
     assert!(message.contains("single-commit message"), "{message}");
+}
+
+/// The grouping prompt cannot fit even as paths and stat, while the fallback
+/// message, a line per file, fits the generous estimate: the plan call is
+/// skipped and the one request is a message that succeeds.
+#[test]
+fn grouping_cannot_fit_falls_back_to_a_sent_message() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    tree_of(repo.path(), 515, 1);
+    let (url, captured) = capture(vec![groq_reply("feat: add the sidebar sections")]);
+
+    let mut cmd = groq(repo.path(), cfg.path(), &url, &["--json", "--dry-run"]);
+    cmd.env("GCM_CONTEXT_WINDOW_TOKENS", "80000");
+    let out = run(cmd);
+    let requests = captured.lock().unwrap().clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(requests.len(), 1, "only the fallback message: {stderr}");
+    let message: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
+    assert!(
+        message.get("response_format").is_none(),
+        "not the plan call"
+    );
+    let env = envelope(&out);
+    assert_eq!(env["status"], "plan", "{env}");
+    assert_eq!(env["mode"], "single");
+    assert!(stderr.contains("no grouping request was sent"), "{stderr}");
+    assert!(
+        stderr.contains("Falling back to single-commit mode"),
+        "{stderr}"
+    );
 }

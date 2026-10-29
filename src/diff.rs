@@ -273,27 +273,29 @@ impl<'a> GroupingParts<'a> {
     }
 
     /// Render the context with each file's diff (tracked and untracked) cut to
-    /// `per_file` bytes; `None` drops the body.
-    fn render(&self, per_file: Option<usize>) -> Result<GroupingContext, GcmError> {
-        let body = match per_file {
-            None => BODY_OMITTED.to_string(),
+    /// `per_file` bytes; `None` drops the body. Also returns how many untracked
+    /// files the cap truncated.
+    fn render(&self, per_file: Option<usize>) -> Result<(GroupingContext, usize), GcmError> {
+        let (body, untracked_cut) = match per_file {
+            None => (BODY_OMITTED.to_string(), 0),
             Some(cap) => {
                 let mut body = truncate_per_file(&self.tracked, cap);
-                append_untracked(
+                let cut = append_untracked(
                     self.repo,
                     &mut body,
                     Some(&self.allow),
                     UntrackedRender::SummaryTrailer,
                     cap.min(PER_FILE_BYTES),
                 )?;
-                body
+                (body, cut)
             }
         };
-        Ok(GroupingContext {
+        let ctx = GroupingContext {
             files: self.files.clone(),
             stat: self.stat.clone(),
             body,
-        })
+        };
+        Ok((ctx, untracked_cut))
     }
 }
 
@@ -332,13 +334,13 @@ pub fn gather_for_grouping(
     }
     caps.push((GroupingRung::HeadersOnly, Some(0)));
     for (rung, per_file) in caps {
-        let ctx = parts.render(per_file)?;
+        let (ctx, untracked_cut) = parts.render(per_file)?;
         let estimate = measure(&ctx);
         if fits(&ctx, estimate) {
             let reduced_files = match rung {
                 GroupingRung::Full => 0,
                 GroupingRung::Shrunk { per_file_bytes } => {
-                    sections_over(&parts.tracked, per_file_bytes)
+                    sections_over(&parts.tracked, per_file_bytes) + untracked_cut
                 }
                 _ => changed.len(),
             };
@@ -350,8 +352,14 @@ pub fn gather_for_grouping(
             });
         }
     }
-    let ctx = parts.render(None)?;
-    let estimate = measure(&ctx);
+    // The terminal decision is whether the inventory and stat fit. The omitted
+    // marker is kept when there is room for it and dropped when there is not.
+    let (mut ctx, _) = parts.render(None)?;
+    let mut estimate = measure(&ctx);
+    if estimate > available {
+        ctx.body.clear();
+        estimate = measure(&ctx);
+    }
     let rung = if estimate <= available {
         GroupingRung::PathsOnly
     } else {
@@ -386,14 +394,15 @@ fn sections_over(diff: &str, cap: usize) -> usize {
 /// [`gather_for_files`] (which passes `Some(allow)` to restrict to one group's
 /// paths, so a single group's message diff is not polluted by other groups'
 /// untracked files - CLO-491). `render` decides how files past the caps appear;
-/// `per_file` bounds each file's read.
+/// `per_file` bounds each file's read. Returns how many files that bound
+/// truncated.
 fn append_untracked(
     repo: &Repo,
     body: &mut String,
     allow: Option<&HashSet<String>>,
     render: UntrackedRender,
     per_file: usize,
-) -> Result<(), GcmError> {
+) -> Result<usize, GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
 
@@ -405,6 +414,7 @@ fn append_untracked(
     let mut files_done = 0usize;
     let mut bytes_used = 0usize;
     let mut skipped = 0usize;
+    let mut truncated = 0usize;
     for path in &untracked {
         // Filter to the allow-list (if any) before the caps, so excluded paths
         // neither consume the budget nor reach the prompt.
@@ -452,6 +462,7 @@ fn append_untracked(
                 }
                 if more {
                     body.push_str("+[truncated]\n");
+                    truncated += 1;
                 }
                 bytes_used += content.len();
             }
@@ -469,7 +480,7 @@ fn append_untracked(
             "\n[content omitted: {skipped} further untracked files past the read cap - see the changed-files inventory]\n"
         ));
     }
-    Ok(())
+    Ok(truncated)
 }
 
 /// Coarse final safeguard on the whole assembled body (FR-57), truncating on a
@@ -981,7 +992,7 @@ mod tests {
     /// The estimated size of the prompt one rung renders.
     fn rung_estimate(repo: &Repo, changed: &[ChangedFile], per_file: Option<usize>) -> usize {
         let parts = GroupingParts::gather(repo, changed).unwrap();
-        estimate_tokens(&grouping_user_content(&parts.render(per_file).unwrap()))
+        estimate_tokens(&grouping_user_content(&parts.render(per_file).unwrap().0))
     }
 
     fn ladder(changed: &[ChangedFile], repo: &Repo, available: usize) -> GroupingGather {
@@ -1037,13 +1048,57 @@ mod tests {
         assert!(g.ctx.stat.contains("a.rs"), "stat never cut");
     }
 
+    /// The estimate of the inventory and stat alone, with an empty body.
+    fn paths_and_stat_estimate(repo: &Repo, changed: &[ChangedFile]) -> usize {
+        let parts = GroupingParts::gather(repo, changed).unwrap();
+        let (mut ctx, _) = parts.render(None).unwrap();
+        ctx.body.clear();
+        estimate_tokens(&grouping_user_content(&ctx))
+    }
+
+    #[test]
+    fn ladder_paths_only_drops_the_marker_when_only_paths_and_stat_fit() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let exact = paths_and_stat_estimate(&repo, &changed);
+        assert!(exact < rung_estimate(&repo, &changed, None));
+        let g = ladder(&changed, &repo, exact);
+        assert_eq!(g.rung, GroupingRung::PathsOnly);
+        assert!(g.ctx.body.is_empty());
+        assert_eq!(g.estimate, exact);
+    }
+
     #[test]
     fn ladder_reports_cannot_fit_when_the_inventory_overflows() {
         let (_dir, repo, changed) = ladder_fixture();
-        let fit = rung_estimate(&repo, &changed, None);
-        let g = ladder(&changed, &repo, fit - 1);
+        let exact = paths_and_stat_estimate(&repo, &changed);
+        let g = ladder(&changed, &repo, exact - 1);
         assert_eq!(g.rung, GroupingRung::CannotFit);
-        assert!(g.estimate > fit - 1);
+        assert!(g.estimate > exact - 1);
+    }
+
+    #[test]
+    fn ladder_counts_truncated_untracked_files_as_reduced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        for i in 0..5 {
+            let lines: String = (0..200)
+                .map(|l| format!("untracked {i} line {l}\n"))
+                .collect();
+            std::fs::write(root.join(format!("u{i}.rs")), lines).unwrap();
+        }
+        let repo = Repo::at(root.to_path_buf());
+        let changed = repo.changed_files().unwrap();
+        let fit = rung_estimate(&repo, &changed, Some(512));
+        assert!(fit < rung_estimate(&repo, &changed, Some(1024)));
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(
+            g.rung,
+            GroupingRung::Shrunk {
+                per_file_bytes: 512
+            }
+        );
+        assert_eq!(g.reduced_files, 5, "every untracked file is cut");
     }
 
     #[test]
@@ -1052,7 +1107,8 @@ mod tests {
         let shrunk = GroupingParts::gather(&repo, &changed)
             .unwrap()
             .render(Some(4096))
-            .unwrap();
+            .unwrap()
+            .0;
         let diff_budget = DiffBudget {
             total_bytes: shrunk.body.len(),
             per_file_bytes: DiffBudget::STANDARD_PER_FILE,
