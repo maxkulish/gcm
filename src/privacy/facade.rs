@@ -33,8 +33,7 @@ impl Privacy {
 
     pub fn prepare_grouping(&self, ctx: GroupingContext) -> Result<GroupingContext, GcmError> {
         Ok(GroupingContext {
-            file_list: self.scan_text(ctx.file_list)?,
-            status: self.scan_text(ctx.status)?,
+            files: self.scan_text(ctx.files)?,
             stat: self.scan_text(ctx.stat)?,
             body: self.scan_text(ctx.body)?,
         })

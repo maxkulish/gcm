@@ -1,3 +1,4 @@
+mod budget;
 mod cache;
 mod cli;
 #[path = "config/facade.rs"]
@@ -22,6 +23,8 @@ use std::collections::HashSet;
 use std::io::IsTerminal;
 
 use clap::Parser;
+
+use crate::budget::{GroupingRejected, Limits};
 
 // The logger is the library's, not a second copy compiled into the binary
 // (CLO-798): `debug::progress` holds process-wide ticker state that the library's
@@ -422,6 +425,29 @@ fn execute(args: &Cli) -> Envelope {
     let model_id = provider.cache_model_id();
     crate::debug_log!("provider: {} ({})", provider_name, model_id);
 
+    // The prompt budgets (CLO-797) come from the selected model's context
+    // window; a malformed GCM_CONTEXT_WINDOW_TOKENS fails here, before any call.
+    let limits = match provider::resolve_identity(args.provider, args.model.as_deref())
+        .map_err(GcmError::Provider)
+        .and_then(|(provider, model)| {
+            let target = budget::Target { provider, model };
+            let window = budget::context_window(&target)?;
+            Ok(Limits { target, window })
+        }) {
+        Ok(limits) => limits,
+        Err(e) => {
+            return output::error(
+                Some(provider_name.as_str()),
+                Some(model_id.as_str()),
+                Some(mode_from_args(args)),
+                &e,
+            )
+        }
+    };
+    if let Some(notice) = limits.default_window_notice() {
+        warn(&notice);
+    }
+
     // FR-46: warn before resetting a user-curated index. Both real commit paths
     // discard the user's staging (grouping resets via `clear_staged`; `--all`
     // overrides via `git add -A`), so a pre-existing curated/partial index is
@@ -452,6 +478,7 @@ fn execute(args: &Cli) -> Envelope {
             provider_name.as_str(),
             model_id.as_str(),
             Operation::SingleMessage,
+            &limits,
         );
     }
 
@@ -479,6 +506,7 @@ fn execute(args: &Cli) -> Envelope {
                     model_id.as_str(),
                     msg,
                     raw_code,
+                    &limits,
                 );
             }
             (plan, true)
@@ -490,6 +518,7 @@ fn execute(args: &Cli) -> Envelope {
             &privacy,
             model_id.as_str(),
             args.json,
+            &limits,
         ) {
             Ok(plan) => {
                 if !args.plan_only {
@@ -519,6 +548,7 @@ fn execute(args: &Cli) -> Envelope {
                     model_id.as_str(),
                     reason,
                     raw_code,
+                    &limits,
                 );
             }
         },
@@ -534,6 +564,7 @@ fn execute(args: &Cli) -> Envelope {
         provider.as_ref(),
         provider_name.as_str(),
         &privacy,
+        &limits,
     )
 }
 
@@ -544,6 +575,10 @@ enum CommitOutcome {
     Committed,
     Aborted,
 }
+
+/// `fallback.raw_code` when gcm itself, not the provider, refused a prompt as
+/// too large for the model (CLO-797).
+const PROMPT_BUDGET_CODE: &str = "PromptBudget";
 
 /// Outcome of a failed grouping attempt: `Fatal` errors abort (the single-commit
 /// path needs the same resource), `Fallback` errors degrade to single-commit.
@@ -579,10 +614,46 @@ fn build_plan(
     privacy: &Privacy,
     model: &str,
     json: bool,
+    limits: &Limits,
 ) -> Result<Plan, BuildError> {
-    let ctx = diff::gather_for_grouping(repo, changed, &provider.diff_budget())
-        .and_then(|ctx| privacy.prepare_grouping(ctx))
+    // Both budget refusals degrade to the message path, which has its own
+    // budget and its own pre-flight check.
+    let refused = |e: GcmError| BuildError::Fallback {
+        reason: e.to_string(),
+        raw_code: PROMPT_BUDGET_CODE.to_string(),
+    };
+    let grouping = limits.grouping(&diff::files_json(changed)).map_err(
+        |GroupingRejected::OutputCap { echo_tokens, cap }| {
+            refused(GcmError::PromptTooLarge(budget::PromptTooLarge {
+                cause: budget::PromptCause::GroupingOutputCap { echo_tokens, cap },
+                operation: Operation::Grouping,
+                files: changed.len(),
+                estimate: echo_tokens,
+                available: cap,
+                window: limits.window.tokens,
+            }))
+        },
+    )?;
+    let gathered = diff::gather_for_grouping(repo, changed, &provider.diff_budget(), &grouping)
         .map_err(BuildError::Fatal)?;
+    if let Some(notice) = limits.ladder_notice(
+        gathered.rung,
+        gathered.estimate,
+        gathered.reduced_files,
+        changed.len(),
+    ) {
+        warn(&notice);
+    }
+    let ctx = privacy
+        .prepare_grouping(gathered.ctx)
+        .map_err(BuildError::Fatal)?;
+    budget::ensure_prompt_fits(
+        &provider::grouping_user_content(&ctx),
+        &grouping,
+        Operation::Grouping,
+        changed.len(),
+    )
+    .map_err(refused)?;
     let shape = CallShape {
         operation: Operation::Grouping,
         files: changed.len(),
@@ -645,6 +716,7 @@ fn commit_first_group(
     provider: &dyn Provider,
     provider_name: &str,
     privacy: &Privacy,
+    limits: &Limits,
 ) -> Envelope {
     if !args.json && (args.dry_run || args.plan_only) {
         display_groups(plan);
@@ -662,7 +734,15 @@ fn commit_first_group(
             let gathered =
                 match diff::gather_for_files(repo, &group1_files, &provider.diff_budget())
                     .and_then(|g| privacy.prepare_diff(g))
-                {
+                    .and_then(|g| {
+                        budget::ensure_prompt_fits(
+                            &provider::message_user_content(&g),
+                            &limits.message(),
+                            Operation::GroupMessage,
+                            group1_files.len(),
+                        )
+                        .map(|()| g)
+                    }) {
                     Ok(g) => g,
                     Err(e) => {
                         return output::error(
@@ -830,6 +910,7 @@ fn single_commit_path(
     provider_name: &str,
     model: &str,
     operation: Operation,
+    limits: &Limits,
 ) -> Envelope {
     let changed_paths: Vec<String> = changed.iter().map(|c| c.path.clone()).collect();
 
@@ -847,7 +928,15 @@ fn single_commit_path(
 
     let gathered = match diff::gather_for_changed(repo, changed, &provider.diff_budget())
         .and_then(|g| privacy.prepare_diff(g))
-    {
+        .and_then(|g| {
+            budget::ensure_prompt_fits(
+                &provider::message_user_content(&g),
+                &limits.message(),
+                operation,
+                changed.len(),
+            )
+            .map(|()| g)
+        }) {
         Ok(g) => g,
         Err(e) => {
             return output::error(
@@ -1004,6 +1093,14 @@ fn provider_error_envelope(
     }
 }
 
+/// A degradation notice on stderr, under `--json` too, so stdout stays one
+/// envelope. `GCM_LOG_LEVEL=off` silences it like the rest of the progress output.
+fn warn(line: &str) {
+    if gcm::debug::enabled(gcm::debug::Level::Warn) {
+        gcm::debug::progress::emit_line(line);
+    }
+}
+
 /// Run the single-commit fallback after a grouped-plan failure. If the fallback
 /// commit succeeds, the envelope is `status: "fallback"`; if it fails, the
 /// envelope is `status: "error"`.
@@ -1018,15 +1115,15 @@ fn run_fallback(
     model: &str,
     reason: String,
     raw_code: String,
+    limits: &Limits,
 ) -> Envelope {
     // Announced under `--json` too (AC-11): a machine consumer otherwise sees two
     // provider requests on stderr with no record of why the second one happened.
     // `GCM_LOG_LEVEL=off` still silences it, like the rest of the progress output.
-    if gcm::debug::enabled(gcm::debug::Level::Warn) {
-        gcm::debug::progress::emit_line(&format!(
-            "gcm: {reason}. Falling back to single-commit mode."
-        ));
-    }
+    warn(&format!(
+        "gcm: {}. Falling back to single-commit mode.",
+        reason.trim_end_matches('.')
+    ));
     let env = single_commit_path(
         repo,
         args,
@@ -1036,6 +1133,7 @@ fn run_fallback(
         provider_name,
         model,
         Operation::FallbackMessage,
+        limits,
     );
     if env.status == output::STATUS_COMMITTED {
         // Re-wrap a successful single commit as a fallback envelope, preserving

@@ -251,6 +251,7 @@ fn gcm_error_code(err: &GcmError) -> String {
         GcmError::RemoteHost { .. } => "RemoteHost".to_string(),
         GcmError::RemoteCliMissing { .. } => "RemoteCliMissing".to_string(),
         GcmError::FinishFailed { .. } => "FinishFailed".to_string(),
+        GcmError::PromptTooLarge(_) => "PromptTooLarge".to_string(),
     }
 }
 

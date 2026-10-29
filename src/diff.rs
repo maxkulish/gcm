@@ -2,26 +2,35 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 
+use crate::budget::{estimate_tokens, PromptBudget};
 use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
+use crate::provider::grouping_user_content;
 
-/// JSON-encode the changed-file paths as an array of strings so a path
-/// containing a newline (or any character) stays a single discrete element in
-/// the grouping prompt - newline-joining would split such a path into multiple
-/// lines and the model would group phantom paths (CLO-487 path-agreement).
-fn file_list_json(changed: &[ChangedFile]) -> String {
-    let paths: Vec<&str> = changed.iter().map(|c| c.path.as_str()).collect();
-    serde_json::to_string(&paths).unwrap_or_else(|_| "[]".to_string())
+/// One changed path in the grouping inventory (CLO-797): the path the model
+/// groups by, its porcelain `XY` code, and the source path of a rename or copy.
+#[derive(serde::Serialize)]
+struct InventoryEntry<'a> {
+    path: &'a str,
+    xy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<&'a str>,
 }
 
-/// JSON-encode the porcelain status as an array of `"XY path"` strings (also
-/// newline-safe, same rationale as [`file_list_json`]).
-fn status_json(changed: &[ChangedFile]) -> String {
-    let rows: Vec<String> = changed
+/// JSON-encode the changed files as one inventory, `[{path, xy, old_path?}]`,
+/// so the prompt carries each path once (CLO-797) and a path containing a
+/// newline (or any character) stays a single discrete element - newline-joining
+/// would split it and the model would group phantom paths (CLO-487).
+pub fn files_json(changed: &[ChangedFile]) -> String {
+    let entries: Vec<InventoryEntry> = changed
         .iter()
-        .map(|c| format!("{}{} {}", c.x as char, c.y as char, c.path))
+        .map(|c| InventoryEntry {
+            path: &c.path,
+            xy: format!("{}{}", c.x as char, c.y as char),
+            old_path: c.orig_path.as_deref(),
+        })
         .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string())
+    serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// Untracked-expansion caps (FR-57): bound both file count and total bytes so an
@@ -31,14 +40,25 @@ const MAX_UNTRACKED_BYTES: usize = 256 * 1024;
 /// Per-file read cap for an individual untracked file (mirrors bash `head -c 8192`).
 const PER_FILE_BYTES: usize = 8192;
 
+/// How [`append_untracked`] renders the untracked files it does not read
+/// because a FR-57 cap was reached.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UntrackedRender {
+    /// One `--- /dev/null` stub per skipped file (the message paths).
+    PerFileStubs,
+    /// One trailer counting the skipped files (the grouping path, whose
+    /// inventory already names every path - CLO-797).
+    SummaryTrailer,
+}
+
 /// Per-provider diff budget (CLO-489, FR-13a): the coarse total-body safeguard
 /// and the per-tracked-file truncation cap. Each provider declares its own (a
 /// smaller-context provider gets a tighter total); env overrides
 /// `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` apply across providers.
 pub struct DiffBudget {
-    /// Coarse final safeguard on the whole assembled body. Applied on **every**
-    /// path (single-commit `gather`, per-group `gather_for_files`, and grouping
-    /// `gather_for_grouping`) - this is the per-provider total-input cap.
+    /// Coarse final safeguard on the whole assembled body - the per-provider
+    /// total-input cap. The message paths tail-chop at it; the grouping path
+    /// treats it as a ceiling its ladder keeps under (CLO-797).
     pub total_bytes: usize,
     /// Per-file cap for a tracked diff section in the **grouping** prompt only:
     /// each file's section is truncated independently with a `[diff omitted: N
@@ -114,15 +134,14 @@ impl GatheredDiff {
     }
 }
 
-/// The richer context handed to the provider for grouping (CLO-487): the file
-/// list and porcelain status (both JSON arrays, so newline-containing paths stay
+/// The richer context handed to the provider for grouping (CLO-487): the
+/// changed-file inventory (a JSON array, so newline-containing paths stay
 /// discrete), the diff `--stat`, and the per-file-truncated full diff. Distinct
 /// from [`GatheredDiff`] to keep the tracer's single-message concerns separate.
 pub struct GroupingContext {
-    /// JSON array of the exact changed paths (the model groups by these).
-    pub file_list: String,
-    /// JSON array of `"XY path"` porcelain status rows.
-    pub status: String,
+    /// JSON array of `{path, xy, old_path?}` - the one path inventory the model
+    /// groups by (CLO-797).
+    pub files: String,
     pub stat: String,
     pub body: String,
 }
@@ -133,8 +152,7 @@ impl GroupingContext {
     /// what makes an oversized grouping prompt diagnosable.
     pub fn section_sizes(&self) -> Vec<(&'static str, usize)> {
         vec![
-            ("file_list", self.file_list.len()),
-            ("status", self.status.len()),
+            ("files", self.files.len()),
             ("stat", self.stat.len()),
             ("body", self.body.len()),
         ]
@@ -178,7 +196,13 @@ pub fn gather_for_files(
     let tracked = repo.diff_full_for(&paths)?;
     let mut body = elide_binary_diff(&tracked);
     let allow: HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
-    append_untracked(repo, &mut body, Some(&allow))?;
+    append_untracked(
+        repo,
+        &mut body,
+        Some(&allow),
+        UntrackedRender::PerFileStubs,
+        PER_FILE_BYTES,
+    )?;
     cap_total(&mut body, budget.total_bytes);
     Ok(GatheredDiff { stat, body })
 }
@@ -195,34 +219,173 @@ pub fn gather_for_changed(
     gather_for_files(repo, &files, budget)
 }
 
-/// Build the grouping context (CLO-487): the file list and porcelain status are
-/// derived from the already-gathered `changed` set (so they stay byte-identical
-/// to the paths used for validation and staging), the diff `--stat` is the
-/// prompt header, and the body is the tracked diff truncated **per file** with
-/// `[diff omitted: N bytes]` placeholders, plus untracked content (FR-57 caps),
-/// under the `MAX_TOTAL_BYTES` final safeguard.
+/// Which rung of the sacrifice ladder produced a grouping context (CLO-797
+/// D3). Each rung gives up more of the diff body; the inventory and the stat
+/// are never cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupingRung {
+    /// Today's per-file cap, and the prompt fits.
+    Full,
+    /// Every file's diff cut to a lower per-file cap.
+    Shrunk { per_file_bytes: usize },
+    /// Diff headers only, each body replaced by its omitted byte count.
+    HeadersOnly,
+    /// Inventory and stat only.
+    PathsOnly,
+    /// Even the inventory and stat exceed the budget; the context is the
+    /// paths-only one, and the pre-flight check turns it into an error.
+    CannotFit,
+}
+
+/// A grouping context with the rung that produced it, its estimated size in
+/// tokens, and how many files lost diff content to the ladder.
+pub struct GroupingGather {
+    pub ctx: GroupingContext,
+    pub rung: GroupingRung,
+    pub estimate: usize,
+    pub reduced_files: usize,
+}
+
+/// The lowest per-file cap the shrink rung tries before falling back to
+/// headers only.
+const MIN_SHRUNK_PER_FILE: usize = 256;
+const BODY_OMITTED: &str = "[diff omitted to fit the model's context window - see the stat]\n";
+
+/// The pieces of a grouping prompt that every rung shares.
+struct GroupingParts<'a> {
+    repo: &'a Repo,
+    allow: HashSet<String>,
+    files: String,
+    stat: String,
+    tracked: String,
+}
+
+impl<'a> GroupingParts<'a> {
+    fn gather(repo: &'a Repo, changed: &[ChangedFile]) -> Result<Self, GcmError> {
+        let paths: Vec<&str> = changed.iter().map(|f| f.path.as_str()).collect();
+        Ok(GroupingParts {
+            repo,
+            allow: changed.iter().map(|f| f.path.clone()).collect(),
+            files: files_json(changed),
+            stat: repo.diff_stat_for(&paths)?,
+            tracked: elide_binary_diff(&repo.diff_full_for(&paths)?),
+        })
+    }
+
+    /// Render the context with each file's diff (tracked and untracked) cut to
+    /// `per_file` bytes; `None` drops the body. Also returns how many untracked
+    /// files the cap truncated.
+    fn render(&self, per_file: Option<usize>) -> Result<(GroupingContext, usize), GcmError> {
+        let (body, untracked_cut) = match per_file {
+            None => (BODY_OMITTED.to_string(), 0),
+            Some(cap) => {
+                let mut body = truncate_per_file(&self.tracked, cap);
+                let cut = append_untracked(
+                    self.repo,
+                    &mut body,
+                    Some(&self.allow),
+                    UntrackedRender::SummaryTrailer,
+                    cap.min(PER_FILE_BYTES),
+                )?;
+                (body, cut)
+            }
+        };
+        let ctx = GroupingContext {
+            files: self.files.clone(),
+            stat: self.stat.clone(),
+            body,
+        };
+        Ok((ctx, untracked_cut))
+    }
+}
+
+/// Build the grouping context (CLO-487, CLO-797): the file inventory is derived
+/// from the already-gathered `changed` set (so it stays byte-identical to the
+/// paths used for validation and staging), the diff `--stat` is the prompt
+/// header, and the body is the tracked diff truncated **per file** with
+/// `[diff omitted: N bytes]` placeholders, plus untracked content (FR-57 caps).
+///
+/// The rendered prompt must fit `grouping.available()` tokens and the body
+/// `diff_budget.total_bytes`. When it does not, the ladder lowers the per-file
+/// cap, then keeps headers only, then drops the body. No file is cut mid-hunk.
 pub fn gather_for_grouping(
     repo: &Repo,
     changed: &[ChangedFile],
-    budget: &DiffBudget,
-) -> Result<GroupingContext, GcmError> {
-    let file_list = file_list_json(changed);
-    let status = status_json(changed);
+    diff_budget: &DiffBudget,
+    grouping: &PromptBudget,
+) -> Result<GroupingGather, GcmError> {
+    let parts = GroupingParts::gather(repo, changed)?;
+    let available = grouping.available();
+    let measure = |ctx: &GroupingContext| estimate_tokens(&grouping_user_content(ctx));
+    let fits = |ctx: &GroupingContext, estimate: usize| {
+        estimate <= available && ctx.body.len() <= diff_budget.total_bytes
+    };
 
-    let paths: Vec<&str> = changed.iter().map(|f| f.path.as_str()).collect();
-    let stat = repo.diff_stat_for(&paths)?;
-    let tracked = repo.diff_full_for(&paths)?;
-    let mut body = truncate_per_file(&elide_binary_diff(&tracked), budget.per_file_bytes);
-    let allow: HashSet<String> = changed.iter().map(|f| f.path.clone()).collect();
-    append_untracked(repo, &mut body, Some(&allow))?;
-    cap_total(&mut body, budget.total_bytes);
-
-    Ok(GroupingContext {
-        file_list,
-        status,
-        stat,
-        body,
+    let mut caps = vec![(GroupingRung::Full, Some(diff_budget.per_file_bytes))];
+    let mut cap = diff_budget.per_file_bytes / 2;
+    while cap >= MIN_SHRUNK_PER_FILE {
+        caps.push((
+            GroupingRung::Shrunk {
+                per_file_bytes: cap,
+            },
+            Some(cap),
+        ));
+        cap /= 2;
+    }
+    caps.push((GroupingRung::HeadersOnly, Some(0)));
+    for (rung, per_file) in caps {
+        let (ctx, untracked_cut) = parts.render(per_file)?;
+        let estimate = measure(&ctx);
+        if fits(&ctx, estimate) {
+            let reduced_files = match rung {
+                GroupingRung::Full => 0,
+                GroupingRung::Shrunk { per_file_bytes } => {
+                    sections_over(&parts.tracked, per_file_bytes) + untracked_cut
+                }
+                _ => changed.len(),
+            };
+            return Ok(GroupingGather {
+                ctx,
+                rung,
+                estimate,
+                reduced_files,
+            });
+        }
+    }
+    // The terminal decision is whether the inventory and stat fit. The omitted
+    // marker is kept when there is room for it and dropped when there is not.
+    let (mut ctx, _) = parts.render(None)?;
+    let mut estimate = measure(&ctx);
+    if !fits(&ctx, estimate) {
+        ctx.body.clear();
+        estimate = measure(&ctx);
+    }
+    let rung = if estimate <= available {
+        GroupingRung::PathsOnly
+    } else {
+        GroupingRung::CannotFit
+    };
+    Ok(GroupingGather {
+        ctx,
+        rung,
+        estimate,
+        reduced_files: changed.len(),
     })
+}
+
+/// How many `diff --git` sections of `diff` are longer than `cap`, i.e. how
+/// many files [`truncate_per_file`] cuts at that cap.
+fn sections_over(diff: &str, cap: usize) -> usize {
+    let mut over = 0;
+    let mut len = 0;
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") && len > 0 {
+            over += usize::from(len > cap);
+            len = 0;
+        }
+        len += line.len();
+    }
+    over + usize::from(len > cap)
 }
 
 /// Append untracked, non-gitignored file content to `body`, bounded by the
@@ -230,12 +393,16 @@ pub fn gather_for_grouping(
 /// [`gather_for_grouping`] (which pass `None` = every untracked file) and
 /// [`gather_for_files`] (which passes `Some(allow)` to restrict to one group's
 /// paths, so a single group's message diff is not polluted by other groups'
-/// untracked files - CLO-491).
+/// untracked files - CLO-491). `render` decides how files past the caps appear;
+/// `per_file` bounds each file's read. Returns how many files that bound
+/// truncated.
 fn append_untracked(
     repo: &Repo,
     body: &mut String,
     allow: Option<&HashSet<String>>,
-) -> Result<(), GcmError> {
+    render: UntrackedRender,
+    per_file: usize,
+) -> Result<usize, GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
 
@@ -246,6 +413,8 @@ fn append_untracked(
     // (FR-57).
     let mut files_done = 0usize;
     let mut bytes_used = 0usize;
+    let mut skipped = 0usize;
+    let mut truncated = 0usize;
     for path in &untracked {
         // Filter to the allow-list (if any) before the caps, so excluded paths
         // neither consume the budget nor reach the prompt.
@@ -253,9 +422,12 @@ fn append_untracked(
             continue;
         }
         if files_done >= MAX_UNTRACKED_FILES || bytes_used >= MAX_UNTRACKED_BYTES {
-            body.push_str(&format!(
-                "\n--- /dev/null\n+++ b/{path}\n[content omitted: untracked cap reached]\n"
-            ));
+            match render {
+                UntrackedRender::PerFileStubs => body.push_str(&format!(
+                    "\n--- /dev/null\n+++ b/{path}\n[content omitted: untracked cap reached]\n"
+                )),
+                UntrackedRender::SummaryTrailer => skipped += 1,
+            }
             continue;
         }
         let full = repo.root().join(path);
@@ -274,7 +446,7 @@ fn append_untracked(
         }
         // Read at most a per-file slice bounded by the remaining byte budget, so
         // a single huge file is never loaded into memory in full.
-        let budget = (MAX_UNTRACKED_BYTES - bytes_used).min(PER_FILE_BYTES);
+        let budget = (MAX_UNTRACKED_BYTES - bytes_used).min(per_file);
         match read_capped(&full, budget) {
             Ok((content, more)) if looks_binary(&content) => {
                 body.push_str(&format!("\n--- /dev/null\n+++ b/{path}\n+[binary file]\n"));
@@ -290,6 +462,7 @@ fn append_untracked(
                 }
                 if more {
                     body.push_str("+[truncated]\n");
+                    truncated += 1;
                 }
                 bytes_used += content.len();
             }
@@ -302,7 +475,12 @@ fn append_untracked(
         }
         files_done += 1;
     }
-    Ok(())
+    if skipped > 0 {
+        body.push_str(&format!(
+            "\n[content omitted: {skipped} further untracked files past the read cap - see the changed-files inventory]\n"
+        ));
+    }
+    Ok(truncated)
 }
 
 /// Coarse final safeguard on the whole assembled body (FR-57), truncating on a
@@ -590,31 +768,70 @@ mod tests {
         assert!(out.len() < 300, "section is now small");
     }
 
+    fn changed(x: u8, y: u8, path: &str, orig_path: Option<&str>) -> ChangedFile {
+        ChangedFile {
+            x,
+            y,
+            path: path.to_string(),
+            orig_path: orig_path.map(str::to_string),
+        }
+    }
+
+    fn inventory(changed: &[ChangedFile]) -> Vec<serde_json::Value> {
+        serde_json::from_str(&files_json(changed)).unwrap()
+    }
+
     #[test]
-    fn file_list_json_keeps_a_newline_path_as_one_element() {
-        // A path containing a newline must stay a single discrete element, or
-        // the model would see (and group) phantom split paths (Codex finding).
-        let changed = vec![
-            ChangedFile {
-                x: b' ',
-                y: b'M',
-                path: "weird\nname.txt".to_string(),
-                orig_path: None,
-            },
-            ChangedFile {
-                x: b'?',
-                y: b'?',
-                path: "normal.rs".to_string(),
-                orig_path: None,
-            },
-        ];
-        let parsed: Vec<String> = serde_json::from_str(&file_list_json(&changed)).unwrap();
+    fn inventory_has_one_entry_per_path_with_its_status() {
+        let entries = inventory(&[
+            changed(b' ', b'M', "a.rs", None),
+            changed(b'?', b'?', "b.md", None),
+        ]);
         assert_eq!(
-            parsed,
-            vec!["weird\nname.txt".to_string(), "normal.rs".to_string()]
+            entries,
+            vec![
+                serde_json::json!({"path": "a.rs", "xy": " M"}),
+                serde_json::json!({"path": "b.md", "xy": "??"}),
+            ]
         );
-        let rows: Vec<String> = serde_json::from_str(&status_json(&changed)).unwrap();
-        assert_eq!(rows[0], " M weird\nname.txt");
+    }
+
+    #[test]
+    fn inventory_rename_and_copy_carry_both_names() {
+        let files = [
+            changed(b'R', b' ', "new.rs", Some("old.rs")),
+            changed(b'C', b' ', "copy.rs", Some("src.rs")),
+        ];
+        let entries = inventory(&files);
+        assert_eq!(
+            entries[0],
+            serde_json::json!({"path": "new.rs", "xy": "R ", "old_path": "old.rs"})
+        );
+        assert_eq!(
+            entries[1],
+            serde_json::json!({"path": "copy.rs", "xy": "C ", "old_path": "src.rs"})
+        );
+        // Both names still reach staging, which reads the same ChangedFile.
+        assert_eq!(files[0].stage_paths(), vec!["new.rs", "old.rs"]);
+    }
+
+    #[test]
+    fn inventory_keeps_awkward_paths_as_one_element() {
+        // A path containing a newline, a quote, a backslash or non-ASCII must
+        // stay a single discrete element, or the model would see (and group)
+        // phantom split paths (Codex finding, CLO-487).
+        let paths = [
+            "weird\nname.txt",
+            "say \"hi\".md",
+            "back\\slash.rs",
+            "файл.txt",
+        ];
+        let files: Vec<ChangedFile> = paths.iter().map(|p| changed(b' ', b'M', p, None)).collect();
+        let entries = inventory(&files);
+        assert_eq!(entries.len(), paths.len());
+        for (entry, path) in entries.iter().zip(paths) {
+            assert_eq!(entry["path"], *path);
+        }
     }
 
     #[test]
@@ -633,5 +850,340 @@ mod tests {
         assert!(out.contains("+tiny"), "small file body intact");
         assert!(out.contains("[diff omitted:"), "big file elided");
         assert!(!out.contains("filler filler"), "big file body dropped");
+    }
+
+    fn git(root: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+
+    /// A repository whose message-path diff exercises every gathering branch:
+    /// a text edit, a binary edit, a rename, and more untracked files than
+    /// `MAX_UNTRACKED_FILES`. Repo-local config pins the diff format so a
+    /// developer's global git config cannot change the output.
+    fn message_fixture() -> (tempfile::TempDir, Repo) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        for (k, v) in [
+            ("user.email", "t@t"),
+            ("user.name", "T"),
+            ("diff.noprefix", "false"),
+            ("diff.mnemonicPrefix", "false"),
+            ("diff.renames", "true"),
+            ("diff.algorithm", "myers"),
+            ("core.autocrlf", "false"),
+        ] {
+            git(root, &["config", k, v]);
+        }
+        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(root.join("old.md"), "# title\n\nbody text\n").unwrap();
+        std::fs::write(root.join("img.bin"), [0u8, 1, 2, 3, 0, 5]).unwrap();
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-q", "-m", "init"]);
+
+        let mut a = String::from("fn a() {}\n");
+        for i in 0..40 {
+            a.push_str(&format!("fn added_{i}() {{ let x = {i}; }}\n"));
+        }
+        std::fs::write(root.join("a.rs"), a).unwrap();
+        git(root, &["mv", "old.md", "new.md"]);
+        std::fs::write(root.join("img.bin"), [0u8, 9, 8, 7, 0, 6, 0]).unwrap();
+        for i in 0..(MAX_UNTRACKED_FILES + 5) {
+            std::fs::write(
+                root.join(format!("u{i:02}.txt")),
+                format!("untracked {i}\n"),
+            )
+            .unwrap();
+        }
+        let repo = Repo::at(root.to_path_buf());
+        (dir, repo)
+    }
+
+    fn budget(available: usize) -> PromptBudget {
+        PromptBudget {
+            kind: crate::budget::BudgetKind::Grouping,
+            window_tokens: available,
+            envelope_allowance: 0,
+            completion_reserve: 0,
+        }
+    }
+
+    fn roomy() -> PromptBudget {
+        budget(10_000_000)
+    }
+
+    /// A repository with `n` untracked files and no commits.
+    fn untracked_fixture(n: usize) -> (tempfile::TempDir, Repo) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        git(dir.path(), &["init", "-q"]);
+        for i in 0..n {
+            std::fs::write(dir.path().join(format!("u{i:02}.txt")), "x\n").unwrap();
+        }
+        let repo = Repo::at(dir.path().to_path_buf());
+        (dir, repo)
+    }
+
+    #[test]
+    fn untracked_trailer_replaces_stubs_in_grouping() {
+        let (_dir, repo) = untracked_fixture(MAX_UNTRACKED_FILES + 10);
+        let changed = repo.changed_files().unwrap();
+        let ctx = gather_for_grouping(&repo, &changed, &DiffBudget::standard(), &roomy())
+            .unwrap()
+            .ctx;
+        assert_eq!(
+            ctx.body.matches("[content omitted:").count(),
+            1,
+            "one trailer: {}",
+            ctx.body
+        );
+        assert!(ctx
+            .body
+            .contains("[content omitted: 10 further untracked files past the read cap"));
+        assert!(
+            !ctx.body.contains("untracked cap reached"),
+            "no per-file stubs"
+        );
+        assert_eq!(
+            ctx.body.matches("--- /dev/null").count(),
+            MAX_UNTRACKED_FILES,
+            "headers only for the files that were read"
+        );
+    }
+
+    #[test]
+    fn gather_for_files_keeps_stubs() {
+        let (_dir, repo) = untracked_fixture(MAX_UNTRACKED_FILES + 10);
+        let changed = repo.changed_files().unwrap();
+        let body = gather_for_changed(&repo, &changed, &DiffBudget::standard())
+            .unwrap()
+            .body;
+        assert_eq!(body.matches("untracked cap reached").count(), 10);
+        assert!(!body.contains("further untracked files"), "no trailer");
+    }
+
+    /// Three files whose diffs fall between 4 and 8 KiB and one under 256 bytes, so every
+    /// ladder rung renders a different prompt.
+    fn ladder_fixture() -> (tempfile::TempDir, Repo, Vec<ChangedFile>) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        git(root, &["config", "user.email", "t@t"]);
+        git(root, &["config", "user.name", "T"]);
+        for name in ["a.rs", "b.rs", "c.rs", "small.rs"] {
+            std::fs::write(root.join(name), "start\n").unwrap();
+        }
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-q", "-m", "init"]);
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            let lines: String = (0..350).map(|i| format!("line {i} of {name}\n")).collect();
+            std::fs::write(root.join(name), lines).unwrap();
+        }
+        std::fs::write(root.join("small.rs"), "start\none\ntwo\nthree\nfour\nend\n").unwrap();
+        let repo = Repo::at(root.to_path_buf());
+        let changed = repo.changed_files().unwrap();
+        (dir, repo, changed)
+    }
+
+    /// The estimated size of the prompt one rung renders.
+    fn rung_estimate(repo: &Repo, changed: &[ChangedFile], per_file: Option<usize>) -> usize {
+        let parts = GroupingParts::gather(repo, changed).unwrap();
+        estimate_tokens(&grouping_user_content(&parts.render(per_file).unwrap().0))
+    }
+
+    fn ladder(changed: &[ChangedFile], repo: &Repo, available: usize) -> GroupingGather {
+        gather_for_grouping(repo, changed, &DiffBudget::standard(), &budget(available)).unwrap()
+    }
+
+    #[test]
+    fn ladder_fits_untouched() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let g = ladder(&changed, &repo, 10_000_000);
+        assert_eq!(g.rung, GroupingRung::Full);
+        assert_eq!(g.reduced_files, 0);
+        assert!(g.ctx.body.contains("line 349 of c.rs"));
+    }
+
+    #[test]
+    fn ladder_rung1_shrinks_the_per_file_cap() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, Some(4096));
+        assert!(fit < rung_estimate(&repo, &changed, Some(8192)));
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(
+            g.rung,
+            GroupingRung::Shrunk {
+                per_file_bytes: 4096
+            }
+        );
+        assert_eq!(g.reduced_files, 3, "the three large files are cut");
+        assert!(g.estimate <= fit);
+        assert!(g.ctx.body.contains("+end"), "the small file keeps its diff");
+    }
+
+    #[test]
+    fn ladder_rung2_keeps_headers_only() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, Some(0));
+        assert!(fit < rung_estimate(&repo, &changed, Some(MIN_SHRUNK_PER_FILE)));
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(g.rung, GroupingRung::HeadersOnly);
+        assert_eq!(g.reduced_files, changed.len());
+        assert_eq!(g.ctx.body.matches("diff --git ").count(), 4);
+        assert!(!g.ctx.body.contains("+end"));
+    }
+
+    #[test]
+    fn ladder_rung3_drops_the_body() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, None);
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(g.rung, GroupingRung::PathsOnly);
+        assert_eq!(g.ctx.body, BODY_OMITTED);
+        assert!(g.ctx.files.contains("small.rs"), "inventory never cut");
+        assert!(g.ctx.stat.contains("a.rs"), "stat never cut");
+    }
+
+    /// The estimate of the inventory and stat alone, with an empty body.
+    fn paths_and_stat_estimate(repo: &Repo, changed: &[ChangedFile]) -> usize {
+        let parts = GroupingParts::gather(repo, changed).unwrap();
+        let (mut ctx, _) = parts.render(None).unwrap();
+        ctx.body.clear();
+        estimate_tokens(&grouping_user_content(&ctx))
+    }
+
+    #[test]
+    fn ladder_paths_only_drops_the_marker_when_only_paths_and_stat_fit() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let exact = paths_and_stat_estimate(&repo, &changed);
+        assert!(exact < rung_estimate(&repo, &changed, None));
+        let g = ladder(&changed, &repo, exact);
+        assert_eq!(g.rung, GroupingRung::PathsOnly);
+        assert!(g.ctx.body.is_empty());
+        assert_eq!(g.estimate, exact);
+    }
+
+    #[test]
+    fn ladder_paths_only_drops_the_marker_past_the_byte_ceiling() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let diff_budget = DiffBudget {
+            total_bytes: 1,
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let g = gather_for_grouping(&repo, &changed, &diff_budget, &roomy()).unwrap();
+        assert_eq!(g.rung, GroupingRung::PathsOnly);
+        assert!(g.ctx.body.is_empty());
+    }
+
+    #[test]
+    fn ladder_reports_cannot_fit_when_the_inventory_overflows() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let exact = paths_and_stat_estimate(&repo, &changed);
+        let g = ladder(&changed, &repo, exact - 1);
+        assert_eq!(g.rung, GroupingRung::CannotFit);
+        assert!(g.estimate > exact - 1);
+    }
+
+    #[test]
+    fn ladder_counts_truncated_untracked_files_as_reduced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        for i in 0..5 {
+            let lines: String = (0..200)
+                .map(|l| format!("untracked {i} line {l}\n"))
+                .collect();
+            std::fs::write(root.join(format!("u{i}.rs")), lines).unwrap();
+        }
+        let repo = Repo::at(root.to_path_buf());
+        let changed = repo.changed_files().unwrap();
+        let fit = rung_estimate(&repo, &changed, Some(512));
+        assert!(fit < rung_estimate(&repo, &changed, Some(1024)));
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(
+            g.rung,
+            GroupingRung::Shrunk {
+                per_file_bytes: 512
+            }
+        );
+        assert_eq!(g.reduced_files, 5, "every untracked file is cut");
+    }
+
+    #[test]
+    fn ladder_byte_ceiling_shrinks_instead_of_tail_chopping() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let shrunk = GroupingParts::gather(&repo, &changed)
+            .unwrap()
+            .render(Some(4096))
+            .unwrap()
+            .0;
+        let diff_budget = DiffBudget {
+            total_bytes: shrunk.body.len(),
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let g = gather_for_grouping(&repo, &changed, &diff_budget, &roomy()).unwrap();
+        assert_eq!(
+            g.rung,
+            GroupingRung::Shrunk {
+                per_file_bytes: 4096
+            }
+        );
+        assert!(!g.ctx.body.contains("(diff truncated)"), "no tail-chop");
+        assert!(g.ctx.body.contains("+end"), "the last file is intact");
+    }
+
+    fn render_gathered(label: &str, g: &GatheredDiff) -> String {
+        format!(
+            "=== {label} stat ===\n{}=== {label} body ===\n{}",
+            g.stat, g.body
+        )
+    }
+
+    /// Single-commit and per-group message gathering stay byte-identical to the
+    /// output captured before CLO-797 touched this file. Set
+    /// `GCM_BLESS_MESSAGE_GOLDEN=1` to rewrite the golden after an intended change.
+    #[test]
+    fn message_gathering_unchanged() {
+        let (_dir, repo) = message_fixture();
+        let changed = repo.changed_files().unwrap();
+        let standard = DiffBudget {
+            total_bytes: DiffBudget::STANDARD_TOTAL,
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let tight = DiffBudget {
+            total_bytes: 600,
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let subset: Vec<&ChangedFile> = changed
+            .iter()
+            .filter(|c| c.path == "a.rs" || c.path.starts_with("u0"))
+            .collect();
+
+        let mut actual = String::new();
+        actual.push_str(&render_gathered(
+            "gather_for_changed standard",
+            &gather_for_changed(&repo, &changed, &standard).unwrap(),
+        ));
+        actual.push_str(&render_gathered(
+            "gather_for_changed tight",
+            &gather_for_changed(&repo, &changed, &tight).unwrap(),
+        ));
+        actual.push_str(&render_gathered(
+            "gather_for_files subset",
+            &gather_for_files(&repo, &subset, &standard).unwrap(),
+        ));
+
+        let golden =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testdata/message_gathering.golden");
+        if std::env::var_os("GCM_BLESS_MESSAGE_GOLDEN").is_some() {
+            std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
+            std::fs::write(&golden, &actual).unwrap();
+        }
+        let expected = std::fs::read_to_string(&golden).expect("golden present");
+        assert_eq!(actual, expected, "message gathering output changed");
     }
 }

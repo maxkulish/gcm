@@ -183,8 +183,7 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            file_list: "a.rs\nb.md".to_string(),
-            status: " M a.rs\n?? b.md".to_string(),
+            files: r#"[{"path":"a.rs","xy":" M"},{"path":"b.md","xy":"??"}]"#.to_string(),
             stat: "2 files changed".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
@@ -202,7 +201,11 @@ mod tests {
         let user = p["messages"][1]["content"].as_str().unwrap();
         assert!(user.contains("Changed files"));
         assert!(user.contains("a.rs"));
-        assert!(user.contains("Git status"));
+        assert!(
+            user.contains(r#""xy":" M""#),
+            "status rides in the inventory"
+        );
+        assert!(!user.contains("Git status"), "no second path list");
         assert!(user.contains("diff --git"));
     }
 

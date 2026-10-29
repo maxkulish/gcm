@@ -21,6 +21,11 @@ pub(crate) mod ollama;
 mod openai;
 mod vertex;
 
+pub(crate) use anthropic::{
+    MESSAGE_MAX_TOKENS as ANTHROPIC_MESSAGE_MAX_TOKENS,
+    PLAN_MAX_TOKENS as ANTHROPIC_PLAN_MAX_TOKENS,
+};
+
 pub use gcm::provider::http;
 #[doc(hidden)]
 pub use gcm::provider::identity::{is_cloud_model, OPENAI_SUPPORTED_MODELS};
@@ -238,8 +243,7 @@ pub fn select(
     cli_provider: Option<ProviderId>,
     cli_model: Option<&str>,
 ) -> Result<Box<dyn Provider>, ProviderError> {
-    let id = resolve_provider_id(cli_provider)?;
-    let model = resolve_model(id, cli_model);
+    let (id, model) = resolve_identity(cli_provider, cli_model)?;
     Ok(match id {
         ProviderId::Groq => Box::new(groq::Groq::new(model)),
         ProviderId::Google => Box::new(gemini::Gemini::new(model)),
@@ -278,6 +282,16 @@ pub(crate) fn vertex_adc_probe() -> Result<(), String> {
 /// passes `None` and discovery degrades to the static list.
 pub(crate) fn vertex_access_token() -> Result<String, String> {
     vertex::resolve_access_token().map_err(|e| e.to_string())
+}
+
+/// The provider and model [`select`] constructs, without constructing it, so
+/// the prompt budget (CLO-797) can look up the model's context window.
+pub(crate) fn resolve_identity(
+    cli_provider: Option<ProviderId>,
+    cli_model: Option<&str>,
+) -> Result<(ProviderId, String), ProviderError> {
+    let id = resolve_provider_id(cli_provider)?;
+    Ok((id, resolve_model(id, cli_model)))
 }
 
 fn resolve_provider_id(cli: Option<ProviderId>) -> Result<ProviderId, ProviderError> {
@@ -354,20 +368,20 @@ have exactly these keys: \"files\" (array of exact path strings), \"summary\" (s
 \"commit_message\" (string for groups[0], null for every other group).
 
 Rules:
-- Every file from the file list must appear in exactly one group.
+- Every \"path\" from the changed-files inventory must appear in exactly one group.
 - Prefer fewer groups (1-3) unless changes are truly unrelated.
 - commit_message: a full conventional-commit message for groups[0] ONLY; null for every other group.
 - Conventional format <type>(<scope>): <description>, first line under 72 chars; add a blank line
   and bullet points for details when there are multiple significant changes.
-- For renamed files, use the NEW path in your file list.
+- For renamed or copied files, use \"path\" (the NEW path), never \"old_path\".
 - summary: a one-line description of each group.";
 
 /// The grouping-plan user content (shared by every provider's plan call).
 pub(super) fn grouping_user_content(ctx: &GroupingContext) -> String {
     format!(
-        "Changed files (JSON array of exact paths - group by these):\n{}\n\n\
-         Git status (JSON array of \"XY path\"):\n{}\n\nDiff stats:\n{}\n\nFull diff:\n{}",
-        ctx.file_list, ctx.status, ctx.stat, ctx.body
+        "Changed files (JSON array of {{path, xy, old_path?}} - group by \"path\"):\n{}\n\n\
+         Diff stats:\n{}\n\nFull diff:\n{}",
+        ctx.files, ctx.stat, ctx.body
     )
 }
 

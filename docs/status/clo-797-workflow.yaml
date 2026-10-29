@@ -1,0 +1,303 @@
+task_id: clo-797
+task_type: development
+classification_reason: >-
+  Three of the five scope bullets are mechanical deduplication inside src/diff.rs, but re-deriving DiffBudget from the
+  selected model's context window has no prior art in the codebase (no context-window metadata exists in src/ at all)
+  and changes the diff_budget() trait signature, and reshaping GroupingContext propagates through ~9 files across
+  diff, privacy and all six provider impls.
+task_profile:
+  has_backend: true
+  has_frontend: false
+  has_data_model: true
+  has_external_deps: false
+  skip_probe: false
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-797-fix-grouping-prompt-exceeding-the-model-context-window-when
+  priority: High
+  branch_actual: fix/clo-797-grouping-prompt   # original fix/clo-797-fix-grouping-prompt worktree lost; resumed 2026-10-29
+classification:
+  recommended: development
+  chosen: development
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius:
+      lean: dev
+      note: >-
+        Merging file_list and status changes the GroupingContext shape, propagating through src/diff.rs,
+        src/privacy/facade.rs, src/provider/facade.rs and six provider build_plan_payload impls (~9 files).
+    architecture_novelty:
+      lean: dev
+      note: >-
+        No context-window metadata exists anywhere in src/ (only HTTP error-string detection in http.rs). Deriving the
+        budget from the model window needs a new source of truth and a diff_budget() signature that knows the model.
+    prior_art:
+      lean: neutral
+      note: >-
+        truncate_per_file and cap_total in src/diff.rs are a template for the new total bound; the token-vs-byte
+        accounting has none.
+    requirement_clarity:
+      lean: neutral
+      note: >-
+        Root cause and the three dedup bullets are precise (investigation doc with measured token counts); where model
+        windows come from and what an explicit degrade looks like to the user remain open.
+    scope_signal:
+      lean: dev
+      note: '5 scope items, 4 acceptance criteria, no estimate set; two items are design-bearing rather than mechanical.'
+  rationale: >-
+    Mechanical dedup plus one genuine architecture decision (budget derived from model context window) over a >5-file
+    blast radius - the full cycle earns its cost on the budget decision.
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-09-17T00:00:00Z'
+  updated_at: '2026-10-30T00:30:00Z'
+phases:
+  discovery:
+    status: skipped
+    skip_reason: >-
+      Bug label + docs/investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md already delivers
+      discovery's output: framed problem, measured root cause (per-section token counts from a captured 528,926-byte
+      payload) and four fix directions ranked by effect-to-risk. Owner confirmed the skip.
+    problem_framed: true
+    prd_exists: false
+    prd_file: null              # no PRD; the investigation document stands in
+    prd_created: false
+    discovery_report: docs/investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md
+    discovery_debt: null        # discovery skipped, no assumption map produced
+    baseline_score: null        # discovery skipped, no PRD to score
+    approaches_identified: 4    # the investigation's ranked fix directions
+    approach_chosen: >-
+      The investigation's four fix directions in order: send each path once (merge file_list + status into {path, xy},
+      drop name-only untracked stubs for paths already listed), bound the assembled prompt rather than body alone,
+      derive the budget from the model's context window at a conservative 2.3 chars/token with completion headroom,
+      and degrade to paths + stat instead of returning a 400.
+    approved: true
+  design:
+    status: complete
+    finalized: true
+    design_doc: docs/designs/clo-797-grouping-prompt-budget.md
+    draft_ready: true
+    discovery_context_used: true   # the investigation document stands in for a discovery report
+    spec_check: skipped            # owner declined /spec; plan phase covers decomposition (CLO-799 precedent)
+    review_gemini: docs/reviews/clo-797-review-gemini.md   # REVIEW_FAILED: two runs, exit 124, empty stdout+stderr
+    review_ollama: docs/reviews/clo-797-review-ollama.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - 'P0-1 AC2 redefined to "exactly one path inventory"; diff --git headers are content, not a duplicate copy'
+      - 'P0-2 AC4 vs D3 resolved: paths+stat is a ticket-sanctioned degraded rung; the error is the terminal rung'
+      - 'P0-3 single-commit non-goal reworded - gathering/truncation stays out, the shared pre-flight check is in'
+      - 'P0-4 completion_reserve given a concrete formula incl. path-echo, reasoning allowance and provider output cap'
+      - 'P0-5 Q3 resolved with a shared ensure_prompt_fits called from the orchestration layer on both call paths'
+      - 'P0-6 rename/copy carry old_path from ChangedFile::orig_path; closes a gap predating this task'
+      - 'P1-7 estimator divisor 2.3 -> 2.0, non-ASCII at 1.0 char/token, provider-400 classifier kept as backstop'
+      - 'P1-8 envelope_allowance computed from GROUPING_SYSTEM_PROMPT + plan::schema() + slack, not hardcoded'
+      - 'P1-9 window table: exact (provider, model) then longest family prefix, DEFAULT_WINDOW 32768 + warning, env validation'
+      - 'P1-10 new D6: every degradation rung and every DEFAULT_WINDOW use is announced on stderr'
+      - 'P2-11 UntrackedRender enum replaces the boolean flag'
+      - 'P2-12 serde_json required for inventory serialization'
+      - 'P2-13 test plan 7 -> 15 cases: rename, encodings, collisions, env validation, fallback matrix, no-network, visibility'
+    flagged_suggestions: []      # no suggestion contradicted a documented prior decision
+  plan:
+    status: complete
+    plan_file: docs/plans/clo-797-grouping-prompt-budget.md
+    approved: true
+    approved_commit: 709193e
+    sub_tasks: 7
+  implement:
+    status: complete
+    status_file: docs/status/clo-797-grouping-prompt-budget.md
+    last_phase_completed: ST7 Integration coverage
+    commits:
+      - 9000f5f
+      - 382e83a
+      - 044fd01
+      - 6fe4920
+      - fb4d33f
+      - c576368
+      - 5d76db7
+      - 23533f4
+      - 53139a6
+      - ed5e019
+      - 0700eae
+      - ee8de89
+    red_run: ac1_grouping_payload_fits_the_window failed on 7c7cb28 at ~212714 estimated tokens vs 131072
+    red_run_generous: three message tests failed on 53139a6 with zero requests sent (pre-flight refusal); pass on ed5e019
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_reviewed_revision: 0700eae (first review of 53139a6 was FAIL)
+    codex_report: docs/reviews/clo-797-codex-validation-2.md
+    codex_report_first: docs/reviews/clo-797-codex-validation.md
+    follow_ups: [CLO-921]
+    gemini_validation_report: unavailable   # Gemini CLI not installed
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/73
+    pr_number: 73
+    session_wrap: proposed (4 lessons, .pi/lessons/clo-797-grouping-prompt-budget-lessons.md, committed by the post-merge docs PR)
+  complete:
+    status: pending
+history:
+  - timestamp: '2026-09-17T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: >-
+      Workflow created for CLO-797 in worktree gcm--fix-clo-797-fix-grouping-prompt on branch
+      fix/clo-797-fix-grouping-prompt (branched from main at 23fb0b9, clean).
+  - timestamp: '2026-09-17T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: 'recommended: development, chosen: development, confidence: medium (3/5 dev, 2 neutral), method: probe'
+  - timestamp: '2026-09-17T00:05:00Z'
+    action: project_sync_start
+    phase: init
+    details: >-
+      WIP 0/3 free, no blockers in DEPENDENCIES.md. PROJECT.md: CLO-797 moved from Up Next to Active Work (In
+      Progress, Discovery). ROADMAP.md: Backlog -> In Progress. DEPENDENCIES.md: removed from Unblocked & Ready.
+  - timestamp: '2026-09-17T00:10:00Z'
+    action: discovery_approved
+    phase: discovery
+    details: >-
+      Discovery skipped by owner decision at the bug/hotfix skip check. The open architecture question the
+      investigation does not answer - where a model's context window comes from, since src/ holds no context-window
+      metadata - carries into design. Advancing to design.
+  - timestamp: '2026-09-17T00:12:00Z'
+    action: design_started
+    phase: design
+    details: >-
+      Specification check presented (description names multiple components, no subtasks); owner chose design doc only,
+      matching CLO-799. Target path docs/designs/clo-797-grouping-prompt-budget.md per the live convention.
+  - timestamp: '2026-09-17T00:25:00Z'
+    action: design_draft_ready
+    phase: design
+    details: >-
+      Draft at docs/designs/clo-797-grouping-prompt-budget.md. Five decisions D1-D5 over the investigation's four fix
+      directions, plus a D4 source comparison (static window table vs live model-list API vs config knob) recommending
+      a static table with a conservative default and GCM_CONTEXT_WINDOW_TOKENS. Records two scoping corrections found
+      by reading the code: all six providers share provider::facade::grouping_user_content, so the reshape touches
+      three production files not six payload builders; and diff_budget(&self) already sees self.model, so the Provider
+      trait signature does not change. Three open questions carried to review.
+  - timestamp: '2026-09-17T00:35:00Z'
+    action: design_review_failed
+    phase: design
+    details: >-
+      lok design-review workflow aborted at the synthesis step - "unknown variable
+      '{{ steps.claude_fallback.success }}'". claude_fallback is conditionally skipped, and its variables are
+      referenced unguarded at .lok/workflows/design-review.toml:227-228 and 305-309, so every design review dies at
+      synthesis and writes no review files. Same guard-the-skipped-step class as the CLO-799 lesson in
+      .pi/lessons/lok-workflow-templates.md. One reviewer had succeeded (1/3) but its output was lost with the run.
+      Re-running both reviewers directly (opencode + ollama/codex) rather than adding an unrelated tooling fix to this
+      branch's diff; the lok bug goes to the owner as a follow-up decision.
+  - timestamp: '2026-09-17T01:05:00Z'
+    action: design_review_complete
+    phase: design
+    details: >-
+      Codex/Ollama (glm-5.3:cloud) returned NEEDS_REVISION with 6 P0, 4 P1 and 3 P2 items; consensus verdict is that
+      one review since Gemini produced nothing. Two findings were substantive contradictions in the draft rather than
+      polish: AC2 as literally worded is unsatisfiable while body carries diff --git headers, and the draft's AC4
+      promised an error for a case D3's ladder handled by degrading. All 13 items applied; none contradicted a
+      documented prior decision, so no conflict prompts were raised. Two items go to the owner at the checkpoint - the
+      AC2 restatement (it rewords a ticket criterion) and the DEFAULT_WINDOW value.
+  - timestamp: '2026-09-17T01:20:00Z'
+    action: design_finalized
+    phase: design
+    details: >-
+      Owner approved at the design checkpoint, settling both open items: the AC2 restatement (ticket intent - one path
+      inventory - over its literal wording) and DEFAULT_WINDOW = 32,768 for unlisted models. Design doc marked
+      Finalized; Linear comment posted with the six decisions and the two carry-forward findings (unsatisfiable AC2,
+      Anthropic's 4096 output cap blocking a large plan regardless of window). No open questions remain. Advancing to
+      plan.
+  - timestamp: '2026-09-17T13:39:00Z'
+    action: plan_created
+    phase: plan
+    details: >-
+      docs/plans/clo-797-grouping-prompt-budget.md - seven sub-tasks ST1-ST7 over design decisions D1-D6. Written in
+      the original worktree but never committed.
+  - timestamp: '2026-10-29T19:30:00Z'
+    action: workflow_resumed
+    phase: plan
+    details: >-
+      Original worktree and branch fix/clo-797-fix-grouping-prompt were lost. Owner chose to restore: design commit
+      07119ff cherry-picked onto fix/clo-797-grouping-prompt (aggregation files kept at main's newer versions and
+      re-pointed at this worktree), plan text recovered verbatim from transcript fb1a73a2 seq316. src/ changed only in
+      config/mod.rs since the design base 23fb0b9; plan file:line references re-verified. Plan awaits approval.
+  - timestamp: '2026-10-29T20:05:00Z'
+    action: plan_revised
+    phase: plan
+    details: >-
+      Owner requested revision at the plan checkpoint, keeping ST1-ST7. ST3 now builds every budget input before the
+      ladder: PromptBudget::grouping and ::message with separate envelope allowances and completion reserves, and
+      binary-side plan/message output caps plus a reasoning allowance (no Provider trait change). The path-echo check
+      applies to grouping only. ST4 leaves DiffBudget and message gathering untouched and derives the grouping bound
+      separately. ST5 guards four call sites, including the cached group-1 regeneration at main.rs:663. ST7 adds a
+      successful message fallback after a grouping-output rejection, and zero-request tests for each pre-flight
+      rejection. AC2 interpretation and DEFAULT_WINDOW 32,768 unchanged.
+  - timestamp: '2026-10-29T20:20:00Z'
+    action: plan_approved
+    phase: plan
+    details: >-
+      Owner approved the revised ST1-ST7 at commit 709193e. Implementation starts with ST1 and follows the documented
+      dependencies, the red-before-fix regression requirement and the validation gates.
+  - timestamp: '2026-10-29T22:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: >-
+      ST1-ST7 committed (382e83a..23533f4) after the baseline golden test 9000f5f. The AC1 guard failed on pre-fix
+      main 7c7cb28 and passes on the branch. Pre-merge gate green: fmt, clippy -D warnings, 595 tests,
+      check-public-surface.sh untouched, no-default-features lib build.
+  - timestamp: '2026-10-29T22:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: All seven sub-tasks done; validation gate next.
+  - timestamp: '2026-10-29T22:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: fix/clo-797-grouping-prompt pushed to origin.
+  - timestamp: '2026-10-29T23:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex (default model; gpt-5.4 is unavailable on this account) reviewed 53139a6: FAIL. HIGH emoji undercount in
+      the 2.0 estimator, MEDIUM paths-only rung keeps BODY_OMITTED, LOW untracked truncations missing from the
+      reduced-file count; missing a CannotFit-then-successful-fallback test and primary sources for Gemini/OpenAI
+      windows. Gemini CLI not installed, recorded as unavailable.
+  - timestamp: '2026-10-29T23:30:00Z'
+    action: commit_created
+    phase: implement
+    details: >-
+      ed5e019 generous refusal (owner-approved bounded change): message pre-flight at 4 bytes per token, grouping
+      keeps 2. Gate green on ed5e019 (fmt, clippy -D warnings, 600 tests, check-public-surface.sh, no-default-features
+      lib). Live Groq dry-run on the 515-file tree: --all and grouped fallback both sent and answered on
+      qwen/qwen3.8-27b and openai/gpt-oss-120b. Awaiting the owner at the validation checkpoint.
+  - timestamp: '2026-10-30T00:00:00Z'
+    action: commit_created
+    phase: implement
+    details: >-
+      Owner chose fix-in-design. 0700eae fixes the paths-only boundary and the untracked count and adds the
+      CannotFit-then-successful-fallback test; both ladder regressions were red with the fixes removed. HIGH emoji
+      undercount filed as CLO-921.
+  - timestamp: '2026-10-30T00:20:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex re-validated 0700eae: PASS_WITH_NOTES. New LOW (marker past the byte ceiling) fixed in ee8de89; CLO-921
+      extended to the path-echo reserve and output-cap check. Gemini unavailable. Gate green on ee8de89: fmt, clippy
+      -D warnings, 604 tests, check-public-surface.sh, no-default-features lib, no signing skips.
+  - timestamp: '2026-10-30T00:30:00Z'
+    action: implementation_complete
+    phase: implement
+    details: Validation gate passed with notes; PR phase next.
+  - timestamp: '2026-10-29T22:37:00Z'
+    action: pr_created
+    phase: pr
+    details: PR #73 created; Linear CLO-797 moved to In Review.
+task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
+task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit

@@ -1,0 +1,404 @@
+=== gather_for_changed standard stat ===
+ a.rs    |  40 ++++++++++++++++++++++++++++++++++++++++
+ img.bin | Bin 6 -> 7 bytes
+ new.md  |   3 +++
+ 3 files changed, 43 insertions(+)
+=== gather_for_changed standard body ===
+diff --git a/a.rs b/a.rs
+index ca05282..1c1e83c 100644
+--- a/a.rs
++++ b/a.rs
+@@ -1 +1,41 @@
+ fn a() {}
++fn added_0() { let x = 0; }
++fn added_1() { let x = 1; }
++fn added_2() { let x = 2; }
++fn added_3() { let x = 3; }
++fn added_4() { let x = 4; }
++fn added_5() { let x = 5; }
++fn added_6() { let x = 6; }
++fn added_7() { let x = 7; }
++fn added_8() { let x = 8; }
++fn added_9() { let x = 9; }
++fn added_10() { let x = 10; }
++fn added_11() { let x = 11; }
++fn added_12() { let x = 12; }
++fn added_13() { let x = 13; }
++fn added_14() { let x = 14; }
++fn added_15() { let x = 15; }
++fn added_16() { let x = 16; }
++fn added_17() { let x = 17; }
++fn added_18() { let x = 18; }
++fn added_19() { let x = 19; }
++fn added_20() { let x = 20; }
++fn added_21() { let x = 21; }
++fn added_22() { let x = 22; }
++fn added_23() { let x = 23; }
++fn added_24() { let x = 24; }
++fn added_25() { let x = 25; }
++fn added_26() { let x = 26; }
++fn added_27() { let x = 27; }
++fn added_28() { let x = 28; }
++fn added_29() { let x = 29; }
++fn added_30() { let x = 30; }
++fn added_31() { let x = 31; }
++fn added_32() { let x = 32; }
++fn added_33() { let x = 33; }
++fn added_34() { let x = 34; }
++fn added_35() { let x = 35; }
++fn added_36() { let x = 36; }
++fn added_37() { let x = 37; }
++fn added_38() { let x = 38; }
++fn added_39() { let x = 39; }
+diff --git a/img.bin b/img.bin
+index efcac10..acbae70 100644
+Binary files a/img.bin and b/img.bin differ
+diff --git a/new.md b/new.md
+new file mode 100644
+index 0000000..9f0232d
+--- /dev/null
++++ b/new.md
+@@ -0,0 +1,3 @@
++# title
++
++body text
+
+--- /dev/null
++++ b/u00.txt
++untracked 0
+
+--- /dev/null
++++ b/u01.txt
++untracked 1
+
+--- /dev/null
++++ b/u02.txt
++untracked 2
+
+--- /dev/null
++++ b/u03.txt
++untracked 3
+
+--- /dev/null
++++ b/u04.txt
++untracked 4
+
+--- /dev/null
++++ b/u05.txt
++untracked 5
+
+--- /dev/null
++++ b/u06.txt
++untracked 6
+
+--- /dev/null
++++ b/u07.txt
++untracked 7
+
+--- /dev/null
++++ b/u08.txt
++untracked 8
+
+--- /dev/null
++++ b/u09.txt
++untracked 9
+
+--- /dev/null
++++ b/u10.txt
++untracked 10
+
+--- /dev/null
++++ b/u11.txt
++untracked 11
+
+--- /dev/null
++++ b/u12.txt
++untracked 12
+
+--- /dev/null
++++ b/u13.txt
++untracked 13
+
+--- /dev/null
++++ b/u14.txt
++untracked 14
+
+--- /dev/null
++++ b/u15.txt
++untracked 15
+
+--- /dev/null
++++ b/u16.txt
++untracked 16
+
+--- /dev/null
++++ b/u17.txt
++untracked 17
+
+--- /dev/null
++++ b/u18.txt
++untracked 18
+
+--- /dev/null
++++ b/u19.txt
++untracked 19
+
+--- /dev/null
++++ b/u20.txt
++untracked 20
+
+--- /dev/null
++++ b/u21.txt
++untracked 21
+
+--- /dev/null
++++ b/u22.txt
++untracked 22
+
+--- /dev/null
++++ b/u23.txt
++untracked 23
+
+--- /dev/null
++++ b/u24.txt
++untracked 24
+
+--- /dev/null
++++ b/u25.txt
++untracked 25
+
+--- /dev/null
++++ b/u26.txt
++untracked 26
+
+--- /dev/null
++++ b/u27.txt
++untracked 27
+
+--- /dev/null
++++ b/u28.txt
++untracked 28
+
+--- /dev/null
++++ b/u29.txt
++untracked 29
+
+--- /dev/null
++++ b/u30.txt
++untracked 30
+
+--- /dev/null
++++ b/u31.txt
++untracked 31
+
+--- /dev/null
++++ b/u32.txt
++untracked 32
+
+--- /dev/null
++++ b/u33.txt
++untracked 33
+
+--- /dev/null
++++ b/u34.txt
++untracked 34
+
+--- /dev/null
++++ b/u35.txt
++untracked 35
+
+--- /dev/null
++++ b/u36.txt
++untracked 36
+
+--- /dev/null
++++ b/u37.txt
++untracked 37
+
+--- /dev/null
++++ b/u38.txt
++untracked 38
+
+--- /dev/null
++++ b/u39.txt
++untracked 39
+
+--- /dev/null
++++ b/u40.txt
++untracked 40
+
+--- /dev/null
++++ b/u41.txt
++untracked 41
+
+--- /dev/null
++++ b/u42.txt
++untracked 42
+
+--- /dev/null
++++ b/u43.txt
++untracked 43
+
+--- /dev/null
++++ b/u44.txt
++untracked 44
+
+--- /dev/null
++++ b/u45.txt
++untracked 45
+
+--- /dev/null
++++ b/u46.txt
++untracked 46
+
+--- /dev/null
++++ b/u47.txt
++untracked 47
+
+--- /dev/null
++++ b/u48.txt
++untracked 48
+
+--- /dev/null
++++ b/u49.txt
++untracked 49
+
+--- /dev/null
++++ b/u50.txt
+[content omitted: untracked cap reached]
+
+--- /dev/null
++++ b/u51.txt
+[content omitted: untracked cap reached]
+
+--- /dev/null
++++ b/u52.txt
+[content omitted: untracked cap reached]
+
+--- /dev/null
++++ b/u53.txt
+[content omitted: untracked cap reached]
+
+--- /dev/null
++++ b/u54.txt
+[content omitted: untracked cap reached]
+=== gather_for_changed tight stat ===
+ a.rs    |  40 ++++++++++++++++++++++++++++++++++++++++
+ img.bin | Bin 6 -> 7 bytes
+ new.md  |   3 +++
+ 3 files changed, 43 insertions(+)
+=== gather_for_changed tight body ===
+diff --git a/a.rs b/a.rs
+index ca05282..1c1e83c 100644
+--- a/a.rs
++++ b/a.rs
+@@ -1 +1,41 @@
+ fn a() {}
++fn added_0() { let x = 0; }
++fn added_1() { let x = 1; }
++fn added_2() { let x = 2; }
++fn added_3() { let x = 3; }
++fn added_4() { let x = 4; }
++fn added_5() { let x = 5; }
++fn added_6() { let x = 6; }
++fn added_7() { let x = 7; }
++fn added_8() { let x = 8; }
++fn added_9() { let x = 9; }
++fn added_10() { let x = 10; }
++fn added_11() { let x = 11; }
++fn added_12() { let x = 12; }
++fn added_13() { let x = 13; }
++fn added_14() { let x = 14; }
++fn added_15() { let x = 15; }
++fn added_16() { let 
+... (diff truncated)
+=== gather_for_files subset stat ===
+ a.rs | 40 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+=== gather_for_files subset body ===
+diff --git a/a.rs b/a.rs
+index ca05282..1c1e83c 100644
+--- a/a.rs
++++ b/a.rs
+@@ -1 +1,41 @@
+ fn a() {}
++fn added_0() { let x = 0; }
++fn added_1() { let x = 1; }
++fn added_2() { let x = 2; }
++fn added_3() { let x = 3; }
++fn added_4() { let x = 4; }
++fn added_5() { let x = 5; }
++fn added_6() { let x = 6; }
++fn added_7() { let x = 7; }
++fn added_8() { let x = 8; }
++fn added_9() { let x = 9; }
++fn added_10() { let x = 10; }
++fn added_11() { let x = 11; }
++fn added_12() { let x = 12; }
++fn added_13() { let x = 13; }
++fn added_14() { let x = 14; }
++fn added_15() { let x = 15; }
++fn added_16() { let x = 16; }
++fn added_17() { let x = 17; }
++fn added_18() { let x = 18; }
++fn added_19() { let x = 19; }
++fn added_20() { let x = 20; }
++fn added_21() { let x = 21; }
++fn added_22() { let x = 22; }
++fn added_23() { let x = 23; }
++fn added_24() { let x = 24; }
++fn added_25() { let x = 25; }
++fn added_26() { let x = 26; }
++fn added_27() { let x = 27; }
++fn added_28() { let x = 28; }
++fn added_29() { let x = 29; }
++fn added_30() { let x = 30; }
++fn added_31() { let x = 31; }
++fn added_32() { let x = 32; }
++fn added_33() { let x = 33; }
++fn added_34() { let x = 34; }
++fn added_35() { let x = 35; }
++fn added_36() { let x = 36; }
++fn added_37() { let x = 37; }
++fn added_38() { let x = 38; }
++fn added_39() { let x = 39; }
+
+--- /dev/null
++++ b/u00.txt
++untracked 0
+
+--- /dev/null
++++ b/u01.txt
++untracked 1
+
+--- /dev/null
++++ b/u02.txt
++untracked 2
+
+--- /dev/null
++++ b/u03.txt
++untracked 3
+
+--- /dev/null
++++ b/u04.txt
++untracked 4
+
+--- /dev/null
++++ b/u05.txt
++untracked 5
+
+--- /dev/null
++++ b/u06.txt
++untracked 6
+
+--- /dev/null
++++ b/u07.txt
++untracked 7
+
+--- /dev/null
++++ b/u08.txt
++untracked 8
+
+--- /dev/null
++++ b/u09.txt
++untracked 9

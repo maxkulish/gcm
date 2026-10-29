@@ -12,7 +12,7 @@
 
 | Task | Where | Since |
 |------|-------|-------|
-| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Separate session/worktree `gcm-fix-clo-797-fix-grouping-prompt-72` | 2026-09-17 |
+| [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Worktree `gcm--fix-clo-797-grouping-prompt` (resumed 2026-10-29; design restored from orphaned 07119ff) | 2026-09-17 |
 
 ## Unblocked & Ready
 
