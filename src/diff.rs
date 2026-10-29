@@ -38,6 +38,17 @@ const MAX_UNTRACKED_BYTES: usize = 256 * 1024;
 /// Per-file read cap for an individual untracked file (mirrors bash `head -c 8192`).
 const PER_FILE_BYTES: usize = 8192;
 
+/// How [`append_untracked`] renders the untracked files it does not read
+/// because a FR-57 cap was reached.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UntrackedRender {
+    /// One `--- /dev/null` stub per skipped file (the message paths).
+    PerFileStubs,
+    /// One trailer counting the skipped files (the grouping path, whose
+    /// inventory already names every path - CLO-797).
+    SummaryTrailer,
+}
+
 /// Per-provider diff budget (CLO-489, FR-13a): the coarse total-body safeguard
 /// and the per-tracked-file truncation cap. Each provider declares its own (a
 /// smaller-context provider gets a tighter total); env overrides
@@ -183,7 +194,7 @@ pub fn gather_for_files(
     let tracked = repo.diff_full_for(&paths)?;
     let mut body = elide_binary_diff(&tracked);
     let allow: HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
-    append_untracked(repo, &mut body, Some(&allow))?;
+    append_untracked(repo, &mut body, Some(&allow), UntrackedRender::PerFileStubs)?;
     cap_total(&mut body, budget.total_bytes);
     Ok(GatheredDiff { stat, body })
 }
@@ -217,7 +228,12 @@ pub fn gather_for_grouping(
     let tracked = repo.diff_full_for(&paths)?;
     let mut body = truncate_per_file(&elide_binary_diff(&tracked), budget.per_file_bytes);
     let allow: HashSet<String> = changed.iter().map(|f| f.path.clone()).collect();
-    append_untracked(repo, &mut body, Some(&allow))?;
+    append_untracked(
+        repo,
+        &mut body,
+        Some(&allow),
+        UntrackedRender::SummaryTrailer,
+    )?;
     cap_total(&mut body, budget.total_bytes);
 
     Ok(GroupingContext { files, stat, body })
@@ -228,11 +244,12 @@ pub fn gather_for_grouping(
 /// [`gather_for_grouping`] (which pass `None` = every untracked file) and
 /// [`gather_for_files`] (which passes `Some(allow)` to restrict to one group's
 /// paths, so a single group's message diff is not polluted by other groups'
-/// untracked files - CLO-491).
+/// untracked files - CLO-491). `render` decides how files past the caps appear.
 fn append_untracked(
     repo: &Repo,
     body: &mut String,
     allow: Option<&HashSet<String>>,
+    render: UntrackedRender,
 ) -> Result<(), GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
@@ -244,6 +261,7 @@ fn append_untracked(
     // (FR-57).
     let mut files_done = 0usize;
     let mut bytes_used = 0usize;
+    let mut skipped = 0usize;
     for path in &untracked {
         // Filter to the allow-list (if any) before the caps, so excluded paths
         // neither consume the budget nor reach the prompt.
@@ -251,9 +269,12 @@ fn append_untracked(
             continue;
         }
         if files_done >= MAX_UNTRACKED_FILES || bytes_used >= MAX_UNTRACKED_BYTES {
-            body.push_str(&format!(
-                "\n--- /dev/null\n+++ b/{path}\n[content omitted: untracked cap reached]\n"
-            ));
+            match render {
+                UntrackedRender::PerFileStubs => body.push_str(&format!(
+                    "\n--- /dev/null\n+++ b/{path}\n[content omitted: untracked cap reached]\n"
+                )),
+                UntrackedRender::SummaryTrailer => skipped += 1,
+            }
             continue;
         }
         let full = repo.root().join(path);
@@ -299,6 +320,11 @@ fn append_untracked(
             }
         }
         files_done += 1;
+    }
+    if skipped > 0 {
+        body.push_str(&format!(
+            "\n[content omitted: {skipped} further untracked files past the read cap - see the changed-files inventory]\n"
+        ));
     }
     Ok(())
 }
@@ -722,6 +748,53 @@ mod tests {
         }
         let repo = Repo::at(root.to_path_buf());
         (dir, repo)
+    }
+
+    /// A repository with `n` untracked files and no commits.
+    fn untracked_fixture(n: usize) -> (tempfile::TempDir, Repo) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        git(dir.path(), &["init", "-q"]);
+        for i in 0..n {
+            std::fs::write(dir.path().join(format!("u{i:02}.txt")), "x\n").unwrap();
+        }
+        let repo = Repo::at(dir.path().to_path_buf());
+        (dir, repo)
+    }
+
+    #[test]
+    fn untracked_trailer_replaces_stubs_in_grouping() {
+        let (_dir, repo) = untracked_fixture(MAX_UNTRACKED_FILES + 10);
+        let changed = repo.changed_files().unwrap();
+        let ctx = gather_for_grouping(&repo, &changed, &DiffBudget::standard()).unwrap();
+        assert_eq!(
+            ctx.body.matches("[content omitted:").count(),
+            1,
+            "one trailer: {}",
+            ctx.body
+        );
+        assert!(ctx
+            .body
+            .contains("[content omitted: 10 further untracked files past the read cap"));
+        assert!(
+            !ctx.body.contains("untracked cap reached"),
+            "no per-file stubs"
+        );
+        assert_eq!(
+            ctx.body.matches("--- /dev/null").count(),
+            MAX_UNTRACKED_FILES,
+            "headers only for the files that were read"
+        );
+    }
+
+    #[test]
+    fn gather_for_files_keeps_stubs() {
+        let (_dir, repo) = untracked_fixture(MAX_UNTRACKED_FILES + 10);
+        let changed = repo.changed_files().unwrap();
+        let body = gather_for_changed(&repo, &changed, &DiffBudget::standard())
+            .unwrap()
+            .body;
+        assert_eq!(body.matches("untracked cap reached").count(), 10);
+        assert!(!body.contains("further untracked files"), "no trailer");
     }
 
     fn render_gathered(label: &str, g: &GatheredDiff) -> String {
