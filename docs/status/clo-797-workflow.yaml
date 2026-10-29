@@ -139,7 +139,10 @@ phases:
     follow_ups: [CLO-921]
     gemini_validation_report: unavailable   # Gemini CLI not installed
   pr:
-    status: pending
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/73
+    pr_number: 73
+    session_wrap: proposed (4 lessons, .pi/lessons/clo-797-grouping-prompt-budget-lessons.md, committed by the post-merge docs PR)
   complete:
     status: pending
 history:
@@ -292,5 +295,9 @@ history:
     action: implementation_complete
     phase: implement
     details: Validation gate passed with notes; PR phase next.
+  - timestamp: '2026-10-29T22:37:00Z'
+    action: pr_created
+    phase: pr
+    details: PR #73 created; Linear CLO-797 moved to In Review.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit
