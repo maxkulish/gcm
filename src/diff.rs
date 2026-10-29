@@ -5,23 +5,30 @@ use std::path::Path;
 use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
 
-/// JSON-encode the changed-file paths as an array of strings so a path
-/// containing a newline (or any character) stays a single discrete element in
-/// the grouping prompt - newline-joining would split such a path into multiple
-/// lines and the model would group phantom paths (CLO-487 path-agreement).
-fn file_list_json(changed: &[ChangedFile]) -> String {
-    let paths: Vec<&str> = changed.iter().map(|c| c.path.as_str()).collect();
-    serde_json::to_string(&paths).unwrap_or_else(|_| "[]".to_string())
+/// One changed path in the grouping inventory (CLO-797): the path the model
+/// groups by, its porcelain `XY` code, and the source path of a rename or copy.
+#[derive(serde::Serialize)]
+struct InventoryEntry<'a> {
+    path: &'a str,
+    xy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_path: Option<&'a str>,
 }
 
-/// JSON-encode the porcelain status as an array of `"XY path"` strings (also
-/// newline-safe, same rationale as [`file_list_json`]).
-fn status_json(changed: &[ChangedFile]) -> String {
-    let rows: Vec<String> = changed
+/// JSON-encode the changed files as one inventory, `[{path, xy, old_path?}]`,
+/// so the prompt carries each path once (CLO-797) and a path containing a
+/// newline (or any character) stays a single discrete element - newline-joining
+/// would split it and the model would group phantom paths (CLO-487).
+fn files_json(changed: &[ChangedFile]) -> String {
+    let entries: Vec<InventoryEntry> = changed
         .iter()
-        .map(|c| format!("{}{} {}", c.x as char, c.y as char, c.path))
+        .map(|c| InventoryEntry {
+            path: &c.path,
+            xy: format!("{}{}", c.x as char, c.y as char),
+            old_path: c.orig_path.as_deref(),
+        })
         .collect();
-    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".to_string())
+    serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// Untracked-expansion caps (FR-57): bound both file count and total bytes so an
@@ -114,15 +121,14 @@ impl GatheredDiff {
     }
 }
 
-/// The richer context handed to the provider for grouping (CLO-487): the file
-/// list and porcelain status (both JSON arrays, so newline-containing paths stay
+/// The richer context handed to the provider for grouping (CLO-487): the
+/// changed-file inventory (a JSON array, so newline-containing paths stay
 /// discrete), the diff `--stat`, and the per-file-truncated full diff. Distinct
 /// from [`GatheredDiff`] to keep the tracer's single-message concerns separate.
 pub struct GroupingContext {
-    /// JSON array of the exact changed paths (the model groups by these).
-    pub file_list: String,
-    /// JSON array of `"XY path"` porcelain status rows.
-    pub status: String,
+    /// JSON array of `{path, xy, old_path?}` - the one path inventory the model
+    /// groups by (CLO-797).
+    pub files: String,
     pub stat: String,
     pub body: String,
 }
@@ -133,8 +139,7 @@ impl GroupingContext {
     /// what makes an oversized grouping prompt diagnosable.
     pub fn section_sizes(&self) -> Vec<(&'static str, usize)> {
         vec![
-            ("file_list", self.file_list.len()),
-            ("status", self.status.len()),
+            ("files", self.files.len()),
             ("stat", self.stat.len()),
             ("body", self.body.len()),
         ]
@@ -195,8 +200,7 @@ pub fn gather_for_changed(
     gather_for_files(repo, &files, budget)
 }
 
-/// Build the grouping context (CLO-487): the file list and porcelain status are
-/// derived from the already-gathered `changed` set (so they stay byte-identical
+/// Build the grouping context (CLO-487): the file inventory is derived from the already-gathered `changed` set (so they stay byte-identical
 /// to the paths used for validation and staging), the diff `--stat` is the
 /// prompt header, and the body is the tracked diff truncated **per file** with
 /// `[diff omitted: N bytes]` placeholders, plus untracked content (FR-57 caps),
@@ -206,8 +210,7 @@ pub fn gather_for_grouping(
     changed: &[ChangedFile],
     budget: &DiffBudget,
 ) -> Result<GroupingContext, GcmError> {
-    let file_list = file_list_json(changed);
-    let status = status_json(changed);
+    let files = files_json(changed);
 
     let paths: Vec<&str> = changed.iter().map(|f| f.path.as_str()).collect();
     let stat = repo.diff_stat_for(&paths)?;
@@ -217,12 +220,7 @@ pub fn gather_for_grouping(
     append_untracked(repo, &mut body, Some(&allow))?;
     cap_total(&mut body, budget.total_bytes);
 
-    Ok(GroupingContext {
-        file_list,
-        status,
-        stat,
-        body,
-    })
+    Ok(GroupingContext { files, stat, body })
 }
 
 /// Append untracked, non-gitignored file content to `body`, bounded by the
@@ -590,31 +588,70 @@ mod tests {
         assert!(out.len() < 300, "section is now small");
     }
 
+    fn changed(x: u8, y: u8, path: &str, orig_path: Option<&str>) -> ChangedFile {
+        ChangedFile {
+            x,
+            y,
+            path: path.to_string(),
+            orig_path: orig_path.map(str::to_string),
+        }
+    }
+
+    fn inventory(changed: &[ChangedFile]) -> Vec<serde_json::Value> {
+        serde_json::from_str(&files_json(changed)).unwrap()
+    }
+
     #[test]
-    fn file_list_json_keeps_a_newline_path_as_one_element() {
-        // A path containing a newline must stay a single discrete element, or
-        // the model would see (and group) phantom split paths (Codex finding).
-        let changed = vec![
-            ChangedFile {
-                x: b' ',
-                y: b'M',
-                path: "weird\nname.txt".to_string(),
-                orig_path: None,
-            },
-            ChangedFile {
-                x: b'?',
-                y: b'?',
-                path: "normal.rs".to_string(),
-                orig_path: None,
-            },
-        ];
-        let parsed: Vec<String> = serde_json::from_str(&file_list_json(&changed)).unwrap();
+    fn inventory_has_one_entry_per_path_with_its_status() {
+        let entries = inventory(&[
+            changed(b' ', b'M', "a.rs", None),
+            changed(b'?', b'?', "b.md", None),
+        ]);
         assert_eq!(
-            parsed,
-            vec!["weird\nname.txt".to_string(), "normal.rs".to_string()]
+            entries,
+            vec![
+                serde_json::json!({"path": "a.rs", "xy": " M"}),
+                serde_json::json!({"path": "b.md", "xy": "??"}),
+            ]
         );
-        let rows: Vec<String> = serde_json::from_str(&status_json(&changed)).unwrap();
-        assert_eq!(rows[0], " M weird\nname.txt");
+    }
+
+    #[test]
+    fn inventory_rename_and_copy_carry_both_names() {
+        let files = [
+            changed(b'R', b' ', "new.rs", Some("old.rs")),
+            changed(b'C', b' ', "copy.rs", Some("src.rs")),
+        ];
+        let entries = inventory(&files);
+        assert_eq!(
+            entries[0],
+            serde_json::json!({"path": "new.rs", "xy": "R ", "old_path": "old.rs"})
+        );
+        assert_eq!(
+            entries[1],
+            serde_json::json!({"path": "copy.rs", "xy": "C ", "old_path": "src.rs"})
+        );
+        // Both names still reach staging, which reads the same ChangedFile.
+        assert_eq!(files[0].stage_paths(), vec!["new.rs", "old.rs"]);
+    }
+
+    #[test]
+    fn inventory_keeps_awkward_paths_as_one_element() {
+        // A path containing a newline, a quote, a backslash or non-ASCII must
+        // stay a single discrete element, or the model would see (and group)
+        // phantom split paths (Codex finding, CLO-487).
+        let paths = [
+            "weird\nname.txt",
+            "say \"hi\".md",
+            "back\\slash.rs",
+            "файл.txt",
+        ];
+        let files: Vec<ChangedFile> = paths.iter().map(|p| changed(b' ', b'M', p, None)).collect();
+        let entries = inventory(&files);
+        assert_eq!(entries.len(), paths.len());
+        for (entry, path) in entries.iter().zip(paths) {
+            assert_eq!(entry["path"], *path);
+        }
     }
 
     #[test]

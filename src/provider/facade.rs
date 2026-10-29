@@ -354,20 +354,20 @@ have exactly these keys: \"files\" (array of exact path strings), \"summary\" (s
 \"commit_message\" (string for groups[0], null for every other group).
 
 Rules:
-- Every file from the file list must appear in exactly one group.
+- Every \"path\" from the changed-files inventory must appear in exactly one group.
 - Prefer fewer groups (1-3) unless changes are truly unrelated.
 - commit_message: a full conventional-commit message for groups[0] ONLY; null for every other group.
 - Conventional format <type>(<scope>): <description>, first line under 72 chars; add a blank line
   and bullet points for details when there are multiple significant changes.
-- For renamed files, use the NEW path in your file list.
+- For renamed or copied files, use \"path\" (the NEW path), never \"old_path\".
 - summary: a one-line description of each group.";
 
 /// The grouping-plan user content (shared by every provider's plan call).
 pub(super) fn grouping_user_content(ctx: &GroupingContext) -> String {
     format!(
-        "Changed files (JSON array of exact paths - group by these):\n{}\n\n\
-         Git status (JSON array of \"XY path\"):\n{}\n\nDiff stats:\n{}\n\nFull diff:\n{}",
-        ctx.file_list, ctx.status, ctx.stat, ctx.body
+        "Changed files (JSON array of {{path, xy, old_path?}} - group by \"path\"):\n{}\n\n\
+         Diff stats:\n{}\n\nFull diff:\n{}",
+        ctx.files, ctx.stat, ctx.body
     )
 }
 

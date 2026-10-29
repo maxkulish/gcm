@@ -59,7 +59,7 @@ impl Operation {
     /// paths from the set is what actually shrinks the request.
     fn oversize_advice(self) -> &'static str {
         match self {
-            // The grouping prompt carries a file list, a status block and a
+            // The grouping prompt carries the changed-file inventory and a
             // per-file-truncated diff; the single-message prompt carries only the
             // stat and the diff, so --all really is the smaller request.
             Operation::Grouping => {

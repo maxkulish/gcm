@@ -442,7 +442,7 @@ fn debug_logs_prompt_sections() {
         .lines()
         .find(|l| l.contains("grouping prompt sections:"))
         .unwrap_or_else(|| panic!("no prompt-size line: {stderr}"));
-    for section in ["file_list=", "status=", "stat=", "body=", "total="] {
+    for section in ["files=", "stat=", "body=", "total="] {
         assert!(line.contains(section), "missing {section}: {line}");
     }
 }

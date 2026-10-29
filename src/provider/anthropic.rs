@@ -325,8 +325,7 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            file_list: "a.rs\nb.md".to_string(),
-            status: " M a.rs\n?? b.md".to_string(),
+            files: r#"[{"path":"a.rs","xy":" M"},{"path":"b.md","xy":"??"}]"#.to_string(),
             stat: "2 files changed".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
