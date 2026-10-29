@@ -1,5 +1,3 @@
-// Wired into the call sites by the CLO-797 pre-flight check.
-#[allow(dead_code)]
 mod budget;
 mod cache;
 mod cli;
@@ -25,6 +23,8 @@ use std::collections::HashSet;
 use std::io::IsTerminal;
 
 use clap::Parser;
+
+use crate::budget::Limits;
 
 // The logger is the library's, not a second copy compiled into the binary
 // (CLO-798): `debug::progress` holds process-wide ticker state that the library's
@@ -425,6 +425,26 @@ fn execute(args: &Cli) -> Envelope {
     let model_id = provider.cache_model_id();
     crate::debug_log!("provider: {} ({})", provider_name, model_id);
 
+    // The prompt budgets (CLO-797) come from the selected model's context
+    // window; a malformed GCM_CONTEXT_WINDOW_TOKENS fails here, before any call.
+    let limits = match provider::resolve_identity(args.provider, args.model.as_deref())
+        .map_err(GcmError::Provider)
+        .and_then(|(provider, model)| {
+            let target = budget::Target { provider, model };
+            let window = budget::context_window(&target)?;
+            Ok(Limits { target, window })
+        }) {
+        Ok(limits) => limits,
+        Err(e) => {
+            return output::error(
+                Some(provider_name.as_str()),
+                Some(model_id.as_str()),
+                Some(mode_from_args(args)),
+                &e,
+            )
+        }
+    };
+
     // FR-46: warn before resetting a user-curated index. Both real commit paths
     // discard the user's staging (grouping resets via `clear_staged`; `--all`
     // overrides via `git add -A`), so a pre-existing curated/partial index is
@@ -455,6 +475,7 @@ fn execute(args: &Cli) -> Envelope {
             provider_name.as_str(),
             model_id.as_str(),
             Operation::SingleMessage,
+            &limits,
         );
     }
 
@@ -482,6 +503,7 @@ fn execute(args: &Cli) -> Envelope {
                     model_id.as_str(),
                     msg,
                     raw_code,
+                    &limits,
                 );
             }
             (plan, true)
@@ -493,6 +515,7 @@ fn execute(args: &Cli) -> Envelope {
             &privacy,
             model_id.as_str(),
             args.json,
+            &limits,
         ) {
             Ok(plan) => {
                 if !args.plan_only {
@@ -522,6 +545,7 @@ fn execute(args: &Cli) -> Envelope {
                     model_id.as_str(),
                     reason,
                     raw_code,
+                    &limits,
                 );
             }
         },
@@ -537,6 +561,7 @@ fn execute(args: &Cli) -> Envelope {
         provider.as_ref(),
         provider_name.as_str(),
         &privacy,
+        &limits,
     )
 }
 
@@ -547,6 +572,10 @@ enum CommitOutcome {
     Committed,
     Aborted,
 }
+
+/// `fallback.raw_code` when gcm itself, not the provider, refused a prompt as
+/// too large for the model (CLO-797).
+const PROMPT_BUDGET_CODE: &str = "PromptBudget";
 
 /// Outcome of a failed grouping attempt: `Fatal` errors abort (the single-commit
 /// path needs the same resource), `Fallback` errors degrade to single-commit.
@@ -582,9 +611,21 @@ fn build_plan(
     privacy: &Privacy,
     model: &str,
     json: bool,
+    limits: &Limits,
 ) -> Result<Plan, BuildError> {
-    let ctx = diff::gather_for_grouping(repo, changed, &provider.diff_budget())
-        .and_then(|ctx| privacy.prepare_grouping(ctx))
+    let grouping = limits
+        .grouping(&diff::files_json(changed))
+        .map_err(|rejected| {
+            let reason = rejected.to_string();
+            BuildError::Fallback {
+                reason,
+                raw_code: PROMPT_BUDGET_CODE.to_string(),
+            }
+        })?;
+    let gathered = diff::gather_for_grouping(repo, changed, &provider.diff_budget(), &grouping)
+        .map_err(BuildError::Fatal)?;
+    let ctx = privacy
+        .prepare_grouping(gathered.ctx)
         .map_err(BuildError::Fatal)?;
     let shape = CallShape {
         operation: Operation::Grouping,
@@ -648,6 +689,7 @@ fn commit_first_group(
     provider: &dyn Provider,
     provider_name: &str,
     privacy: &Privacy,
+    limits: &Limits,
 ) -> Envelope {
     if !args.json && (args.dry_run || args.plan_only) {
         display_groups(plan);
@@ -833,6 +875,7 @@ fn single_commit_path(
     provider_name: &str,
     model: &str,
     operation: Operation,
+    limits: &Limits,
 ) -> Envelope {
     let changed_paths: Vec<String> = changed.iter().map(|c| c.path.clone()).collect();
 
@@ -1021,6 +1064,7 @@ fn run_fallback(
     model: &str,
     reason: String,
     raw_code: String,
+    limits: &Limits,
 ) -> Envelope {
     // Announced under `--json` too (AC-11): a machine consumer otherwise sees two
     // provider requests on stderr with no record of why the second one happened.
@@ -1039,6 +1083,7 @@ fn run_fallback(
         provider_name,
         model,
         Operation::FallbackMessage,
+        limits,
     );
     if env.status == output::STATUS_COMMITTED {
         // Re-wrap a successful single commit as a fallback envelope, preserving

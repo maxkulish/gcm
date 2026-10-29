@@ -243,8 +243,7 @@ pub fn select(
     cli_provider: Option<ProviderId>,
     cli_model: Option<&str>,
 ) -> Result<Box<dyn Provider>, ProviderError> {
-    let id = resolve_provider_id(cli_provider)?;
-    let model = resolve_model(id, cli_model);
+    let (id, model) = resolve_identity(cli_provider, cli_model)?;
     Ok(match id {
         ProviderId::Groq => Box::new(groq::Groq::new(model)),
         ProviderId::Google => Box::new(gemini::Gemini::new(model)),
@@ -283,6 +282,16 @@ pub(crate) fn vertex_adc_probe() -> Result<(), String> {
 /// passes `None` and discovery degrades to the static list.
 pub(crate) fn vertex_access_token() -> Result<String, String> {
     vertex::resolve_access_token().map_err(|e| e.to_string())
+}
+
+/// The provider and model [`select`] constructs, without constructing it, so
+/// the prompt budget (CLO-797) can look up the model's context window.
+pub(crate) fn resolve_identity(
+    cli_provider: Option<ProviderId>,
+    cli_model: Option<&str>,
+) -> Result<(ProviderId, String), ProviderError> {
+    let id = resolve_provider_id(cli_provider)?;
+    Ok((id, resolve_model(id, cli_model)))
 }
 
 fn resolve_provider_id(cli: Option<ProviderId>) -> Result<ProviderId, ProviderError> {

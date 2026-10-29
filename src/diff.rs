@@ -2,8 +2,10 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::path::Path;
 
+use crate::budget::{estimate_tokens, PromptBudget};
 use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
+use crate::provider::grouping_user_content;
 
 /// One changed path in the grouping inventory (CLO-797): the path the model
 /// groups by, its porcelain `XY` code, and the source path of a rename or copy.
@@ -19,7 +21,7 @@ struct InventoryEntry<'a> {
 /// so the prompt carries each path once (CLO-797) and a path containing a
 /// newline (or any character) stays a single discrete element - newline-joining
 /// would split it and the model would group phantom paths (CLO-487).
-fn files_json(changed: &[ChangedFile]) -> String {
+pub fn files_json(changed: &[ChangedFile]) -> String {
     let entries: Vec<InventoryEntry> = changed
         .iter()
         .map(|c| InventoryEntry {
@@ -54,9 +56,9 @@ enum UntrackedRender {
 /// smaller-context provider gets a tighter total); env overrides
 /// `GCM_DIFF_TOTAL_BYTES` / `GCM_DIFF_PER_FILE_BYTES` apply across providers.
 pub struct DiffBudget {
-    /// Coarse final safeguard on the whole assembled body. Applied on **every**
-    /// path (single-commit `gather`, per-group `gather_for_files`, and grouping
-    /// `gather_for_grouping`) - this is the per-provider total-input cap.
+    /// Coarse final safeguard on the whole assembled body - the per-provider
+    /// total-input cap. The message paths tail-chop at it; the grouping path
+    /// treats it as a ceiling its ladder keeps under (CLO-797).
     pub total_bytes: usize,
     /// Per-file cap for a tracked diff section in the **grouping** prompt only:
     /// each file's section is truncated independently with a `[diff omitted: N
@@ -194,7 +196,13 @@ pub fn gather_for_files(
     let tracked = repo.diff_full_for(&paths)?;
     let mut body = elide_binary_diff(&tracked);
     let allow: HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
-    append_untracked(repo, &mut body, Some(&allow), UntrackedRender::PerFileStubs)?;
+    append_untracked(
+        repo,
+        &mut body,
+        Some(&allow),
+        UntrackedRender::PerFileStubs,
+        PER_FILE_BYTES,
+    )?;
     cap_total(&mut body, budget.total_bytes);
     Ok(GatheredDiff { stat, body })
 }
@@ -211,32 +219,165 @@ pub fn gather_for_changed(
     gather_for_files(repo, &files, budget)
 }
 
-/// Build the grouping context (CLO-487): the file inventory is derived from the already-gathered `changed` set (so they stay byte-identical
-/// to the paths used for validation and staging), the diff `--stat` is the
-/// prompt header, and the body is the tracked diff truncated **per file** with
-/// `[diff omitted: N bytes]` placeholders, plus untracked content (FR-57 caps),
-/// under the `MAX_TOTAL_BYTES` final safeguard.
+/// Which rung of the sacrifice ladder produced a grouping context (CLO-797
+/// D3). Each rung gives up more of the diff body; the inventory and the stat
+/// are never cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupingRung {
+    /// Today's per-file cap, and the prompt fits.
+    Full,
+    /// Every file's diff cut to a lower per-file cap.
+    Shrunk { per_file_bytes: usize },
+    /// Diff headers only, each body replaced by its omitted byte count.
+    HeadersOnly,
+    /// Inventory and stat only.
+    PathsOnly,
+    /// Even the inventory and stat exceed the budget; the context is the
+    /// paths-only one, and the pre-flight check turns it into an error.
+    CannotFit,
+}
+
+/// A grouping context with the rung that produced it, its estimated size in
+/// tokens, and how many files lost diff content to the ladder.
+pub struct GroupingGather {
+    pub ctx: GroupingContext,
+    pub rung: GroupingRung,
+    pub estimate: usize,
+    pub reduced_files: usize,
+}
+
+/// The lowest per-file cap the shrink rung tries before falling back to
+/// headers only.
+const MIN_SHRUNK_PER_FILE: usize = 256;
+const BODY_OMITTED: &str = "[diff omitted to fit the model's context window - see the stat]\n";
+
+/// The pieces of a grouping prompt that every rung shares.
+struct GroupingParts<'a> {
+    repo: &'a Repo,
+    allow: HashSet<String>,
+    files: String,
+    stat: String,
+    tracked: String,
+}
+
+impl<'a> GroupingParts<'a> {
+    fn gather(repo: &'a Repo, changed: &[ChangedFile]) -> Result<Self, GcmError> {
+        let paths: Vec<&str> = changed.iter().map(|f| f.path.as_str()).collect();
+        Ok(GroupingParts {
+            repo,
+            allow: changed.iter().map(|f| f.path.clone()).collect(),
+            files: files_json(changed),
+            stat: repo.diff_stat_for(&paths)?,
+            tracked: elide_binary_diff(&repo.diff_full_for(&paths)?),
+        })
+    }
+
+    /// Render the context with each file's diff (tracked and untracked) cut to
+    /// `per_file` bytes; `None` drops the body.
+    fn render(&self, per_file: Option<usize>) -> Result<GroupingContext, GcmError> {
+        let body = match per_file {
+            None => BODY_OMITTED.to_string(),
+            Some(cap) => {
+                let mut body = truncate_per_file(&self.tracked, cap);
+                append_untracked(
+                    self.repo,
+                    &mut body,
+                    Some(&self.allow),
+                    UntrackedRender::SummaryTrailer,
+                    cap.min(PER_FILE_BYTES),
+                )?;
+                body
+            }
+        };
+        Ok(GroupingContext {
+            files: self.files.clone(),
+            stat: self.stat.clone(),
+            body,
+        })
+    }
+}
+
+/// Build the grouping context (CLO-487, CLO-797): the file inventory is derived
+/// from the already-gathered `changed` set (so it stays byte-identical to the
+/// paths used for validation and staging), the diff `--stat` is the prompt
+/// header, and the body is the tracked diff truncated **per file** with
+/// `[diff omitted: N bytes]` placeholders, plus untracked content (FR-57 caps).
+///
+/// The rendered prompt must fit `grouping.available()` tokens and the body
+/// `diff_budget.total_bytes`. When it does not, the ladder lowers the per-file
+/// cap, then keeps headers only, then drops the body. No file is cut mid-hunk.
 pub fn gather_for_grouping(
     repo: &Repo,
     changed: &[ChangedFile],
-    budget: &DiffBudget,
-) -> Result<GroupingContext, GcmError> {
-    let files = files_json(changed);
+    diff_budget: &DiffBudget,
+    grouping: &PromptBudget,
+) -> Result<GroupingGather, GcmError> {
+    let parts = GroupingParts::gather(repo, changed)?;
+    let available = grouping.available();
+    let measure = |ctx: &GroupingContext| estimate_tokens(&grouping_user_content(ctx));
+    let fits = |ctx: &GroupingContext, estimate: usize| {
+        estimate <= available && ctx.body.len() <= diff_budget.total_bytes
+    };
 
-    let paths: Vec<&str> = changed.iter().map(|f| f.path.as_str()).collect();
-    let stat = repo.diff_stat_for(&paths)?;
-    let tracked = repo.diff_full_for(&paths)?;
-    let mut body = truncate_per_file(&elide_binary_diff(&tracked), budget.per_file_bytes);
-    let allow: HashSet<String> = changed.iter().map(|f| f.path.clone()).collect();
-    append_untracked(
-        repo,
-        &mut body,
-        Some(&allow),
-        UntrackedRender::SummaryTrailer,
-    )?;
-    cap_total(&mut body, budget.total_bytes);
+    let mut caps = vec![(GroupingRung::Full, Some(diff_budget.per_file_bytes))];
+    let mut cap = diff_budget.per_file_bytes / 2;
+    while cap >= MIN_SHRUNK_PER_FILE {
+        caps.push((
+            GroupingRung::Shrunk {
+                per_file_bytes: cap,
+            },
+            Some(cap),
+        ));
+        cap /= 2;
+    }
+    caps.push((GroupingRung::HeadersOnly, Some(0)));
+    for (rung, per_file) in caps {
+        let ctx = parts.render(per_file)?;
+        let estimate = measure(&ctx);
+        if fits(&ctx, estimate) {
+            let reduced_files = match rung {
+                GroupingRung::Full => 0,
+                GroupingRung::Shrunk { per_file_bytes } => {
+                    sections_over(&parts.tracked, per_file_bytes)
+                }
+                _ => changed.len(),
+            };
+            return Ok(GroupingGather {
+                ctx,
+                rung,
+                estimate,
+                reduced_files,
+            });
+        }
+    }
+    let ctx = parts.render(None)?;
+    let estimate = measure(&ctx);
+    let rung = if estimate <= available {
+        GroupingRung::PathsOnly
+    } else {
+        GroupingRung::CannotFit
+    };
+    Ok(GroupingGather {
+        ctx,
+        rung,
+        estimate,
+        reduced_files: changed.len(),
+    })
+}
 
-    Ok(GroupingContext { files, stat, body })
+/// How many `diff --git` sections of `diff` are longer than `cap`, i.e. how
+/// many files [`truncate_per_file`] cuts at that cap.
+fn sections_over(diff: &str, cap: usize) -> usize {
+    let mut over = 0;
+    let mut len = 0;
+    for line in diff.split_inclusive('\n') {
+        if line.starts_with("diff --git ") && len > 0 {
+            over += usize::from(len > cap);
+            len = 0;
+        }
+        len += line.len();
+    }
+    over + usize::from(len > cap)
 }
 
 /// Append untracked, non-gitignored file content to `body`, bounded by the
@@ -244,12 +385,14 @@ pub fn gather_for_grouping(
 /// [`gather_for_grouping`] (which pass `None` = every untracked file) and
 /// [`gather_for_files`] (which passes `Some(allow)` to restrict to one group's
 /// paths, so a single group's message diff is not polluted by other groups'
-/// untracked files - CLO-491). `render` decides how files past the caps appear.
+/// untracked files - CLO-491). `render` decides how files past the caps appear;
+/// `per_file` bounds each file's read.
 fn append_untracked(
     repo: &Repo,
     body: &mut String,
     allow: Option<&HashSet<String>>,
     render: UntrackedRender,
+    per_file: usize,
 ) -> Result<(), GcmError> {
     let mut untracked = repo.untracked_files()?;
     untracked.sort();
@@ -293,7 +436,7 @@ fn append_untracked(
         }
         // Read at most a per-file slice bounded by the remaining byte budget, so
         // a single huge file is never loaded into memory in full.
-        let budget = (MAX_UNTRACKED_BYTES - bytes_used).min(PER_FILE_BYTES);
+        let budget = (MAX_UNTRACKED_BYTES - bytes_used).min(per_file);
         match read_capped(&full, budget) {
             Ok((content, more)) if looks_binary(&content) => {
                 body.push_str(&format!("\n--- /dev/null\n+++ b/{path}\n+[binary file]\n"));
@@ -750,6 +893,19 @@ mod tests {
         (dir, repo)
     }
 
+    fn budget(available: usize) -> PromptBudget {
+        PromptBudget {
+            kind: crate::budget::BudgetKind::Grouping,
+            window_tokens: available,
+            envelope_allowance: 0,
+            completion_reserve: 0,
+        }
+    }
+
+    fn roomy() -> PromptBudget {
+        budget(10_000_000)
+    }
+
     /// A repository with `n` untracked files and no commits.
     fn untracked_fixture(n: usize) -> (tempfile::TempDir, Repo) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -765,7 +921,9 @@ mod tests {
     fn untracked_trailer_replaces_stubs_in_grouping() {
         let (_dir, repo) = untracked_fixture(MAX_UNTRACKED_FILES + 10);
         let changed = repo.changed_files().unwrap();
-        let ctx = gather_for_grouping(&repo, &changed, &DiffBudget::standard()).unwrap();
+        let ctx = gather_for_grouping(&repo, &changed, &DiffBudget::standard(), &roomy())
+            .unwrap()
+            .ctx;
         assert_eq!(
             ctx.body.matches("[content omitted:").count(),
             1,
@@ -795,6 +953,119 @@ mod tests {
             .body;
         assert_eq!(body.matches("untracked cap reached").count(), 10);
         assert!(!body.contains("further untracked files"), "no trailer");
+    }
+
+    /// Three files whose diffs fall between 4 and 8 KiB and one under 256 bytes, so every
+    /// ladder rung renders a different prompt.
+    fn ladder_fixture() -> (tempfile::TempDir, Repo, Vec<ChangedFile>) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        git(root, &["init", "-q"]);
+        git(root, &["config", "user.email", "t@t"]);
+        git(root, &["config", "user.name", "T"]);
+        for name in ["a.rs", "b.rs", "c.rs", "small.rs"] {
+            std::fs::write(root.join(name), "start\n").unwrap();
+        }
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "-q", "-m", "init"]);
+        for name in ["a.rs", "b.rs", "c.rs"] {
+            let lines: String = (0..350).map(|i| format!("line {i} of {name}\n")).collect();
+            std::fs::write(root.join(name), lines).unwrap();
+        }
+        std::fs::write(root.join("small.rs"), "start\none\ntwo\nthree\nfour\nend\n").unwrap();
+        let repo = Repo::at(root.to_path_buf());
+        let changed = repo.changed_files().unwrap();
+        (dir, repo, changed)
+    }
+
+    /// The estimated size of the prompt one rung renders.
+    fn rung_estimate(repo: &Repo, changed: &[ChangedFile], per_file: Option<usize>) -> usize {
+        let parts = GroupingParts::gather(repo, changed).unwrap();
+        estimate_tokens(&grouping_user_content(&parts.render(per_file).unwrap()))
+    }
+
+    fn ladder(changed: &[ChangedFile], repo: &Repo, available: usize) -> GroupingGather {
+        gather_for_grouping(repo, changed, &DiffBudget::standard(), &budget(available)).unwrap()
+    }
+
+    #[test]
+    fn ladder_fits_untouched() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let g = ladder(&changed, &repo, 10_000_000);
+        assert_eq!(g.rung, GroupingRung::Full);
+        assert_eq!(g.reduced_files, 0);
+        assert!(g.ctx.body.contains("line 349 of c.rs"));
+    }
+
+    #[test]
+    fn ladder_rung1_shrinks_the_per_file_cap() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, Some(4096));
+        assert!(fit < rung_estimate(&repo, &changed, Some(8192)));
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(
+            g.rung,
+            GroupingRung::Shrunk {
+                per_file_bytes: 4096
+            }
+        );
+        assert_eq!(g.reduced_files, 3, "the three large files are cut");
+        assert!(g.estimate <= fit);
+        assert!(g.ctx.body.contains("+end"), "the small file keeps its diff");
+    }
+
+    #[test]
+    fn ladder_rung2_keeps_headers_only() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, Some(0));
+        assert!(fit < rung_estimate(&repo, &changed, Some(MIN_SHRUNK_PER_FILE)));
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(g.rung, GroupingRung::HeadersOnly);
+        assert_eq!(g.reduced_files, changed.len());
+        assert_eq!(g.ctx.body.matches("diff --git ").count(), 4);
+        assert!(!g.ctx.body.contains("+end"));
+    }
+
+    #[test]
+    fn ladder_rung3_drops_the_body() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, None);
+        let g = ladder(&changed, &repo, fit);
+        assert_eq!(g.rung, GroupingRung::PathsOnly);
+        assert_eq!(g.ctx.body, BODY_OMITTED);
+        assert!(g.ctx.files.contains("small.rs"), "inventory never cut");
+        assert!(g.ctx.stat.contains("a.rs"), "stat never cut");
+    }
+
+    #[test]
+    fn ladder_reports_cannot_fit_when_the_inventory_overflows() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let fit = rung_estimate(&repo, &changed, None);
+        let g = ladder(&changed, &repo, fit - 1);
+        assert_eq!(g.rung, GroupingRung::CannotFit);
+        assert!(g.estimate > fit - 1);
+    }
+
+    #[test]
+    fn ladder_byte_ceiling_shrinks_instead_of_tail_chopping() {
+        let (_dir, repo, changed) = ladder_fixture();
+        let shrunk = GroupingParts::gather(&repo, &changed)
+            .unwrap()
+            .render(Some(4096))
+            .unwrap();
+        let diff_budget = DiffBudget {
+            total_bytes: shrunk.body.len(),
+            per_file_bytes: DiffBudget::STANDARD_PER_FILE,
+        };
+        let g = gather_for_grouping(&repo, &changed, &diff_budget, &roomy()).unwrap();
+        assert_eq!(
+            g.rung,
+            GroupingRung::Shrunk {
+                per_file_bytes: 4096
+            }
+        );
+        assert!(!g.ctx.body.contains("(diff truncated)"), "no tail-chop");
+        assert!(g.ctx.body.contains("+end"), "the last file is intact");
     }
 
     fn render_gathered(label: &str, g: &GatheredDiff) -> String {

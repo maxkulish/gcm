@@ -215,6 +215,23 @@ pub fn output_facts(target: &Target) -> OutputFacts {
     }
 }
 
+/// What a run's budgets are derived from: the target and its window.
+#[derive(Debug, Clone)]
+pub struct Limits {
+    pub target: Target,
+    pub window: Window,
+}
+
+impl Limits {
+    pub fn grouping(&self, files_json: &str) -> Result<PromptBudget, GroupingRejected> {
+        PromptBudget::grouping(self.window.tokens, &self.target, files_json)
+    }
+
+    pub fn message(&self) -> PromptBudget {
+        PromptBudget::message(self.window.tokens, &self.target)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BudgetKind {
     Grouping,
@@ -236,6 +253,18 @@ pub struct PromptBudget {
 pub enum GroupingRejected {
     /// Echoing the paths back would exceed the provider's plan output cap.
     OutputCap { echo_tokens: usize, cap: usize },
+}
+
+impl std::fmt::Display for GroupingRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GroupingRejected::OutputCap { echo_tokens, cap } => write!(
+                f,
+                "the plan would echo about {echo_tokens} tokens of paths, more than the \
+                 provider's {cap}-token plan output cap"
+            ),
+        }
+    }
 }
 
 impl PromptBudget {
