@@ -57,7 +57,7 @@ workflow:
   current_phase: plan
   status: checkpoint
   created_at: '2026-09-17T00:00:00Z'
-  updated_at: '2026-10-29T19:30:00Z'
+  updated_at: '2026-10-29T20:05:00Z'
 phases:
   discovery:
     status: skipped
@@ -201,5 +201,16 @@ history:
       07119ff cherry-picked onto fix/clo-797-grouping-prompt (aggregation files kept at main's newer versions and
       re-pointed at this worktree), plan text recovered verbatim from transcript fb1a73a2 seq316. src/ changed only in
       config/mod.rs since the design base 23fb0b9; plan file:line references re-verified. Plan awaits approval.
+  - timestamp: '2026-10-29T20:05:00Z'
+    action: plan_revised
+    phase: plan
+    details: >-
+      Owner requested revision at the plan checkpoint, keeping ST1-ST7. ST3 now builds every budget input before the
+      ladder: PromptBudget::grouping and ::message with separate envelope allowances and completion reserves, and
+      binary-side plan/message output caps plus a reasoning allowance (no Provider trait change). The path-echo check
+      applies to grouping only. ST4 leaves DiffBudget and message gathering untouched and derives the grouping bound
+      separately. ST5 guards four call sites, including the cached group-1 regeneration at main.rs:663. ST7 adds a
+      successful message fallback after a grouping-output rejection, and zero-request tests for each pre-flight
+      rejection. AC2 interpretation and DEFAULT_WINDOW 32,768 unchanged.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit
