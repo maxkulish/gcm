@@ -1121,7 +1121,8 @@ fn run_fallback(
     // provider requests on stderr with no record of why the second one happened.
     // `GCM_LOG_LEVEL=off` still silences it, like the rest of the progress output.
     warn(&format!(
-        "gcm: {reason}. Falling back to single-commit mode."
+        "gcm: {}. Falling back to single-commit mode.",
+        reason.trim_end_matches('.')
     ));
     let env = single_commit_path(
         repo,

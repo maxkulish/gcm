@@ -128,10 +128,15 @@ fn git_init(dir: &Path) {
 /// The investigation's shape: 515 untracked files under long paths, each with
 /// a few KiB of content, so the read caps fire and the path list dominates.
 fn large_tree(dir: &Path) -> Vec<String> {
+    tree(dir, 515)
+}
+
+/// `n` untracked files shaped like [`large_tree`]'s.
+fn tree(dir: &Path, n: usize) -> Vec<String> {
     git_init(dir);
     let base = "frontend/packages/design-system/src/components/navigation/sidebar/sections";
     let mut paths = Vec::new();
-    for i in 0..515 {
+    for i in 0..n {
         let rel = format!(
             "{base}/group_{:02}/collapsible_section_item_{i:04}.tsx",
             i % 20
@@ -205,4 +210,247 @@ fn ac1_grouping_payload_fits_the_window() {
         tokens < GROQ_WINDOW,
         "grouping payload is ~{tokens} estimated tokens, over the {GROQ_WINDOW}-token window"
     );
+}
+
+fn signing_available() -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    git_init(dir.path());
+    Command::new("git")
+        .args(["commit", "-S", "--allow-empty", "-q", "-m", "probe"])
+        .current_dir(dir.path())
+        .status()
+        .expect("run git")
+        .success()
+}
+
+/// The one JSON envelope `--json` prints on stdout.
+fn envelope(out: &Output) -> serde_json::Value {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!(
+            "stdout is not one JSON envelope ({e}): {stdout}\nstderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        )
+    })
+}
+
+/// The user message of a captured chat payload.
+fn user_content(payload: &str) -> String {
+    let v: serde_json::Value = serde_json::from_str(payload).expect("JSON payload");
+    v["messages"]
+        .as_array()
+        .and_then(|m| m.iter().find(|m| m["role"] == "user"))
+        .and_then(|m| m["content"].as_str())
+        .expect("a user message")
+        .to_string()
+}
+
+/// AC2: every path is listed once, in the inventory; past the read cap the
+/// untracked files share one trailer instead of a stub each.
+#[test]
+fn ac2_each_path_appears_once_in_one_inventory() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    let paths = large_tree(repo.path());
+    let (url, captured) = capture(vec![bad_request()]);
+
+    run(groq(repo.path(), cfg.path(), &url, &["--dry-run", "--yes"]));
+    let requests = captured.lock().unwrap().clone();
+    let user = user_content(&requests[0]);
+    let start = user.find(":\n").expect("inventory label") + 2;
+    let end = user.find("\n\nDiff stats").expect("stat label");
+    let inventory: Vec<serde_json::Value> =
+        serde_json::from_str(&user[start..end]).expect("the inventory is one JSON array");
+    assert_eq!(inventory.len(), paths.len());
+    for path in &paths {
+        let listed = inventory.iter().filter(|e| e["path"] == *path).count();
+        assert_eq!(listed, 1, "{path} listed {listed} times");
+    }
+    assert!(!user.contains("Git status"), "no second path list");
+    assert_eq!(
+        user.matches("further untracked files past the read cap")
+            .count(),
+        1,
+        "one trailer for the files past the cap"
+    );
+}
+
+/// A reduced grouping prompt is announced on stderr, and `--json` stdout is
+/// still exactly one envelope.
+#[test]
+fn degradation_is_announced_on_stderr_only() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let (url, _captured) = capture(vec![bad_request()]);
+
+    let mut cmd = groq(repo.path(), cfg.path(), &url, &["--json", "--dry-run"]);
+    cmd.env("GCM_CONTEXT_WINDOW_TOKENS", "100000");
+    let out = run(cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("did not fit its 100000-token context window"),
+        "{stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("did not fit"), "{stdout}");
+    envelope(&out);
+}
+
+/// AC4, both over budget: the grouping prompt cannot fit, the fallback message
+/// cannot either, and gcm says so without sending a request.
+#[test]
+fn both_over_budget_is_one_error_and_no_request() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let (url, captured) = capture(vec![bad_request()]);
+
+    let mut cmd = groq(repo.path(), cfg.path(), &url, &["--json", "--dry-run"]);
+    cmd.env("GCM_CONTEXT_WINDOW_TOKENS", "8192");
+    let out = run(cmd);
+    assert!(captured.lock().unwrap().is_empty(), "a request was sent");
+    let env = envelope(&out);
+    assert_eq!(env["status"], "error");
+    assert_eq!(env["error"]["code"], "PromptTooLarge");
+    let message = env["error"]["message"].as_str().unwrap();
+    assert!(message.contains("fallback message"), "{message}");
+    assert!(
+        message.contains("no fallback message request was sent"),
+        "{message}"
+    );
+}
+
+/// `--all`: the single-commit message is checked before it is sent.
+#[test]
+fn single_commit_over_budget_sends_nothing() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let (url, captured) = capture(vec![bad_request()]);
+
+    let mut cmd = groq(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--all", "--dry-run"],
+    );
+    cmd.env("GCM_CONTEXT_WINDOW_TOKENS", "8192");
+    let out = run(cmd);
+    assert!(captured.lock().unwrap().is_empty(), "a request was sent");
+    let env = envelope(&out);
+    assert_eq!(env["error"]["code"], "PromptTooLarge");
+    assert!(env["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("single-commit message"));
+}
+
+/// An advanced cached plan's first group has no message, so gcm regenerates
+/// it; over budget that call is refused before sending, and the cache and the
+/// index are untouched.
+#[test]
+fn cached_group_message_over_budget_sends_nothing() {
+    if !signing_available() {
+        eprintln!("skipping: git commit -S is not available here");
+        return;
+    }
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let paths = tree(repo.path(), 20);
+
+    // Seed the cache through gcm itself: committing group 1 of a two-group plan
+    // advances the cache to group 2, whose message the plan left null.
+    let (first, second) = paths.split_at(10);
+    let plan = serde_json::json!({
+        "groups": [
+            { "files": first, "summary": "first", "commit_message": "feat: first half" },
+            { "files": second, "summary": "second", "commit_message": null }
+        ]
+    })
+    .to_string();
+    let reply = serde_json::json!({ "choices": [{ "message": { "content": plan } }] });
+    let (url, _seed) = capture(vec![(200, reply.to_string())]);
+    let mut seed = groq(repo.path(), cfg.path(), &url, &["--json", "--yes"]);
+    seed.env("GCM_CACHE_DIR", cache.path());
+    let seeded = run(seed);
+    assert_eq!(
+        envelope(&seeded)["status"],
+        "committed",
+        "seed run: {}",
+        String::from_utf8_lossy(&seeded.stderr)
+    );
+    let snapshot = |dir: &Path| -> Vec<(std::path::PathBuf, Vec<u8>)> {
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| {
+                let p = e.unwrap().path();
+                let bytes = std::fs::read(&p).unwrap();
+                (p, bytes)
+            })
+            .collect();
+        files.sort();
+        files
+    };
+    let cache_before = snapshot(cache.path());
+    assert!(!cache_before.is_empty(), "the seed run saved a plan");
+    let index = repo.path().join(".git/index");
+    let index_before = std::fs::read(&index).ok();
+
+    let (url, captured) = capture(vec![bad_request()]);
+    let mut cmd = groq(repo.path(), cfg.path(), &url, &["--json", "--dry-run"]);
+    cmd.env("GCM_CACHE_DIR", cache.path())
+        .env("GCM_CONTEXT_WINDOW_TOKENS", "8192");
+    let out = run(cmd);
+    assert!(captured.lock().unwrap().is_empty(), "a request was sent");
+    let env = envelope(&out);
+    assert_eq!(env["error"]["code"], "PromptTooLarge");
+    assert_eq!(env["mode"], "grouped");
+    assert!(env["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("group message"));
+    assert_eq!(snapshot(cache.path()), cache_before, "cache changed");
+    assert_eq!(std::fs::read(&index).ok(), index_before, "index changed");
+}
+
+/// Anthropic caps the plan reply at 4096 tokens; 515 echoed paths exceed it,
+/// so gcm skips the grouping call and the message fallback commits.
+#[test]
+fn output_cap_rejection_falls_back_to_one_message_request() {
+    if !signing_available() {
+        eprintln!("skipping: git commit -S is not available here");
+        return;
+    }
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    large_tree(repo.path());
+    let reply = serde_json::json!({
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [{ "type": "text", "text": "feat: add the sidebar sections" }],
+        "stop_reason": "end_turn"
+    })
+    .to_string();
+    let (url, captured) = capture(vec![(200, reply)]);
+
+    let mut cmd = command(repo.path(), cfg.path(), &["--json", "--yes"]);
+    cmd.env("ANTHROPIC_API_KEY", "sk-test")
+        .env("GCM_PROVIDER", "anthropic")
+        .env("GCM_MODEL", "claude-haiku-4-5")
+        .env("GCM_ANTHROPIC_BASE_URL", &url);
+    let out = run(cmd);
+    let requests = captured.lock().unwrap().clone();
+    assert_eq!(requests.len(), 1, "one request, the message");
+    let payload: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
+    assert!(payload.get("tools").is_none(), "not the plan call");
+    assert_eq!(payload["max_tokens"], 1024);
+    let env = envelope(&out);
+    assert_eq!(env["status"], "fallback", "{env}");
+    assert_eq!(env["fallback"]["raw_code"], "PromptBudget");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("plan output cap"), "{stderr}");
 }
