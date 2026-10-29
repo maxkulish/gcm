@@ -86,6 +86,20 @@ const WINDOWS: &[WindowEntry] = &[
         by: Match::Exact,
         tokens: 131_072,
     },
+    // api.groq.com/openai/v1/models (2026-10-29): context_window 131072 for
+    // qwen/qwen3.6-27b and qwen/qwen3.8-27b, and for every gpt-oss model.
+    WindowEntry {
+        provider: ProviderId::Groq,
+        model: "qwen/qwen3",
+        by: Match::Prefix,
+        tokens: 131_072,
+    },
+    WindowEntry {
+        provider: ProviderId::Groq,
+        model: "openai/gpt-oss-",
+        by: Match::Prefix,
+        tokens: 131_072,
+    },
     // platform.claude.com/docs/en/models/haiku-4-5/overview: 200K context.
     // The prefix covers the dated snapshot the alias resolves to.
     WindowEntry {
@@ -495,6 +509,14 @@ mod tests {
         let groq = window_from(None, &target(ProviderId::Groq, "openai/gpt-oss-120b")).unwrap();
         assert_eq!(groq.tokens, 131_072);
         assert_eq!(groq.origin, WindowOrigin::Table);
+        for model in ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"] {
+            let w = window_from(None, &target(ProviderId::Groq, model)).unwrap();
+            assert_eq!(
+                (w.tokens, w.origin),
+                (131_072, WindowOrigin::Table),
+                "{model}"
+            );
+        }
         let unknown = window_from(None, &target(ProviderId::Ollama, "gemma4:e4b-mlx")).unwrap();
         assert_eq!(unknown.tokens, DEFAULT_WINDOW);
         assert_eq!(unknown.origin, WindowOrigin::Default);
