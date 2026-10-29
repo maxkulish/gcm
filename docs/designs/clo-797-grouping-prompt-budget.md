@@ -337,6 +337,23 @@ provider still returns a context-window rejection, and CLO-798's classifier stil
 translates it into the same actionable advice instead of a raw HTTP failure. The
 pre-flight makes the common case explicable; the classifier remains the backstop.
 
+**Two estimates, one per decision (owner decision 2026-10-29).** Shaping and refusing
+need different errors. The grouping ladder and the grouping pre-flight use the
+pessimistic estimate (2 bytes per token, 1 character per token for mostly non-ASCII
+text): an over-count there only sends a smaller prompt. A message is never shrunk, so
+the message pre-flight for `--all`, the fallback and per-group regeneration uses a
+generous estimate of 4 bytes per token instead, and refuses only when even that
+overflows. The measured diff tokenized at about 2.8 bytes per token, and the live run
+showed the 2-byte estimate refusing a 281 KB `--all` message (~144K estimated) that Groq
+accepted. The completion and envelope reserves are unchanged.
+
+The generous estimate counts non-ASCII text by bytes too. Cyrillic (2 bytes per
+character) and CJK (3) are therefore undercounted, deliberately: an undercount ends in
+the provider's context-window error, which CLO-798 already turns into the same advice.
+It remains a heuristic. Text that tokenizes above 4 bytes per token, such as long runs of
+whitespace or repeated words, can be refused although the model would accept it;
+`GCM_CONTEXT_WINDOW_TOKENS` is the escape.
+
 ### D6 — Degradation is announced, never silent
 
 Every rung of the D3 ladder, and every use of `DEFAULT_WINDOW`, emits a user-visible line

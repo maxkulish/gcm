@@ -157,6 +157,10 @@ ST7 needs everything.
   Pure and synchronous; makes no network call. `rendered` is the user content the
   provider will send (`grouping_user_content` or `message_user_content`); the system
   prompt and envelope are already inside `budget.envelope_allowance`.
+- The estimate follows `budget.kind`: `estimate_tokens` (2 bytes per token) for
+  grouping, `estimate_tokens_generous` (4 bytes per token, any script) for messages, so
+  a message is refused only when even the generous estimate overflows (design D5,
+  owner decision 2026-10-29).
 - New `GcmError` variant carrying the estimate, the window, the budget kind and the call
   site, with three causes: grouping prompt cannot fit (terminal ladder rung), grouping
   output exceeds the plan output cap, message prompt cannot fit. Its message reuses the
@@ -239,8 +243,9 @@ investigation's server does) or a canned success body in the provider's wire for
   pessimistic; the D6 warning names the assumption and the override. Ollama windows come
   from the Modelfile and gcm cannot read them.
 - **The message pre-flight can reject a prompt that today's provider would accept.**
-  Message gathering is unchanged, so this happens only when the estimate says the diff
-  exceeds the window - the case that today ends in a provider 400 anyway. A wrong table
+  The live run showed the 2-byte estimate doing exactly that for a 281 KB `--all`
+  message. Message refusal therefore uses the generous 4-bytes-per-token estimate; a
+  false refusal remains possible for text above 4 bytes per token, and a wrong table
   entry is fixed with `GCM_CONTEXT_WINDOW_TOKENS`.
 - **Rung 3 (paths + stat only) may group worse.** It is the ticket's own scope bullet 5 and
   it is announced, not silent. The alternative - refusing to group at all - loses the

@@ -8,7 +8,7 @@
 
 ---
 
-## Current Status: Implementation complete, validation gate pending
+## Current Status: Validation checkpoint, awaiting owner decision on Codex findings
 
 **Overall Progress**: 100% (7/7 sub-tasks)
 **Branch**: fix/clo-797-grouping-prompt
@@ -29,6 +29,8 @@
 | ST5 | c576368 | `ensure_prompt_fits` guards the four call sites; `GcmError::PromptTooLarge` |
 | ST6 | 5d76db7 | Ladder and default-window warnings on stderr through the CLO-798 routing |
 | ST7 | 23533f4 | `tests/grouping_budget.rs`: AC1, AC2, AC4, zero-request cases, output-cap fallback |
+| ST3 fix | 53139a6 | Groq `qwen/qwen3` and `openai/gpt-oss-` prefixes at 131,072 from Groq's `/models` |
+| D5 addendum | ed5e019 | Message refusal measures at 4 bytes per token; grouping keeps 2 |
 
 ---
 
@@ -44,6 +46,17 @@ test result: FAILED. 0 passed; 1 failed
 ```
 
 The same test passes on the branch.
+
+The generous-refusal tests were run on 53139a6 before the change. All three sent zero
+requests because the pre-flight refused each message:
+
+```
+single_commit_message_under_the_generous_estimate_is_sent  left: 0  right: 1
+provider_context_window_error_stays_actionable             left: 0  right: 1
+invalid_plan_falls_back_to_a_sent_message                  left: 1  right: 2
+```
+
+They pass on ed5e019.
 
 ---
 
@@ -65,10 +78,15 @@ The same test passes on the branch.
 
 ## Important Findings
 
-- **The message path for the 515-file synthetic tree estimates at ~144,118 tokens**,
-  over the 131,072 window. Message gathering is unchanged by design (ST4), so on such a
-  tree a grouping refusal followed by a fallback ends in `PromptTooLarge` instead of a
-  provider 400. Grouping itself fits, so AC1 holds.
+- **The 2-byte estimate refused messages the provider accepts.** The 515-file `--all`
+  message (281 KB) estimated at ~144,118 tokens and was refused, although released 0.8.3
+  sent it and Groq answered. The owner approved a generous 4-bytes-per-token estimate for
+  message refusal only (design D5 addendum, ed5e019). The live dry-run on ed5e019 sent
+  and got answers for `--all` and the grouped fallback on qwen/qwen3.8-27b and
+  openai/gpt-oss-120b.
+- **The generous estimate is a heuristic.** It undercounts non-ASCII text on purpose (the
+  CLO-798 context-window classifier is the backstop) and can still refuse text above 4
+  bytes per token.
 - **Window sources**: Haiku 4.5 (200K) is from the official docs. Gemini 3.5 Flash-Lite
   and GPT-5.6 come from aggregator listings only.
 
@@ -76,5 +94,6 @@ The same test passes on the branch.
 
 ## Next Steps
 
-- Codex + Gemini validation gate
-- PR phase
+- Codex validated 53139a6: FAIL (docs/reviews/clo-797-codex-validation.md). Gemini CLI
+  is not installed and is recorded as unavailable.
+- Owner decision on the Codex findings, then the PR phase.

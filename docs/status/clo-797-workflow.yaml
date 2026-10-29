@@ -57,7 +57,7 @@ workflow:
   current_phase: implement
   status: in_progress
   created_at: '2026-09-17T00:00:00Z'
-  updated_at: '2026-10-29T22:30:00Z'
+  updated_at: '2026-10-29T23:30:00Z'
 phases:
   discovery:
     status: skipped
@@ -125,7 +125,15 @@ phases:
       - c576368
       - 5d76db7
       - 23533f4
+      - 53139a6
+      - ed5e019
     red_run: ac1_grouping_payload_fits_the_window failed on 7c7cb28 at ~212714 estimated tokens vs 131072
+    red_run_generous: three message tests failed on 53139a6 with zero requests sent (pre-flight refusal); pass on ed5e019
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_reviewed_revision: 53139a6 (before generous refusal)
+    codex_report: docs/reviews/clo-797-codex-validation.md
+    gemini_validation_report: unavailable   # Gemini CLI not installed
   pr:
     status: pending
   complete:
@@ -246,5 +254,21 @@ history:
     action: pushed_to_remote
     phase: implement
     details: fix/clo-797-grouping-prompt pushed to origin.
+  - timestamp: '2026-10-29T23:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: >-
+      Codex (default model; gpt-5.4 is unavailable on this account) reviewed 53139a6: FAIL. HIGH emoji undercount in
+      the 2.0 estimator, MEDIUM paths-only rung keeps BODY_OMITTED, LOW untracked truncations missing from the
+      reduced-file count; missing a CannotFit-then-successful-fallback test and primary sources for Gemini/OpenAI
+      windows. Gemini CLI not installed, recorded as unavailable.
+  - timestamp: '2026-10-29T23:30:00Z'
+    action: commit_created
+    phase: implement
+    details: >-
+      ed5e019 generous refusal (owner-approved bounded change): message pre-flight at 4 bytes per token, grouping
+      keeps 2. Gate green on ed5e019 (fmt, clippy -D warnings, 600 tests, check-public-surface.sh, no-default-features
+      lib). Live Groq dry-run on the 515-file tree: --all and grouped fallback both sent and answered on
+      qwen/qwen3.8-27b and openai/gpt-oss-120b. Awaiting the owner at the validation checkpoint.
 task_title: Fix grouping prompt exceeding the model context window when a commit touches hundreds of files
 task_url: https://linear.app/cloud-ai/issue/CLO-797/fix-grouping-prompt-exceeding-the-model-context-window-when-a-commit
