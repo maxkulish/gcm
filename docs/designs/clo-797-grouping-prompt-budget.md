@@ -340,7 +340,10 @@ pre-flight makes the common case explicable; the classifier remains the backstop
 **Two estimates, one per decision (owner decision 2026-10-29).** Shaping and refusing
 need different errors. The grouping ladder and the grouping pre-flight use the
 pessimistic estimate (2 bytes per token, 1 character per token for mostly non-ASCII
-text): an over-count there only sends a smaller prompt. A message is never shrunk, so
+text): an over-count there only sends a smaller prompt. It is not a strict upper bound:
+emoji cost about 3 tokens per character against the o200k vocabulary, so emoji-heavy
+text is undercounted, and the provider's context-window error remains the backstop
+there (Codex validation, finding 1). A message is never shrunk, so
 the message pre-flight for `--all`, the fallback and per-group regeneration uses a
 generous estimate of 4 bytes per token instead, and refuses only when even that
 overflows. The measured diff tokenized at about 2.8 bytes per token, and the live run
