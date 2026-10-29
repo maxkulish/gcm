@@ -7,6 +7,7 @@
 //! sends the changed-file inventory and must leave room for the model to echo
 //! every path back; a message call sends only the stat and the diff.
 
+use crate::diff::GroupingRung;
 use crate::error::GcmError;
 use crate::provider::diagnostics::Operation;
 use crate::provider::ProviderId;
@@ -230,6 +231,45 @@ impl Limits {
 
     pub fn message(&self) -> PromptBudget {
         PromptBudget::message(self.window.tokens, &self.target)
+    }
+
+    /// The warning for a model whose window gcm had to assume.
+    pub fn default_window_notice(&self) -> Option<String> {
+        (self.window.origin == WindowOrigin::Default).then(|| {
+            format!(
+                "gcm: warning: the context window of {} is unknown; assuming {} tokens. \
+                 Set {WINDOW_ENV} to the model's real window.",
+                self.target.model, self.window.tokens
+            )
+        })
+    }
+
+    /// The warning for a grouping prompt the ladder reduced, or `None` when
+    /// it went out whole. `CannotFit` is reported by the pre-flight error.
+    pub fn ladder_notice(
+        &self,
+        rung: GroupingRung,
+        estimate: usize,
+        reduced: usize,
+        total: usize,
+    ) -> Option<String> {
+        let what = match rung {
+            GroupingRung::Full | GroupingRung::CannotFit => return None,
+            GroupingRung::Shrunk { per_file_bytes } => {
+                format!("cut {reduced} of {total} file diff(s) to {per_file_bytes} bytes each")
+            }
+            GroupingRung::HeadersOnly => {
+                format!("kept only the diff headers of {reduced} of {total} file(s)")
+            }
+            GroupingRung::PathsOnly => {
+                format!("dropped the diff of {reduced} of {total} file(s), keeping paths and stat")
+            }
+        };
+        Some(format!(
+            "gcm: warning: the grouping prompt for {} did not fit its {}-token context \
+             window; gcm {what} (now ~{estimate} tokens).",
+            self.target.model, self.window.tokens
+        ))
     }
 }
 
@@ -588,5 +628,66 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    fn limits(model: &str, origin: WindowOrigin) -> Limits {
+        Limits {
+            target: target(ProviderId::Groq, model),
+            window: Window {
+                tokens: 131_072,
+                origin,
+            },
+        }
+    }
+
+    #[test]
+    fn notice_default_window_only_when_assumed() {
+        let assumed = limits("new-model", WindowOrigin::Default)
+            .default_window_notice()
+            .expect("a default window is announced");
+        assert!(
+            assumed.contains("new-model") && assumed.contains(WINDOW_ENV),
+            "{assumed}"
+        );
+        assert!(limits("m", WindowOrigin::Table)
+            .default_window_notice()
+            .is_none());
+        assert!(limits("m", WindowOrigin::Env)
+            .default_window_notice()
+            .is_none());
+    }
+
+    #[test]
+    fn notice_names_each_reducing_rung() {
+        let l = limits("openai/gpt-oss-120b", WindowOrigin::Table);
+        assert!(l.ladder_notice(GroupingRung::Full, 10, 0, 3).is_none());
+        assert!(l.ladder_notice(GroupingRung::CannotFit, 10, 3, 3).is_none());
+        let shrunk = l
+            .ladder_notice(
+                GroupingRung::Shrunk {
+                    per_file_bytes: 1024,
+                },
+                90_000,
+                2,
+                3,
+            )
+            .unwrap();
+        for part in [
+            "openai/gpt-oss-120b",
+            "131072",
+            "2 of 3",
+            "1024 bytes",
+            "~90000",
+        ] {
+            assert!(shrunk.contains(part), "{part} missing: {shrunk}");
+        }
+        assert!(l
+            .ladder_notice(GroupingRung::HeadersOnly, 1, 3, 3)
+            .unwrap()
+            .contains("headers"));
+        assert!(l
+            .ladder_notice(GroupingRung::PathsOnly, 1, 3, 3)
+            .unwrap()
+            .contains("keeping paths and stat"));
     }
 }

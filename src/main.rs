@@ -444,6 +444,9 @@ fn execute(args: &Cli) -> Envelope {
             )
         }
     };
+    if let Some(notice) = limits.default_window_notice() {
+        warn(&notice);
+    }
 
     // FR-46: warn before resetting a user-curated index. Both real commit paths
     // discard the user's staging (grouping resets via `clear_staged`; `--all`
@@ -633,6 +636,14 @@ fn build_plan(
     )?;
     let gathered = diff::gather_for_grouping(repo, changed, &provider.diff_budget(), &grouping)
         .map_err(BuildError::Fatal)?;
+    if let Some(notice) = limits.ladder_notice(
+        gathered.rung,
+        gathered.estimate,
+        gathered.reduced_files,
+        changed.len(),
+    ) {
+        warn(&notice);
+    }
     let ctx = privacy
         .prepare_grouping(gathered.ctx)
         .map_err(BuildError::Fatal)?;
@@ -1082,6 +1093,14 @@ fn provider_error_envelope(
     }
 }
 
+/// A degradation notice on stderr, under `--json` too, so stdout stays one
+/// envelope. `GCM_LOG_LEVEL=off` silences it like the rest of the progress output.
+fn warn(line: &str) {
+    if gcm::debug::enabled(gcm::debug::Level::Warn) {
+        gcm::debug::progress::emit_line(line);
+    }
+}
+
 /// Run the single-commit fallback after a grouped-plan failure. If the fallback
 /// commit succeeds, the envelope is `status: "fallback"`; if it fails, the
 /// envelope is `status: "error"`.
@@ -1101,11 +1120,9 @@ fn run_fallback(
     // Announced under `--json` too (AC-11): a machine consumer otherwise sees two
     // provider requests on stderr with no record of why the second one happened.
     // `GCM_LOG_LEVEL=off` still silences it, like the rest of the progress output.
-    if gcm::debug::enabled(gcm::debug::Level::Warn) {
-        gcm::debug::progress::emit_line(&format!(
-            "gcm: {reason}. Falling back to single-commit mode."
-        ));
-    }
+    warn(&format!(
+        "gcm: {reason}. Falling back to single-commit mode."
+    ));
     let env = single_commit_path(
         repo,
         args,
