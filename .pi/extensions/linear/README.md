@@ -43,9 +43,13 @@ the first `mcp__linear__*` call rather than silently no-op.
 
 ## Installation
 
+pi provides `@earendil-works/pi-*` and `typebox` at runtime, so they are
+optional peer dependencies. `--omit=dev` skips them; run plain `npm ci`
+when you edit the extension and want editor types.
+
 ```bash
 cd .pi/extensions/linear
-npm install
+npm ci --omit=dev
 
 # temporary
 pi -e .pi/extensions/linear/index.ts
