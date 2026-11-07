@@ -250,9 +250,9 @@ pi-init:
 		dir=$$(dirname "$$ext"); \
 		echo "Installing deps in $$dir..."; \
 		if [ -f "$$dir/package-lock.json" ]; then \
-			(cd "$$dir" && npm ci --silent); \
+			(cd "$$dir" && npm ci --omit=dev --silent); \
 		else \
-			(cd "$$dir" && npm install --silent); \
+			(cd "$$dir" && npm install --omit=dev --silent); \
 		fi; \
 	done
 	@echo "Pi extensions ready"

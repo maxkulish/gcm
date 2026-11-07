@@ -36,14 +36,18 @@ resumed in Pi (and vice-versa).
 
 Install both this orchestrator AND the sibling Linear bridge - the
 phase scripts call `mcp__linear__*` tools, which only resolve when the
-linear bridge is active.
+linear bridge is active. `make pi-init` does both.
+
+pi provides `@earendil-works/pi-*` and `typebox` at runtime, so they are
+optional peer dependencies. `--omit=dev` skips them; run plain `npm ci`
+when you edit the extension and want editor types.
 
 ```bash
 cd .pi/extensions/orchestrate
-npm install
+npm ci --omit=dev
 
 cd ../linear
-npm install
+npm ci --omit=dev
 ```
 
 Enable:
