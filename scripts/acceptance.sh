@@ -1253,13 +1253,15 @@ git -C "$d" -c commit.gpgsign=false add -A >/dev/null
 git -C "$d" -c commit.gpgsign=false commit -qm init
 echo hi > "$d/a.txt"; printf 'changed\n' > "$d/seed.txt"; : > "$CAPTURE"
 head_before="$(git -C "$d" rev-parse HEAD)"; tree_before="$(git -C "$d" write-tree)"
-( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --plan-only >/tmp/gcm-out 2>&1 ); rc=$?
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --plan-only >/tmp/gcm-out 2>/tmp/gcm-err ); rc=$?
 [ $rc -eq 0 ] && ok "exit 0" || bad "--all --plan-only human exit (rc=$rc)"
-grep -qF "$MOCK_MSG" /tmp/gcm-out && ok "preview prints the generated message" || bad "message not printed"
+grep -qF "$MOCK_MSG" /tmp/gcm-out && ok "preview prints the generated message on stdout" || bad "message not on stdout"
 [ "$(reqs)" = "1" ] && ok "one message request" || bad "human --all --plan-only made $(reqs) requests"
 [ "$(git -C "$d" rev-parse HEAD)" = "$head_before" ] && ok "HEAD unchanged" || bad "HEAD moved"
 [ "$(git -C "$d" write-tree)" = "$tree_before" ] && ok "index unchanged" || bad "index changed"
-rm -rf "$d"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run >/tmp/gcm-out-dry 2>/dev/null )
+cmp -s /tmp/gcm-out /tmp/gcm-out-dry && ok "stdout matches the --all --dry-run preview" || bad "--all --plan-only stdout differs from --all --dry-run"
+rm -rf "$d" /tmp/gcm-out-dry
 
 note "CLO-940-2: --all --plan-only leaves the repo's plan cache byte-identical"
 c940="$(mktemp -d)"; d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"
@@ -1330,11 +1332,12 @@ env_ok "d['status']=='plan' and d['mode']=='plan_only' and 'message' not in d" &
 : > "$PLAN_FILE"; rm -rf "$d"
 
 note "CLO-940-7: --all --plan-only provider error -> exit 1, error envelope, no message"
-d="$(new_repo)"; echo hi > "$d/a.txt"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
 tree_before="$(git -C "$d" write-tree)"
-( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail500/v1" "$BIN" --all --plan-only --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail500/v1" GCM_RETRY_MAX=0 "$BIN" --all --plan-only --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
 [ $rc -eq 1 ] && ok "exit 1" || bad "provider error exit (rc=$rc)"
-env_ok "d['status']=='error' and d['mode']=='single' and 'message' not in d" && ok "error envelope, mode single, no message" || bad "provider error envelope"
+[ "$(reqs)" = "1" ] && ok "one request reached the provider" || bad "provider error case made $(reqs) requests"
+env_ok "d['status']=='error' and d['mode']=='single' and d['error']['code']=='Provider' and 'message' not in d" && ok "Provider error envelope, mode single, no message" || bad "provider error envelope"
 [ "$(git -C "$d" write-tree)" = "$tree_before" ] && ok "index unchanged" || bad "index changed"
 rm -rf "$d"
 
