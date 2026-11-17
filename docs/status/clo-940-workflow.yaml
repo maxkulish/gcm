@@ -27,7 +27,7 @@ workflow:
   current_phase: implement
   status: in_progress
   created_at: '2026-11-17T22:00:00Z'
-  updated_at: '2026-11-17T23:50:00Z'
+  updated_at: '2026-11-18T00:30:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
@@ -50,9 +50,16 @@ phases:
     status: in_progress
     last_phase_completed: "acceptance coverage (sub-task 3)"
     commits: [8613006, fed9439, cc34f07]
-    gate: "fmt ok, clippy --all-targets -D warnings ok, cargo test all green, acceptance.sh 292 pass / 1 pre-existing fail (AC-488-1)"
+    gate: "fmt ok, clippy --all-targets -D warnings ok, cargo test all green, acceptance.sh 294 pass / 1 pre-existing fail (AC-488-1)"
     mutation_check: "message only with --all -> CLO-940-4 and CLO-940-5 dry-run cases fail"
-    live_check: "Vertex gemini-4-hydrogen: --plan-only --all prints preview, --json carries message, nothing staged"
+    live_check: "Vertex gemini-4-hydrogen: --plan-only --all prints preview, --json carries message, nothing staged; PTY run and clean-tree noop (no request) verified"
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-940-codex-validation.md
+    codex_model: account default
+    gemini_validation_report: null  # gemini CLI not installed
+    codex_findings_applied: [CLO-940-7 asserts one request and error.code Provider, CLO-940-1 stdout-only and cmp with --all --dry-run, cutover guide API-key line]
+    codex_findings_noted: ["AC-493-7 failed only in the Codex sandbox (OnboardingRequired, no provider configured); passes locally"]
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -96,3 +103,7 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "origin/fix/clo-940-plan-only-all at cc34f07"
+  - timestamp: '2026-11-18T00:30:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "PASS_WITH_NOTES; 1 MEDIUM + 2 LOW (test tightness, guide line) verified and fixed; acceptance 294/1"
