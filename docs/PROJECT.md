@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-10-29 (**CLO-797 merged in PR #73**; CLO-921 filed as its follow-up)
+**Last Updated**: 2026-11-17 (CLO-941 started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -100,7 +100,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | No active work | — | — | — |
+| [CLO-941](https://linear.app/cloud-ai/issue/CLO-941) | Fix grouping failing with "unexpected end of file" when exactly one file changed | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
