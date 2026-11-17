@@ -27,7 +27,7 @@ workflow:
   current_phase: pr
   status: in_progress
   created_at: '2026-11-17T00:00:00Z'
-  updated_at: '2026-11-17T19:30:00Z'
+  updated_at: '2026-11-17T21:20:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
@@ -54,7 +54,12 @@ phases:
     codex_report: docs/reviews/clo-941-codex-validation.md
     codex_model: account default (gpt-5.4 unsupported on the ChatGPT account)
     gemini_validation_report: null  # gemini CLI not installed
-  pr: { status: in_progress }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/79
+    pr_number: 79
+    ci_passed: false
+    approved: false
   complete: { status: pending }
 history:
   - timestamp: '2026-11-17T00:00:00Z'
@@ -109,3 +114,11 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Codex PASS_WITH_NOTES: 3 LOW notes applied in c67f7ef; MEDIUM public-enum note moot (publish = false). Acceptance suite 3 failures identical on main 605b077."
+  - timestamp: '2026-11-17T21:10:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt, clippy -D warnings, clippy --all-targets, cargo test all green; /session:wrap proposed 3 lessons (post-merge-docs-pr flow)"
+  - timestamp: '2026-11-17T21:19:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #79 created; Linear CLO-941 moved to In Review with a PR comment"
