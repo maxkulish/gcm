@@ -24,10 +24,10 @@ linear:
   priority: Medium
   branch_actual: fix/clo-941-one-file-eof
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-11-17T00:00:00Z'
-  updated_at: '2026-11-17T18:20:00Z'
+  updated_at: '2026-11-17T19:30:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
@@ -44,8 +44,17 @@ phases:
     applied_suggestions: [section 1 names the pre-response source of the observed text, AC-1 inner io text, Transport keeps outer text, TruncateBody counts and explicit close, zero-byte test]
     flagged_suggestions: []
     scope_decision: "widen: map_ureq_error Io EOF/reset/abort (incl. TLS handshake) also becomes Interrupted"
-  implement: { status: in_progress }
-  pr: { status: pending }
+  implement:
+    status: complete
+    last_phase_completed: "regression tests (sub-task 4)"
+    commits: [5939133, c7a9711, c67f7ef]
+    gate: "fmt ok, clippy -D warnings ok, cargo test all green, acceptance.sh 262 pass / 1 pre-existing fail (AC-488-1, T1)"
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-941-codex-validation.md
+    codex_model: account default (gpt-5.4 unsupported on the ChatGPT account)
+    gemini_validation_report: null  # gemini CLI not installed
+  pr: { status: in_progress }
   complete: { status: pending }
 history:
   - timestamp: '2026-11-17T00:00:00Z'
@@ -88,3 +97,15 @@ history:
     action: spec_approved
     phase: spec
     details: "Max approved the widened spec plus an https:// stub test (TLS-handshake EOF) for the exact CLO-941 text."
+  - timestamp: '2026-11-17T18:50:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "Interrupted variant, shared is_interruption predicate in map_ureq_error and map_body_read_error, 4 http unit tests, Display and raw_code tests, 5 stub tests incl. https TLS-handshake close; the 5 stub tests fail with the predicate disabled."
+  - timestamp: '2026-11-17T18:55:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "origin/fix/clo-941-one-file-eof at c7a9711"
+  - timestamp: '2026-11-17T19:25:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Codex PASS_WITH_NOTES: 3 LOW notes applied in c67f7ef; MEDIUM public-enum note moot (publish = false). Acceptance suite 3 failures identical on main 605b077."
