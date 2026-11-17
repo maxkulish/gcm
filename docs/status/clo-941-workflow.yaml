@@ -27,7 +27,7 @@ workflow:
   current_phase: pr
   status: in_progress
   created_at: '2026-11-17T00:00:00Z'
-  updated_at: '2026-11-17T21:20:00Z'
+  updated_at: '2026-11-17T21:35:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
@@ -58,7 +58,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/79
     pr_number: 79
-    ci_passed: false
+    ci_passed: true
     approved: false
   complete: { status: pending }
 history:
@@ -122,3 +122,7 @@ history:
     action: pr_created
     phase: pr
     details: "PR #79 created; Linear CLO-941 moved to In Review with a PR comment"
+  - timestamp: '2026-11-17T21:35:00Z'
+    action: ci_passed
+    phase: pr
+    details: "CI green on 7cd1e60 (ubuntu 2m40s, macos 3m43s); mergeStateStatus CLEAN; no review comments"
