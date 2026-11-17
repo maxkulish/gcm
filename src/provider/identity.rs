@@ -55,6 +55,10 @@ impl fmt::Display for ProviderError {
             ErrorKind::Http(code) => write!(f, "{p} API returned HTTP {code}"),
             ErrorKind::Timeout => write!(f, "{p} API request timed out"),
             ErrorKind::Transport(msg) => write!(f, "could not reach the {p} API: {msg}"),
+            ErrorKind::Interrupted(msg) => write!(
+                f,
+                "the connection to the {p} API closed before a complete response was received: {msg}"
+            ),
             ErrorKind::EmptyResponse => write!(f, "{p} returned an empty response"),
             ErrorKind::Deserialize(msg) => write!(f, "could not parse the {p} response: {msg}"),
             ErrorKind::Config(msg) => write!(f, "{msg}"),
@@ -84,6 +88,9 @@ pub enum ErrorKind {
     Timeout,
     /// Connection/transport failure - DNS, refused, reset (not retried).
     Transport(String),
+    /// The connection closed before a complete response arrived: during the
+    /// TLS handshake, before the headers, or during a 2xx body (not retried).
+    Interrupted(String),
     /// A 2xx response carried no usable content (not retried).
     EmptyResponse,
     /// The response/plan could not be parsed (not retried).
@@ -551,8 +558,22 @@ mod tests {
             ErrorKind::MissingKey { env_var: "K" },
             ErrorKind::Http(418),
             ErrorKind::Config("x".to_string()),
+            ErrorKind::Interrupted("x".to_string()),
         ] {
             assert!(!is_retryable(&k), "{k:?} must not be retryable");
         }
+    }
+
+    #[test]
+    fn interrupted_names_the_closed_connection_not_reachability() {
+        let e = ProviderError {
+            provider: "Groq",
+            kind: ErrorKind::Interrupted("unexpected end of file".to_string()),
+        };
+        assert_eq!(
+            e.to_string(),
+            "the connection to the Groq API closed before a complete response was received: unexpected end of file"
+        );
+        assert!(!e.to_string().contains("could not reach"));
     }
 }
