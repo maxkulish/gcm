@@ -1,0 +1,98 @@
+task_id: clo-940
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "src/main.rs single-commit path (plan_only early return at :917) and src/output.rs Envelope; two files" }
+    architecture_novelty: { lean: spec, note: "One optional Envelope field with skip_serializing_if, same pattern as the existing optional fields; additive, v stays 1" }
+    prior_art: { lean: spec, note: "The --dry-run --all path in the same function is the template for the preview" }
+    requirement_clarity: { lean: spec, note: "Five explicit acceptance criteria; envelope shape decided by the owner on 2026-11-17" }
+    scope_signal: { lean: spec, note: "No estimate; Bug label, S-sized fix" }
+  rationale: "Contained bug fix with a ready template and a settled interface choice; a full design cycle adds nothing."
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Todo
+  blocks: []
+  blocked_by: []
+  related: [CLO-941]
+  branch_suggested: kmamemo/clo-940-fix-plan-only-all-returning-an-empty-plan
+  priority: Medium
+  branch_actual: fix/clo-940-plan-only-all
+workflow:
+  current_phase: implement
+  status: in_progress
+  created_at: '2026-11-17T22:00:00Z'
+  updated_at: '2026-11-17T23:50:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-17-clo-940-plan-only-all-preview.md
+    approved: true
+    review_gemini: null  # opencode run printed its --help, no review
+    review_ollama: null  # glm-5 retired 2026-07-15
+    review_claude_fallback: docs/reviews/clo-940-spec-review-claude-fallback.md
+    review_synthesis: docs/reviews/clo-940-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions: [early return narrowed to plan_only && !all (merge/fallback unchanged), AC-4 names envelope shapes incl committed_group and fallback, AC-6 fallback unchanged + test, one-request check via CAPTURE, byte-identical cache row with per-test GCM_CACHE_DIR, stale comment at main.rs:1245]
+    owner_review_applied: [dry-run merge and fallback previews carry exact message with request counts, clean-merge plan-only zero requests no message, AC-493-10 asserts v1 fields and exact paths, cache warmed by grouped dry-run in same repo before cmp, --reset unchanged, AC-5 scoped to generate_message failures, rebuild release binary before acceptance]
+    flagged_suggestions: []
+    scope_decision: "message on every single-commit preview envelope; --plan-only without --all unchanged on merge and fallback paths (owner, 2026-11-17)"
+  implement:
+    status: in_progress
+    last_phase_completed: "acceptance coverage (sub-task 3)"
+    commits: [8613006, fed9439, cc34f07]
+    gate: "fmt ok, clippy --all-targets -D warnings ok, cargo test all green, acceptance.sh 292 pass / 1 pre-existing fail (AC-488-1)"
+    mutation_check: "message only with --all -> CLO-940-4 and CLO-940-5 dry-run cases fail"
+    live_check: "Vertex gemini-4-hydrogen: --plan-only --all prints preview, --json carries message, nothing staged"
+  pr: { status: pending }
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-17T22:00:00Z'
+    action: workflow_started
+    phase: init
+    details: "New workflow for CLO-940 on branch fix/clo-940-plan-only-all"
+  - timestamp: '2026-11-17T22:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended=specification, chosen=specification, confidence=high (5/5)"
+  - timestamp: '2026-11-17T22:02:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work 1/3; not in ROADMAP.md or DEPENDENCIES.md"
+  - timestamp: '2026-11-17T22:20:00Z'
+    action: spec_written
+    phase: spec
+    details: "Spec saved; owner chose message on both single-commit previews"
+  - timestamp: '2026-11-17T22:30:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "Gemini and Ollama failed; Claude fallback NEEDS_REVISION (merge/fallback paths share the early return)"
+  - timestamp: '2026-11-17T22:40:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Owner kept --plan-only without --all unchanged; 5 findings applied to spec"
+  - timestamp: '2026-11-17T23:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Owner chose revise with a code-level review; 3 findings verified against code and applied (eval rows 3-13, AC-2/3/5/6/7); lok re-review skipped, reviewers still broken"
+  - timestamp: '2026-11-17T23:15:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Owner approved spec blob 50acf57b; two wording fixes applied (no message-generation call; missing key removed from pre-generation examples)"
+  - timestamp: '2026-11-17T23:40:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "3 sub-tasks in 3 commits; acceptance 292/1 (AC-488-1 pre-existing); mutation and live Vertex checks pass"
+  - timestamp: '2026-11-17T23:41:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "origin/fix/clo-940-plan-only-all at cc34f07"
