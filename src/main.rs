@@ -1237,8 +1237,8 @@ fn print_human(env: &Envelope) {
             }
         }
         output::STATUS_PLAN => {
-            // The preview itself was already printed during execution; a
-            // single-commit preview's message is in the JSON envelope only.
+            // The preview, including a single-commit message, was already
+            // printed during execution. Nothing to repeat.
         }
         output::STATUS_COMMITTED => {
             if let Some(commit) = &env.commit {
