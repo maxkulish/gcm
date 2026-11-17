@@ -49,6 +49,10 @@ pub struct Envelope {
     pub fallback: Option<FallbackInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorInfo>,
+    /// The generated message of a single-commit preview. Set only by
+    /// [`single_preview`]; every other envelope omits it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Grouped-mode progress: how many groups the current run's plan holds and how
@@ -103,6 +107,7 @@ impl Envelope {
             group_progress: None,
             fallback: None,
             error: None,
+            message: None,
         }
     }
 }
@@ -125,6 +130,26 @@ pub fn plan(
     env.plan = Some(plan);
     env.changed_files = Some(changed_files);
     env.cached = Some(cached);
+    env
+}
+
+/// A single-commit preview (`--plan-only --all`, or `--dry-run` on the
+/// single-commit path): the plan envelope plus the generated message.
+pub fn single_preview(
+    provider: Option<&str>,
+    model: Option<&str>,
+    message: String,
+    changed_files: Vec<String>,
+) -> Envelope {
+    let mut env = plan(
+        provider,
+        model,
+        MODE_SINGLE,
+        Plan { groups: vec![] },
+        changed_files,
+        false,
+    );
+    env.message = Some(message);
     env
 }
 
@@ -288,6 +313,78 @@ pub fn fallback_raw_code(reason: &str) -> String {
 mod tests {
     use super::*;
     use crate::provider::ProviderError;
+
+    fn top_level_message(env: &Envelope) -> Option<serde_json::Value> {
+        let value = serde_json::to_value(env).unwrap();
+        value.as_object().unwrap().get("message").cloned()
+    }
+
+    #[test]
+    fn single_preview_carries_message_and_plan_fields() {
+        let env = single_preview(
+            Some("Groq"),
+            Some("m"),
+            "feat: x".to_string(),
+            vec!["a.rs".to_string()],
+        );
+        let value = serde_json::to_value(&env).unwrap();
+        assert_eq!(value["v"], 1);
+        assert_eq!(value["status"], STATUS_PLAN);
+        assert_eq!(value["mode"], MODE_SINGLE);
+        assert_eq!(value["message"], "feat: x");
+        assert_eq!(value["plan"]["groups"], serde_json::json!([]));
+        assert_eq!(value["changed_files"], serde_json::json!(["a.rs"]));
+        assert_eq!(value["cached"], false);
+    }
+
+    #[test]
+    fn other_envelopes_omit_top_level_message() {
+        let commit = CommitSummary {
+            status: "ok",
+            hash: "abc".to_string(),
+            message: "feat: x".to_string(),
+            changed_files: vec!["x.rs".to_string()],
+        };
+        let envelopes = [
+            plan(
+                Some("Groq"),
+                Some("m"),
+                MODE_SINGLE,
+                Plan { groups: vec![] },
+                vec!["a.rs".to_string()],
+                false,
+            ),
+            noop(Some("Groq"), Some("m"), MODE_SINGLE),
+            committed(
+                Some("Groq"),
+                Some("m"),
+                MODE_SINGLE,
+                "abc".to_string(),
+                "feat: x".to_string(),
+                vec!["x.rs".to_string()],
+            ),
+            committed_group(
+                Some("Groq"),
+                Some("m"),
+                "abc".to_string(),
+                "feat: x".to_string(),
+                vec!["x.rs".to_string()],
+                2,
+                1,
+            ),
+            fallback(
+                Some("Groq"),
+                Some("m"),
+                "plan rejected".to_string(),
+                "PlanValidation".to_string(),
+                commit,
+            ),
+            error(None, None, Some(MODE_SINGLE), &GcmError::NonInteractive),
+        ];
+        for env in &envelopes {
+            assert_eq!(top_level_message(env), None, "{}", env.status);
+        }
+    }
 
     #[test]
     fn noop_has_version_and_status() {
