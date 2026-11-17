@@ -1,0 +1,128 @@
+task_id: clo-941
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "Error mapping in src/provider/http.rs (post_json, send_once, map_ureq_error) and the one-file grouping prompt (stat=0); one module" }
+    architecture_novelty: { lean: spec, note: "No new dependency, data model or interface; existing fallback path stays" }
+    prior_art: { lean: spec, note: "Existing grouping request builder and single-commit fallback are the template" }
+    requirement_clarity: { lean: neutral, note: "Acceptance criteria are clear; the root cause is not found yet" }
+    scope_signal: { lean: spec, note: "No estimate; Bug label, S-sized fix once the cause is known" }
+  rationale: "Local bug fix with clear acceptance criteria; the spec phase starts with a diagnosis of the unknown cause."
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Todo
+  blocks: []
+  blocked_by: []
+  related: [CLO-940]
+  branch_suggested: kmamemo/clo-941-fix-grouping-failing-with-unexpected-end-of
+  priority: Medium
+  branch_actual: fix/clo-941-one-file-eof
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-11-17T00:00:00Z'
+  updated_at: '2026-11-17T21:35:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-17-clo-941-response-interrupted-error.md
+    approved: true
+    review_gemini: null
+    review_ollama: null
+    review_synthesis: docs/reviews/clo-941-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions: [section 1 names the pre-response source of the observed text, AC-1 inner io text, Transport keeps outer text, TruncateBody counts and explicit close, zero-byte test]
+    flagged_suggestions: []
+    scope_decision: "widen: map_ureq_error Io EOF/reset/abort (incl. TLS handshake) also becomes Interrupted"
+  implement:
+    status: complete
+    last_phase_completed: "regression tests (sub-task 4)"
+    commits: [5939133, c7a9711, c67f7ef]
+    gate: "fmt ok, clippy -D warnings ok, cargo test all green, acceptance.sh 262 pass / 1 pre-existing fail (AC-488-1, T1)"
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-941-codex-validation.md
+    codex_model: account default (gpt-5.4 unsupported on the ChatGPT account)
+    gemini_validation_report: null  # gemini CLI not installed
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/79
+    pr_number: 79
+    ci_passed: true
+    approved: false
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-17T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: Workflow created from Linear CLO-941
+  - timestamp: '2026-11-17T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended: specification, chosen: specification, confidence: high"
+  - timestamp: '2026-11-17T00:00:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work 1/3; not listed in ROADMAP.md or DEPENDENCIES.md"
+  - timestamp: '2026-11-17T16:45:00Z'
+    action: workflow_paused
+    phase: spec
+    details: "Diagnosis before /spec: bug not reproducible on the triage binary with byte-identical prompt (6/6 pass on Vertex and Groq, tracked and untracked). Spec not written; waiting on Max."
+  - timestamp: '2026-11-17T17:00:00Z'
+    action: workflow_paused
+    phase: spec
+    details: "Max ran the one-file --plan-only --json check in his own shell: Vertex and Groq both returned a plan. Not reproducible outside the agent sandbox either. Waiting on rescope or close decision."
+  - timestamp: '2026-11-17T17:20:00Z'
+    action: workflow_resumed
+    phase: spec
+    details: "Max chose rescope: a 2xx body that breaks off gets its own error text; real connection failures keep 'could not reach'; regression test on the local stub."
+  - timestamp: '2026-11-17T17:30:00Z'
+    action: spec_written
+    phase: spec
+    details: "docs/specs/2026-11-17-clo-941-response-interrupted-error.md (S, 4 sub-tasks)"
+  - timestamp: '2026-11-17T17:50:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Gemini and Ollama failed; Claude reviewer NEEDS_REVISION: observed text came from map_ureq_error, not the 2xx body read. 5 items applied, 1 scope question flagged."
+  - timestamp: '2026-11-17T18:10:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Max chose widen via a second review: one Interrupted variant for pre-response (incl. TLS handshake EOF) and 2xx body EOF/reset/abort; neutral text 'the connection to the {p} API closed before a complete response was received'; plan-only and dry-run keep the plan envelope, raw_code tested on the real-commit path."
+  - timestamp: '2026-11-17T18:20:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Max approved the widened spec plus an https:// stub test (TLS-handshake EOF) for the exact CLO-941 text."
+  - timestamp: '2026-11-17T18:50:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "Interrupted variant, shared is_interruption predicate in map_ureq_error and map_body_read_error, 4 http unit tests, Display and raw_code tests, 5 stub tests incl. https TLS-handshake close; the 5 stub tests fail with the predicate disabled."
+  - timestamp: '2026-11-17T18:55:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "origin/fix/clo-941-one-file-eof at c7a9711"
+  - timestamp: '2026-11-17T19:25:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Codex PASS_WITH_NOTES: 3 LOW notes applied in c67f7ef; MEDIUM public-enum note moot (publish = false). Acceptance suite 3 failures identical on main 605b077."
+  - timestamp: '2026-11-17T21:10:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt, clippy -D warnings, clippy --all-targets, cargo test all green; /session:wrap proposed 3 lessons (post-merge-docs-pr flow)"
+  - timestamp: '2026-11-17T21:19:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #79 created; Linear CLO-941 moved to In Review with a PR comment"
+  - timestamp: '2026-11-17T21:35:00Z'
+    action: ci_passed
+    phase: pr
+    details: "CI green on 7cd1e60 (ubuntu 2m40s, macos 3m43s); mergeStateStatus CLEAN; no review comments"

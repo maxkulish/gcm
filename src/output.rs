@@ -266,6 +266,7 @@ pub fn provider_error_code(err: &ProviderError) -> String {
         ErrorKind::Http(code) => format!("Http{code}"),
         ErrorKind::Timeout => "Timeout".to_string(),
         ErrorKind::Transport(_) => "Transport".to_string(),
+        ErrorKind::Interrupted(_) => "Interrupted".to_string(),
         ErrorKind::EmptyResponse => "EmptyResponse".to_string(),
         ErrorKind::Deserialize(_) => "Deserialize".to_string(),
         ErrorKind::Config(_) => "Config".to_string(),
@@ -402,6 +403,15 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_has_its_own_raw_code() {
+        let err = ProviderError {
+            provider: "Groq",
+            kind: crate::provider::ErrorKind::Interrupted("x".into()),
+        };
+        assert_eq!(provider_error_code(&err), "Interrupted");
+    }
+
+    #[test]
     fn provider_error_code_variants_distinct() {
         use crate::provider::ErrorKind;
         let codes: Vec<String> = vec![
@@ -435,6 +445,10 @@ mod tests {
             provider_error_code(&ProviderError {
                 provider: "Groq",
                 kind: ErrorKind::Transport("x".into()),
+            }),
+            provider_error_code(&ProviderError {
+                provider: "Groq",
+                kind: ErrorKind::Interrupted("x".into()),
             }),
         ];
         assert_eq!(

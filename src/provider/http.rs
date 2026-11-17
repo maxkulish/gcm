@@ -198,7 +198,7 @@ fn get_once(req: &HttpGet) -> Result<String, ProviderError> {
         return response
             .body_mut()
             .read_to_string()
-            .map_err(|e| wrap(ErrorKind::Transport(e.to_string())));
+            .map_err(|e| wrap(map_body_read_error(e)));
     }
     let retry_after = parse_retry_after(
         response
@@ -258,7 +258,7 @@ fn send_once(req: &HttpRequest) -> Result<String, ProviderError> {
         return response
             .body_mut()
             .read_to_string()
-            .map_err(|e| wrap(ErrorKind::Transport(e.to_string())));
+            .map_err(|e| wrap(map_body_read_error(e)));
     }
     // Non-2xx: capture the case-insensitive Retry-After hint + a size-capped
     // error body (std `Take` so a hit cap truncates cleanly), then classify.
@@ -451,9 +451,30 @@ fn map_ureq_error(err: ureq::Error) -> ErrorKind {
         ureq::Error::StatusCode(code) => ErrorKind::Http(code),
         ureq::Error::Timeout(_) => ErrorKind::Timeout,
         ureq::Error::HostNotFound => ErrorKind::Transport("host not found".to_string()),
+        ureq::Error::Io(e) if is_interruption(&e) => ErrorKind::Interrupted(e.to_string()),
         ureq::Error::Io(e) => ErrorKind::Transport(e.to_string()),
         other => ErrorKind::Transport(other.to_string()),
     }
+}
+
+/// Map a failed 2xx body read. An interruption reports the inner io text; any
+/// other failure keeps the outer ureq text, which `is_timeout` inspects.
+#[cfg(feature = "cli")]
+fn map_body_read_error(err: ureq::Error) -> ErrorKind {
+    match err {
+        ureq::Error::Io(e) if is_interruption(&e) => ErrorKind::Interrupted(e.to_string()),
+        other => ErrorKind::Transport(other.to_string()),
+    }
+}
+
+/// The peer closed the connection after it was opened (CLO-941).
+#[cfg(feature = "cli")]
+fn is_interruption(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind as K;
+    matches!(
+        e.kind(),
+        K::UnexpectedEof | K::ConnectionReset | K::ConnectionAborted
+    )
 }
 
 #[cfg(all(test, feature = "cli"))]
@@ -465,6 +486,81 @@ mod tests {
             provider: "Test",
             kind,
         }
+    }
+
+    fn io(kind: std::io::ErrorKind, msg: &str) -> ureq::Error {
+        ureq::Error::Io(std::io::Error::new(kind, msg))
+    }
+
+    /// CLO-941: a connection that closes before a complete response (TLS
+    /// handshake EOF, close before the headers, reset, abort) is not a failure
+    /// to reach the API.
+    #[test]
+    fn map_ureq_error_names_an_interrupted_connection() {
+        use std::io::ErrorKind as K;
+        let handshake_eof = ureq::Error::Io(std::io::Error::from(K::UnexpectedEof));
+        assert!(matches!(
+            map_ureq_error(handshake_eof),
+            ErrorKind::Interrupted(m) if m == "unexpected end of file"
+        ));
+        for kind in [K::UnexpectedEof, K::ConnectionReset, K::ConnectionAborted] {
+            assert!(matches!(
+                map_ureq_error(io(kind, "Peer disconnected")),
+                ErrorKind::Interrupted(m) if m == "Peer disconnected"
+            ));
+        }
+    }
+
+    #[test]
+    fn map_ureq_error_keeps_real_reachability_failures_as_transport() {
+        use std::io::ErrorKind as K;
+        assert!(matches!(
+            map_ureq_error(io(K::ConnectionRefused, "refused")),
+            ErrorKind::Transport(m) if m == "refused"
+        ));
+        assert!(matches!(
+            map_ureq_error(io(K::InvalidData, "bad certificate")),
+            ErrorKind::Transport(m) if m == "bad certificate"
+        ));
+        assert!(matches!(
+            map_ureq_error(ureq::Error::HostNotFound),
+            ErrorKind::Transport(m) if m == "host not found"
+        ));
+        assert!(matches!(
+            map_ureq_error(ureq::Error::Timeout(ureq::Timeout::Global)),
+            ErrorKind::Timeout
+        ));
+    }
+
+    /// A 2xx body that breaks off reports the inner io text, without ureq's
+    /// `io: ` prefix.
+    #[test]
+    fn body_read_error_names_an_interrupted_body() {
+        use std::io::ErrorKind as K;
+        for kind in [K::UnexpectedEof, K::ConnectionReset, K::ConnectionAborted] {
+            assert!(matches!(
+                map_body_read_error(io(kind, "Peer disconnected")),
+                ErrorKind::Interrupted(m) if m == "Peer disconnected"
+            ));
+        }
+    }
+
+    /// The body-read timeout keeps the outer ureq text, because `is_timeout`
+    /// looks for "timeout" in it.
+    #[test]
+    fn body_read_error_keeps_other_failures_as_transport() {
+        let timeout = ureq::Error::Timeout(ureq::Timeout::Global);
+        let expected = timeout.to_string();
+        assert!(matches!(
+            map_body_read_error(timeout),
+            ErrorKind::Transport(m) if m == expected
+        ));
+        let denied = io(std::io::ErrorKind::PermissionDenied, "denied");
+        let expected = denied.to_string();
+        assert!(matches!(
+            map_body_read_error(denied),
+            ErrorKind::Transport(m) if m == expected
+        ));
     }
 
     fn cfg(max_retries: u32, base_ms: u64, max_ms: u64) -> RetryConfig {

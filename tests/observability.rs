@@ -44,6 +44,13 @@ enum Act {
     /// Answer `200` with a `Content-Length` and then never send the body: the
     /// client stalls mid-read, which classifies as `Transport("timeout...")`.
     StallBody,
+    /// Accept and read the request, then drop the socket without a reply. On an
+    /// `https://` URL the request is the TLS ClientHello, so the drop lands
+    /// mid-handshake (CLO-941).
+    CloseBeforeResponse,
+    /// Answer `200` with `Content-Length: 4096`, send this many body bytes, then
+    /// drop the socket: the body ends early (CLO-941).
+    TruncateBody(usize),
 }
 
 fn git_init(dir: &Path) {
@@ -160,7 +167,15 @@ fn stub(script: Vec<Act>) -> String {
                                 let _ = stream.flush();
                                 thread::sleep(Duration::from_secs(20));
                             }
+                            Act::CloseBeforeResponse => {}
+                            Act::TruncateBody(sent) => {
+                                let mut response = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4096\r\n\r\n".to_vec();
+                                response.extend(std::iter::repeat_n(b'{', *sent));
+                                let _ = stream.write_all(&response);
+                                let _ = stream.flush();
+                            }
                         }
+                        drop(stream);
                         break;
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -754,4 +769,121 @@ fn extreme_retry_budget_does_not_overflow() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "run failed: {stderr}");
     assert!(stderr.contains("attempt 1 of 4294967296"), "{stderr}");
+}
+
+const INTERRUPTED: &str = "closed before a complete response was received";
+
+/// CLO-941: a closed connection is named as such, never as "could not reach".
+fn assert_interrupted(stderr: &str) {
+    assert!(stderr.contains(INTERRUPTED), "{stderr}");
+    assert!(!stderr.contains("could not reach"), "{stderr}");
+    assert_plain(stderr);
+}
+
+/// `--plan-only` makes no fallback call, so it keeps its single-mode plan
+/// envelope and carries no `fallback` key.
+fn assert_single_plan(stdout: &str) {
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(env["status"], "plan", "{stdout}");
+    assert_eq!(env["mode"], "single", "{stdout}");
+    assert!(env.get("fallback").is_none(), "{stdout}");
+}
+
+/// CLO-941: a 2xx whose body ends early.
+#[test]
+fn truncated_body_is_named_interrupted_in_plan_only() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 2);
+    let url = stub(vec![Act::TruncateBody(10)]);
+
+    let out = run(repo.path(), cfg.path(), &url, &["--plan-only", "--json"]);
+    assert_interrupted(&String::from_utf8_lossy(&out.stderr));
+    assert_single_plan(&String::from_utf8_lossy(&out.stdout));
+}
+
+/// CLO-941: a connection that closes before any response header.
+#[test]
+fn close_before_response_is_named_interrupted_in_plan_only() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 2);
+    let url = stub(vec![Act::CloseBeforeResponse]);
+
+    let out = run(repo.path(), cfg.path(), &url, &["--plan-only", "--json"]);
+    assert_interrupted(&String::from_utf8_lossy(&out.stderr));
+    assert_single_plan(&String::from_utf8_lossy(&out.stdout));
+}
+
+/// CLO-941: the exact reported text. On an `https://` URL the stub drops the
+/// socket during the TLS handshake, and rustls reports `unexpected end of file`.
+#[test]
+fn tls_handshake_close_is_named_interrupted() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 2);
+    let url = stub(vec![Act::CloseBeforeResponse]).replace("http://", "https://");
+
+    let out = run(repo.path(), cfg.path(), &url, &["--plan-only", "--json"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_interrupted(&stderr);
+    assert!(
+        stderr.contains(&format!("{INTERRUPTED}: unexpected end of file")),
+        "{stderr}"
+    );
+}
+
+/// CLO-941: zero body bytes after the headers, then a good fallback message.
+#[test]
+fn empty_truncated_body_falls_back_in_dry_run() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 2);
+    let url = stub(vec![
+        Act::TruncateBody(0),
+        Act::Reply(Duration::ZERO, 200, message_body()),
+    ]);
+
+    let out = run(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--dry-run", "--yes", "--json"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_interrupted(&stderr);
+    assert!(
+        stderr.contains("Falling back to single-commit mode."),
+        "{stderr}"
+    );
+    assert!(out.status.success(), "fallback message failed: {stderr}");
+    assert_single_plan(&String::from_utf8_lossy(&out.stdout));
+}
+
+/// CLO-941 AC-3: only a real commit carries the fallback envelope.
+#[test]
+fn truncated_body_fallback_reports_interrupted_raw_code() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    repo_with_files(repo.path(), 2);
+    let url = stub(vec![
+        Act::TruncateBody(10),
+        Act::Reply(Duration::ZERO, 200, message_body()),
+    ]);
+
+    let out = run(repo.path(), cfg.path(), &url, &["--yes", "--json"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_interrupted(&stderr);
+    assert!(
+        stderr.contains("Falling back to single-commit mode."),
+        "{stderr}"
+    );
+    if !signing_available() {
+        eprintln!("skipping the fallback envelope: signing unavailable");
+        return;
+    }
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(env["status"], "fallback", "{stdout}");
+    assert_eq!(env["fallback"]["raw_code"], "Interrupted", "{stdout}");
 }
