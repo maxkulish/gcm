@@ -86,7 +86,8 @@ pub enum ErrorKind {
     Http(u16),
     /// Client-side request timeout (not retried).
     Timeout,
-    /// Connection/transport failure - DNS, refused, reset (not retried).
+    /// Connection/transport failure - DNS, refused, certificate or protocol
+    /// errors (not retried).
     Transport(String),
     /// The connection closed before a complete response arrived: during the
     /// TLS handshake, before the headers, or during a 2xx body (not retried).

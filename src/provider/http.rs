@@ -524,7 +524,7 @@ mod tests {
         ));
         assert!(matches!(
             map_ureq_error(ureq::Error::HostNotFound),
-            ErrorKind::Transport(_)
+            ErrorKind::Transport(m) if m == "host not found"
         ));
         assert!(matches!(
             map_ureq_error(ureq::Error::Timeout(ureq::Timeout::Global)),

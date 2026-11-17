@@ -844,13 +844,20 @@ fn empty_truncated_body_falls_back_in_dry_run() {
         Act::Reply(Duration::ZERO, 200, message_body()),
     ]);
 
-    let out = run(repo.path(), cfg.path(), &url, &["--dry-run", "--yes"]);
+    let out = run(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--dry-run", "--yes", "--json"],
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_interrupted(&stderr);
     assert!(
         stderr.contains("Falling back to single-commit mode."),
         "{stderr}"
     );
+    assert!(out.status.success(), "fallback message failed: {stderr}");
+    assert_single_plan(&String::from_utf8_lossy(&out.stdout));
 }
 
 /// CLO-941 AC-3: only a real commit carries the fallback envelope.
