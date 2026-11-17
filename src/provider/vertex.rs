@@ -151,7 +151,7 @@ impl Provider for Vertex {
 
     fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
         let (token, project, location) = self.target()?;
-        let payload = gemini::build_plan_payload(ctx);
+        let payload = gemini::build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&token, &project, &location, &payload))
             .map_err(|e| self.map_auth_error(e))?;
         let json = gemini::extract_text(&raw)?;
@@ -166,7 +166,8 @@ impl Provider for Vertex {
 
     fn generate_message(&self, diff: &GatheredDiff) -> Result<String, ProviderError> {
         let (token, project, location) = self.target()?;
-        let payload = gemini::build_message_payload(&super::message_user_content(diff));
+        let payload =
+            gemini::build_message_payload(&self.model, &super::message_user_content(diff));
         let raw = http::post_json(&self.request(&token, &project, &location, &payload))
             .map_err(|e| self.map_auth_error(e))?;
         let message = gemini::extract_text(&raw)?;
@@ -181,7 +182,7 @@ impl Provider for Vertex {
         ctx: &super::ResolveContext,
     ) -> Result<Vec<super::Resolution>, ProviderError> {
         let (token, project, location) = self.target()?;
-        let payload = gemini::build_resolve_payload(ctx);
+        let payload = gemini::build_resolve_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&token, &project, &location, &payload))
             .map_err(|e| self.map_auth_error(e))?;
         let json = gemini::extract_text(&raw)?;

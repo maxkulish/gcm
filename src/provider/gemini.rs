@@ -1,8 +1,8 @@
 //! Google Gemini backend (CLO-489). Divergent from the OpenAI-compatible shape:
 //! the `:generateContent` endpoint, `x-goog-api-key` auth, structured output via
 //! `generationConfig.responseSchema` (OpenAPI-3.0 subset, [`crate::plan::gemini_schema`]),
-//! and reasoning suppression via `thinkingConfig.thinkingLevel` (3.x floor is
-//! `MINIMAL`; no hard off). The response extractor checks `finishReason` /
+//! and reasoning suppression via `thinkingConfig.thinkingLevel` (the lowest
+//! level the model accepts, see [`thinking_level`]; no hard off). The response extractor checks `finishReason` /
 //! `promptFeedback` for safety blocks BEFORE reading content (round-2 review pt 3).
 
 use serde::Deserialize;
@@ -75,7 +75,7 @@ impl Provider for Gemini {
 
     fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
         let key = self.api_key()?;
-        let payload = build_plan_payload(ctx);
+        let payload = build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;
         let json = extract_text(&raw)?;
         if json.is_empty() {
@@ -89,7 +89,7 @@ impl Provider for Gemini {
 
     fn generate_message(&self, diff: &GatheredDiff) -> Result<String, ProviderError> {
         let key = self.api_key()?;
-        let payload = build_message_payload(&super::message_user_content(diff));
+        let payload = build_message_payload(&self.model, &super::message_user_content(diff));
         let raw = http::post_json(&self.request(&key, &payload))?;
         let message = extract_text(&raw)?;
         if message.is_empty() {
@@ -103,7 +103,7 @@ impl Provider for Gemini {
         ctx: &super::ResolveContext,
     ) -> Result<Vec<super::Resolution>, ProviderError> {
         let key = self.api_key()?;
-        let payload = build_resolve_payload(ctx);
+        let payload = build_resolve_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;
         let json = extract_text(&raw)?;
         if json.is_empty() {
@@ -129,7 +129,29 @@ fn empty() -> ProviderError {
     }
 }
 
-pub(super) fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
+/// Models whose lowest thinking level is `LOW`: they reject `MINIMAL` with an
+/// HTTP 400. Source: aistudio.google.com/docs/thinking (2026-11-17), which marks
+/// `minimal` "Not supported on Gemini 4 models or `gemini-3.8-flash`" and lists
+/// the 3.x pro previews without it; the Vertex page for `gemini-4-hydrogen`
+/// names the 400.
+const NO_MINIMAL_PREFIXES: &[&str] = &[
+    "gemini-4",
+    "gemini-3.8-flash",
+    "gemini-3.1-pro",
+    "gemini-3-pro",
+];
+
+/// The lowest `thinkingLevel` `model` accepts: `MINIMAL` where the model offers
+/// it, else `LOW`.
+pub(super) fn thinking_level(model: &str) -> &'static str {
+    if NO_MINIMAL_PREFIXES.iter().any(|p| model.starts_with(p)) {
+        "LOW"
+    } else {
+        "MINIMAL"
+    }
+}
+
+pub(super) fn build_resolve_payload(ctx: &super::ResolveContext, model: &str) -> Value {
     json!({
         "systemInstruction": { "parts": [ { "text": super::RESOLVE_SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": super::resolve_user_content(ctx) } ] } ],
@@ -137,29 +159,29 @@ pub(super) fn build_resolve_payload(ctx: &super::ResolveContext) -> Value {
             "temperature": ctx.temperature,
             "responseMimeType": "application/json",
             "responseSchema": super::gemini_resolve_schema(),
-            "thinkingConfig": { "thinkingLevel": "MINIMAL" }
+            "thinkingConfig": { "thinkingLevel": thinking_level(model) }
         }
     })
 }
 
-pub(super) fn build_plan_payload(ctx: &GroupingContext) -> Value {
+pub(super) fn build_plan_payload(ctx: &GroupingContext, model: &str) -> Value {
     json!({
         "systemInstruction": { "parts": [ { "text": super::GROUPING_SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": super::grouping_user_content(ctx) } ] } ],
         "generationConfig": {
             "responseMimeType": "application/json",
             "responseSchema": crate::plan::gemini_schema(),
-            "thinkingConfig": { "thinkingLevel": "MINIMAL" }
+            "thinkingConfig": { "thinkingLevel": thinking_level(model) }
         }
     })
 }
 
-pub(super) fn build_message_payload(user_content: &str) -> Value {
+pub(super) fn build_message_payload(model: &str, user_content: &str) -> Value {
     json!({
         "systemInstruction": { "parts": [ { "text": super::SYSTEM_PROMPT } ] },
         "contents": [ { "role": "user", "parts": [ { "text": user_content } ] } ],
         "generationConfig": {
-            "thinkingConfig": { "thinkingLevel": "MINIMAL" }
+            "thinkingConfig": { "thinkingLevel": thinking_level(model) }
         }
     })
 }
@@ -271,7 +293,7 @@ mod tests {
 
     #[test]
     fn plan_payload_has_response_schema_and_thinking() {
-        let p = build_plan_payload(&ctx());
+        let p = build_plan_payload(&ctx(), "gemini-3.5-flash-lite");
         let gc = &p["generationConfig"];
         assert_eq!(gc["responseMimeType"], json!("application/json"));
         assert_eq!(gc["thinkingConfig"]["thinkingLevel"], json!("MINIMAL"));
@@ -289,12 +311,37 @@ mod tests {
 
     #[test]
     fn message_payload_has_no_response_schema() {
-        let p = build_message_payload("Diff stats:\nx\n\nFull diff:\ny");
+        let p = build_message_payload("gemini-3.5-flash-lite", "Diff stats:\nx\n\nFull diff:\ny");
         assert!(p["generationConfig"].get("responseSchema").is_none());
         assert_eq!(
             p["generationConfig"]["thinkingConfig"]["thinkingLevel"],
             json!("MINIMAL")
         );
+    }
+
+    #[test]
+    fn thinking_level_is_low_where_minimal_is_rejected() {
+        for model in [
+            "gemini-4-hydrogen",
+            "gemini-4-argon",
+            "gemini-3.8-flash",
+            "gemini-3.1-pro-preview",
+        ] {
+            assert_eq!(thinking_level(model), "LOW", "{model}");
+            let p = build_plan_payload(&ctx(), model);
+            assert_eq!(
+                p["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+                json!("LOW"),
+                "{model}"
+            );
+        }
+        for model in [
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.1-flash-lite",
+        ] {
+            assert_eq!(thinking_level(model), "MINIMAL", "{model}");
+        }
     }
 
     #[test]
@@ -370,7 +417,7 @@ mod tests {
             style_context: "ctx".to_string(),
             temperature: 0.1,
         };
-        let p = build_resolve_payload(&ctx);
+        let p = build_resolve_payload(&ctx, "gemini-3.5-flash-lite");
         let gc = &p["generationConfig"];
         assert_eq!(gc["responseMimeType"], json!("application/json"));
         assert_eq!(gc["temperature"], json!(0.1));

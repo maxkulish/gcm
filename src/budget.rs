@@ -134,6 +134,20 @@ const WINDOWS: &[WindowEntry] = &[
         by: Match::Prefix,
         tokens: 1_048_576,
     },
+    // aistudio.google.com/docs/thinking (2026-11-17): Gemini 4 models share one
+    // 1,048,576-token window across input, thinking and output.
+    WindowEntry {
+        provider: ProviderId::Google,
+        model: "gemini-4",
+        by: Match::Prefix,
+        tokens: 1_048_576,
+    },
+    WindowEntry {
+        provider: ProviderId::Vertex,
+        model: "gemini-4",
+        by: Match::Prefix,
+        tokens: 1_048_576,
+    },
     // getdeploying.com/llms/gpt-5.6-terra and pricepertoken.com: 1,050,000-token
     // context for the GPT-5.6 family.
     WindowEntry {
@@ -231,7 +245,8 @@ pub fn output_facts(target: &Target) -> OutputFacts {
         // qwen gets `reasoning_effort: "none"`; gpt-oss only gets
         // `include_reasoning: false`, which hides the reasoning but still runs it.
         ProviderId::Groq if target.model.contains("qwen") => 0,
-        // gpt-oss on Groq; Gemini's `thinkingLevel: MINIMAL` still thinks; Ollama
+        // gpt-oss on Groq; Gemini's lowest `thinkingLevel` (`MINIMAL` or `LOW`)
+        // still thinks; Ollama
         // thinking models emit a `thinking` field.
         ProviderId::Groq | ProviderId::Google | ProviderId::Vertex | ProviderId::Ollama => {
             REASONING_ALLOWANCE
@@ -542,6 +557,10 @@ mod tests {
                 (131_072, WindowOrigin::Table),
                 "{model}"
             );
+        }
+        for provider in [ProviderId::Google, ProviderId::Vertex] {
+            let w = window_from(None, &target(provider, "gemini-4-hydrogen")).unwrap();
+            assert_eq!((w.tokens, w.origin), (1_048_576, WindowOrigin::Table));
         }
         let unknown = window_from(None, &target(ProviderId::Ollama, "gemma4:e4b-mlx")).unwrap();
         assert_eq!(unknown.tokens, DEFAULT_WINDOW);
