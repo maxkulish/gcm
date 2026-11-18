@@ -24,10 +24,10 @@ linear:
   priority: Medium
   branch_actual: fix/clo-940-plan-only-all
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-11-17T22:00:00Z'
-  updated_at: '2026-11-18T00:30:00Z'
+  updated_at: '2026-11-18T00:45:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
@@ -47,9 +47,9 @@ phases:
     flagged_suggestions: []
     scope_decision: "message on every single-commit preview envelope; --plan-only without --all unchanged on merge and fallback paths (owner, 2026-11-17)"
   implement:
-    status: in_progress
-    last_phase_completed: "acceptance coverage (sub-task 3)"
-    commits: [8613006, fed9439, cc34f07]
+    status: complete
+    last_phase_completed: "Codex validation fixes"
+    commits: [8613006, fed9439, cc34f07, 6ca3a85, 2e30c2c]
     gate: "fmt ok, clippy --all-targets -D warnings ok, cargo test all green, acceptance.sh 294 pass / 1 pre-existing fail (AC-488-1)"
     mutation_check: "message only with --all -> CLO-940-4 and CLO-940-5 dry-run cases fail"
     live_check: "Vertex gemini-4-hydrogen: --plan-only --all prints preview, --json carries message, nothing staged; PTY run and clean-tree noop (no request) verified"
@@ -107,3 +107,11 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "PASS_WITH_NOTES; 1 MEDIUM + 2 LOW (test tightness, guide line) verified and fixed; acceptance 294/1"
+  - timestamp: '2026-11-18T00:45:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Owner chose proceed at the validation gate; moving to PR"
+  - timestamp: '2026-11-18T00:50:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt, clippy --all-targets -D warnings, cargo test (618 tests) green; session notes empty, nothing to wrap"
