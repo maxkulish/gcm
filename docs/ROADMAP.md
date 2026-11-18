@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-10-29 (CLO-797 merged in PR #73; CLO-921 filed)
+**Last Updated**: 2026-11-18 (CLO-940 and CLO-941 merged; CLO-942, CLO-943 and CLO-944 filed)
 
 ## Summary
 
@@ -11,9 +11,9 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 8 | 4 | In Progress |
+| Bug fixes (cross-cutting) | 15 | 10 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
-| Maintenance (cross-cutting) | 3 | 3 | Complete |
+| Maintenance (cross-cutting) | 4 | 3 | In Progress |
 
 ## Phase 6: Library Extraction
 
@@ -102,6 +102,10 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | Done | CLO-799 (related - same complaint, next wizard step) |
 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | Backlog | CLO-799, CLO-802 (related - third occurrence of the same complaint family) |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | Backlog | CLO-797 (follow-up) |
+| [CLO-940](https://linear.app/cloud-ai/issue/CLO-940) | Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message | Done | CLO-487 (related); PR #82 |
+| [CLO-941](https://linear.app/cloud-ai/issue/CLO-941) | Fix grouping failing with "unexpected end of file" when exactly one file changed | Done | CLO-487 (related); PR #79 |
+| [CLO-943](https://linear.app/cloud-ai/issue/CLO-943) | Document the `message` field of the single-commit preview in the README `--json` section | Backlog | CLO-940 (follow-up) |
+| [CLO-944](https://linear.app/cloud-ai/issue/CLO-944) | Fix acceptance case AC-488-1 (HTTP 429 retried then succeeds) failing on main | Backlog | CLO-488 (related) |
 
 Both were found in one investigation of a 515-file commit and are measured in
 [investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md](investigations/2026-09-16-clo-797-grouping-prompt-context-overflow.md).
@@ -120,3 +124,4 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 | CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | Done | CLO-489 (related) |
 | CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | Done | CLO-516 (related), split from CLO-545 |
 | CLO-564 | Add live Vertex model discovery + refresh Gemini catalog (default → gemini-3.5-flash-lite) | Done | CLO-547/537/516 (related); closed CLO-537 design-D4 deferral |
+| [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | Move the orchestrate pi extension to pi 1.5.x and remove the undici and minimatch overrides | Backlog | PR #81 (follow-up) |

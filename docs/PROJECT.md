@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-11-18 (CLO-940 merged in PR #82)
+**Last Updated**: 2026-11-18 (CLO-940 merged in PR #82; CLO-942, CLO-943 and CLO-944 filed)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -108,6 +108,10 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 |----------|------|-------|--------------|--------|
 | 1 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | CLO-797/798 (related — same call, output side; CLO-797 landed in PR #73) | — |
 | 2 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | CLO-797 (follow-up, changes its D4 estimator) | — |
+| 3 | [CLO-944](https://linear.app/cloud-ai/issue/CLO-944) | Fix acceptance case AC-488-1 (HTTP 429 retried then succeeds) failing on main | CLO-488 (related - the retry case it tests); found during CLO-940 | — |
+| 4 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | CLO-799, CLO-802 (related) | — |
+| 5 | [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | Move the orchestrate pi extension to pi 1.5.x and remove the undici and minimatch overrides | PR #81 (follow-up); worktree `gcm--chore-clo-942-pi-upgrade` exists, no commits yet | — |
+| 6 | [CLO-943](https://linear.app/cloud-ai/issue/CLO-943) | Document the `message` field of the single-commit preview in the README `--json` section | CLO-940 (follow-up) | — |
 
 > No WIP slot is in use. **CLO-797** (input side - the grouping prompt repeated the path list three times) merged in PR #73 on 2026-10-29. **CLO-800** (`merge_provider_config` hardcoding `conflict: ConflictConfig::default()`, dropping a customized `validate_cmd`/`sensitive_paths` on every `gcm provider` run) merged in PR #65: `merge_provider_config` now clones `existing.conflict` forward, new test confirmed red against the prior code before the fix. **CLO-802** merged in PR #64 and shipped in **v0.8.1**, closing the model-pinning complaint for good: it was the third turn of "it doesn't matter which model I choose", and the first whose cause was the wizard's **Default model** radio rather than the enabled set. CLO-799 had fixed the multiselect one step earlier; the old default survived into the radio, pre-selected, so Enter kept it. Verified on the shipped binary, not a local build. **CLO-798** (visibility) merged in PR #60 and **CLO-799** in PR #59. Phase 6 (library extraction) is **complete** after CLO-598 merged PR #52. The public surface is locked by `scripts/check-public-surface.sh` and verified by an out-of-tree `smoke/` consumer. Two owner-run HITL checks remain outstanding on issues already marked Done: **CLO-537**'s live ADC end-to-end check (needs the GCP project + `gcloud auth application-default login`) and **CLO-545**'s AC7 live OpenAI smokes (needs `OPENAI_API_KEY`). Everything else is Done: all v1 slices (CLO-485…CLO-497), Phase-2 hardening (CLO-514), v2 introspection (CLO-515/516), `gcm resolve` Phase 1-4 (CLO-531 + fixes CLO-534/535 + CLO-533 + CLO-555 + CLO-554), provider expansion (CLO-537) and maintenance (CLO-545/547/564).
 >
