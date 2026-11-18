@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-11-18 (CLO-942, CLO-943 and CLO-944 filed, all unblocked)
+**Last Updated**: 2026-11-18 (CLO-942 merged in PR #84; CLO-943 and CLO-944 unblocked)
 
 ## Current Blockers
 
@@ -21,7 +21,6 @@
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas (CLO-797 landed in PR #73 - shares the grouping call) | 2026-10-29 |
 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | No dependencies; root cause confirmed by PTY reproduction, candidate directions written | 2026-09-18 |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | CLO-797 merged; owner decision needed on replacing the D4 estimator | 2026-10-29 |
-| [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | No dependencies; the `Type.Unsafe` replacement for `StringEnum` is written in the issue | 2026-11-18 |
 | [CLO-943](https://linear.app/cloud-ai/issue/CLO-943) | CLO-940 merged in PR #82 (added the `message` field) | 2026-11-18 |
 | [CLO-944](https://linear.app/cloud-ai/issue/CLO-944) | No dependencies; the cause is not yet found | 2026-11-18 |
 
