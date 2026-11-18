@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-11-17 (CLO-940 started)
+**Last Updated**: 2026-11-18 (CLO-940 merged in PR #82)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -100,7 +100,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| [CLO-940](https://linear.app/cloud-ai/issue/CLO-940) | Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message | In Progress | Spec | - |
+| — | No active work | — | — | — |
 
 ## Up Next (Ready - no open blockers)
 
@@ -123,6 +123,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Completed | Summary |
 |------|-------|-----------|---------|
+| [CLO-940](https://linear.app/cloud-ai/issue/CLO-940) | Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message | 2026-11-18 | Bug fix (spec task, `/task:orchestrate`), PR #82. The `--plan-only` early return in `single_commit_path` ran before message generation, so `--plan-only --all` printed nothing and `--json` returned `plan.groups: []`. The early return is narrowed to `--plan-only` without `--all`; `--plan-only --all` now shares the `--dry-run --all` preview and returns before cache clearing and staging. The JSON envelope gains an optional top-level `message` field on single-commit previews (additive, `v` stays 1). Merge and fallback paths without `--all` are unchanged. Acceptance cases CLO-940-1 to CLO-940-7 count provider requests against the mock. Codex PASS_WITH_NOTES, three test and doc notes applied; live Vertex check passed; CI green on ubuntu + macos. README does not document `message` yet. |
 | [CLO-941](https://linear.app/cloud-ai/issue/CLO-941) | Fix grouping failing with "unexpected end of file" when exactly one file changed | 2026-11-17 | Bug fix (spec task, `/task:orchestrate`), PR #79. The one-file failure did not reproduce on Vertex or Groq, in or outside the sandbox, so the task was rescoped to the misleading text. A connection that closes before a complete response (EOF, reset or abort before the response, during a TLS handshake, or while a 2xx body is read) is now `ErrorKind::Interrupted`: "the connection to the {provider} API closed before a complete response was received: {cause}", raw code `Interrupted`. DNS, refused, certificate and timeout failures keep "could not reach". Retry set unchanged. 5 local-stub tests incl. an https:// stub that reproduces the exact reported text. Codex PASS_WITH_NOTES, notes applied; CI green on ubuntu + macos. |
 | [CLO-797](https://linear.app/cloud-ai/issue/CLO-797) | Fix the grouping prompt exceeding the model context window on large commits | 2026-10-29 | Bug fix, PR #73. The grouping prompt sent every changed path three times and was never bounded by tokens, so a 515-file commit sent ~212K estimated tokens to a 131,072-token window. It now sends one `{path, xy}` inventory, fits a token budget derived from the model window (`src/budget.rs`) with an announced sacrifice ladder, and refuses a prompt that still cannot fit before any request. Message refusal uses a generous 4-bytes-per-token estimate. Emoji undercount deferred to CLO-921. |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | 2026-09-17 | Bug fix. `merge_provider_config` rebuilt the whole `Config` on every successful `gcm provider` run and hardcoded `conflict: ConflictConfig::default()`, silently discarding any customized `validate_cmd` and `sensitive_paths` - the two `[conflict]` fields with no default, introduced by CLO-555 as safety controls for `gcm resolve`. The wizard's "Saved ... configuration" message gave no warning. Fix clones `existing.conflict` forward instead, matching how `providers` was already carried forward. New unit test with a non-default `[conflict]` section, confirmed red against the prior code before the fix landed. `make check` clean, CI green on ubuntu + macos. Found while tracing CLO-799, unrelated to it beyond sharing the same code path. PR #65 merged. |
