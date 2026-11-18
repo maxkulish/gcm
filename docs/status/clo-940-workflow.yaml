@@ -60,7 +60,11 @@ phases:
     gemini_validation_report: null  # gemini CLI not installed
     codex_findings_applied: [CLO-940-7 asserts one request and error.code Provider, CLO-940-1 stdout-only and cmp with --all --dry-run, cutover guide API-key line]
     codex_findings_noted: ["AC-493-7 failed only in the Codex sandbox (OnboardingRequired, no provider configured); passes locally"]
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/82
+    pr_number: 82
+    ci_passed: true
   complete: { status: pending }
 history:
   - timestamp: '2026-11-17T22:00:00Z'
@@ -115,3 +119,11 @@ history:
     action: pre_flight_checks_passed
     phase: pr
     details: "fmt, clippy --all-targets -D warnings, cargo test (618 tests) green; session notes empty, nothing to wrap"
+  - timestamp: '2026-11-18T06:36:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #82 created, mergeable clean; Linear moved to In Review"
+  - timestamp: '2026-11-18T06:45:00Z'
+    action: ci_passed
+    phase: pr
+    details: "CI run 44252521026 green on macos-latest and ubuntu-latest; no review comments yet"
