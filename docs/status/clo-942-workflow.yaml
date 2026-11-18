@@ -24,8 +24,8 @@ linear:
   priority: Low
   branch_actual: chore/clo-942-pi-upgrade
 workflow:
-  current_phase: implement
-  status: checkpoint
+  current_phase: pr
+  status: in_progress
   created_at: '2026-11-18T00:00:00Z'
   updated_at: '2026-11-18T00:00:00Z'
 phases:
@@ -59,11 +59,11 @@ phases:
       - "Evaluation #7: rg from the extension directory, exit 1 required"
       - "Constraint: keep main f19c750 CLO-942 entries in PROJECT, ROADMAP, DEPENDENCIES"
   implement:
-    status: in_progress
+    status: complete
     dependabot_baseline_open_alerts: []
     dependabot_baseline_note: "0 open alerts for .pi/extensions/orchestrate/package-lock.json on 2026-11-18"
     last_phase_completed: "Sub-task 3: brace-expansion override removed"
-    commits: [92f8966, 68ae5d7]
+    commits: [92f8966, 68ae5d7, b841f32]
     evaluation:
       tsc: "0 errors (typescript 7.0.2, AC5 flags)"
       type_equality: "phase, from_phase, to_phase exactly WorkflowPhase; narrower and wider fail"
@@ -79,7 +79,7 @@ phases:
     codex_report: docs/reviews/clo-942-codex-validation.md
     gemini_validation_report: null
     gemini_skipped_reason: "gemini CLI not installed; gpt-5.4 rejected for ChatGPT account, Codex default model used"
-  pr: { status: pending }
+  pr: { status: pending, ci_passed: false }
   complete: { status: pending }
 history:
   - timestamp: '2026-11-18T00:00:00Z'
@@ -134,3 +134,15 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Codex PASS, no defects; Gemini unavailable"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: validation_gate_decision
+    phase: implement
+    details: "Owner chose proceed; implement complete, moving to PR"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: session_wrap_proposed
+    phase: pr
+    details: "3 lessons in .pi/lessons/clo-942-pi-upgrade-lessons.md (uncommitted, post-merge-docs-pr); 2 follow-up candidates"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt, clippy -D warnings, cargo test pass; one flaky Vertex bearer test failure in the first run, 3 clean reruns, logged as T2"
