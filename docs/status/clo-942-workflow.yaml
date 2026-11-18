@@ -79,7 +79,7 @@ phases:
     codex_report: docs/reviews/clo-942-codex-validation.md
     gemini_validation_report: null
     gemini_skipped_reason: "gemini CLI not installed; gpt-5.4 rejected for ChatGPT account, Codex default model used"
-  pr: { status: pending, ci_passed: false }
+  pr: { status: in_progress, ci_passed: true, pr_url: 'https://github.com/maxkulish/gcm/pull/84', pr_number: 84 }
   complete: { status: pending }
 history:
   - timestamp: '2026-11-18T00:00:00Z'
@@ -146,3 +146,11 @@ history:
     action: pre_flight_checks_passed
     phase: pr
     details: "fmt, clippy -D warnings, cargo test pass; one flaky Vertex bearer test failure in the first run, 3 clean reruns, logged as T2"
+  - timestamp: '2026-11-18T22:10:22Z'
+    action: pr_created
+    phase: pr
+    details: "PR #84 created; mergeable CLEAN; Linear CLO-942 moved to In Review with PR comment"
+  - timestamp: '2026-11-18T22:15:00Z'
+    action: ci_passed
+    phase: pr
+    details: "CI run 44408948501 green on macos-latest and ubuntu-latest"
