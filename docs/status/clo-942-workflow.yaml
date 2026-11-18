@@ -25,7 +25,7 @@ linear:
   branch_actual: chore/clo-942-pi-upgrade
 workflow:
   current_phase: implement
-  status: in_progress
+  status: checkpoint
   created_at: '2026-11-18T00:00:00Z'
   updated_at: '2026-11-18T00:00:00Z'
 phases:
@@ -62,6 +62,23 @@ phases:
     status: in_progress
     dependabot_baseline_open_alerts: []
     dependabot_baseline_note: "0 open alerts for .pi/extensions/orchestrate/package-lock.json on 2026-11-18"
+    last_phase_completed: "Sub-task 3: brace-expansion override removed"
+    commits: [92f8966, 68ae5d7]
+    evaluation:
+      tsc: "0 errors (typescript 7.0.2, AC5 flags)"
+      type_equality: "phase, from_phase, to_phase exactly WorkflowPhase; narrower and wider fail"
+      schema_shape: "{type: string, enum: [13 phases]}, no anyOf/const"
+      npm_audit: "0 vulnerabilities"
+      versions: "pi-coding-agent 1.5.2, pi-tui 1.5.2, undici 8.12.3, minimatch 11.0.3, brace-expansion 5.0.12 and 5.0.13"
+      rg_pi_ai: "exit 1"
+      ac9: "pi -p --mode json: update_workflow_state rejected, 'phase: expected one of [...]'; disposable clo-99942 file deleted"
+    subtask3_result: "brace-expansion override removed; audit 0, lowest resolved 5.0.12"
+    codex_validated: true
+    codex_verdict: PASS
+    codex_model: gpt-6.2-astra
+    codex_report: docs/reviews/clo-942-codex-validation.md
+    gemini_validation_report: null
+    gemini_skipped_reason: "gemini CLI not installed; gpt-5.4 rejected for ChatGPT account, Codex default model used"
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -101,3 +118,19 @@ history:
     action: dependabot_baseline
     phase: implement
     details: "0 open alerts for the orchestrate manifest"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 1-3 complete"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "origin/chore/clo-942-pi-upgrade at 68ae5d7"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "All evaluations except AC8 (post-merge) pass"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Codex PASS, no defects; Gemini unavailable"
