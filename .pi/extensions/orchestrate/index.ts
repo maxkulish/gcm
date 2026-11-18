@@ -1,8 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, MessageRenderer } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
-import { Type, type Static } from "typebox";
+import { Type, type Static, type TSchemaOptions } from "typebox";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -39,6 +38,11 @@ const WORKFLOW_PHASES = [
 const TASK_TYPES = ["development", "specification", "operational"] as const;
 
 type WorkflowPhase = (typeof WORKFLOW_PHASES)[number];
+
+function StringEnum<const T extends readonly string[]>(values: T, options?: TSchemaOptions) {
+  return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options });
+}
+
 type TaskType = (typeof TASK_TYPES)[number];
 
 type WorkflowUpdateMap = Record<string, unknown>;
@@ -1010,7 +1014,7 @@ export default function (pi: ExtensionAPI) {
           };
 
           if (current_phase !== undefined) draft.workflow!.current_phase = current_phase;
-          if (status !== undefined) draft.workflow!.status = status as WorkflowState["workflow"]["status"];
+          if (status !== undefined) draft.workflow!.status = status as NonNullable<WorkflowState["workflow"]>["status"];
           if (created_at !== undefined) draft.workflow!.created_at = created_at;
           draft.workflow!.updated_at = updated_at !== undefined ? updated_at : new Date().toISOString();
           Object.assign(draft, rootFields);

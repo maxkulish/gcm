@@ -1,0 +1,156 @@
+task_id: clo-942
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "One file (.pi/extensions/orchestrate/index.ts, StringEnum at lines 3, 226, 241, 242) plus package.json and package-lock.json" }
+    architecture_novelty: { lean: spec, note: "No new dependency; typebox is already a dev dependency; Type.Unsafe replaces the pi-ai StringEnum" }
+    prior_art: { lean: spec, note: "The linear extension already resolves pi 1.5.2 in its lockfile" }
+    requirement_clarity: { lean: spec, note: "Ticket names the fix and four testable acceptance criteria" }
+    scope_signal: { lean: spec, note: "No estimate, priority Low, S-sized dependency bump" }
+  rationale: "Single-extension dependency upgrade with a stated fix and clear acceptance criteria."
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related: []
+  branch_suggested: kmamemo/clo-942-move-the-orchestrate-pi-extension-to-pi-15x
+  priority: Low
+  branch_actual: chore/clo-942-pi-upgrade
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-11-18T00:00:00Z'
+  updated_at: '2026-11-18T00:00:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-18-clo-942-orchestrate-pi-upgrade.md
+    approved: true
+    approved_sha256_prefix: 822a7ec107ae
+    approved_on_commit: f19c750
+    review_gemini: null
+    review_ollama: null
+    review_fallback: docs/reviews/clo-942-spec-review-claude-fallback.md
+    review_synthesis: docs/reviews/clo-942-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "AC8 rewritten: baseline before implementation, check after merge to main, --paginate"
+      - "AC9 added: mandatory Pi 1.5.2 load check plus invalid-phase runtime rejection"
+      - "TypeScript pinned to 7.0.2 with the same flags in AC5 and Evaluation #1"
+      - "Evaluation #2 gains a positive case to rule out never"
+      - "Sub-task 3 labeled as an extra with the minimatch brace-expansion ^5.0.12 evidence"
+      - "Section 1 notes ^1.5.2 is stricter than linear and lower resolved versions are expected"
+    flagged_suggestions: []
+    owner_revisions:
+      - "Sub-task 1 and AC1b: NonNullable<WorkflowState[\"workflow\"]>[\"status\"] fixes the pre-existing TS2339 at line 1013"
+      - "Evaluation #2: exact WorkflowPhase type equality for phase, from_phase and to_phase"
+      - "AC9 and Evaluation #9: otherwise-valid call on disposable CLO-99942 workflow; diagnostic must name phase"
+      - "Evaluation #7: rg from the extension directory, exit 1 required"
+      - "Constraint: keep main f19c750 CLO-942 entries in PROJECT, ROADMAP, DEPENDENCIES"
+  implement:
+    status: complete
+    dependabot_baseline_open_alerts: []
+    dependabot_baseline_note: "0 open alerts for .pi/extensions/orchestrate/package-lock.json on 2026-11-18"
+    last_phase_completed: "Sub-task 3: brace-expansion override removed"
+    commits: [92f8966, 68ae5d7, b841f32]
+    evaluation:
+      tsc: "0 errors (typescript 7.0.2, AC5 flags)"
+      type_equality: "phase, from_phase, to_phase exactly WorkflowPhase; narrower and wider fail"
+      schema_shape: "{type: string, enum: [13 phases]}, no anyOf/const"
+      npm_audit: "0 vulnerabilities"
+      versions: "pi-coding-agent 1.5.2, pi-tui 1.5.2, undici 8.12.3, minimatch 11.0.3, brace-expansion 5.0.12 and 5.0.13"
+      rg_pi_ai: "exit 1"
+      ac9: "pi -p --mode json: update_workflow_state rejected, 'phase: expected one of [...]'; disposable clo-99942 file deleted"
+    subtask3_result: "brace-expansion override removed; audit 0, lowest resolved 5.0.12"
+    codex_validated: true
+    codex_verdict: PASS
+    codex_model: gpt-6.2-astra
+    codex_report: docs/reviews/clo-942-codex-validation.md
+    gemini_validation_report: null
+    gemini_skipped_reason: "gemini CLI not installed; gpt-5.4 rejected for ChatGPT account, Codex default model used"
+  pr: { status: in_progress, ci_passed: true, pr_url: 'https://github.com/maxkulish/gcm/pull/84', pr_number: 84 }
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: "New workflow for CLO-942"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended=specification, chosen=specification, confidence=high"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work 1/3; not listed in ROADMAP.md or DEPENDENCIES.md"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: spec_written
+    phase: spec
+    details: "Spec drafted; pi-ai dependency removed per owner answer"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "Gemini failed (opencode usage text), Ollama failed (glm-5 retired); Claude fallback APPROVE_WITH_SUGGESTIONS"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "6 suggestions applied, 0 conflicts"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Owner review: line 1013 cast fix, exact type-equality check, stricter AC9, Evaluation #7 path fix; branch fast-forwarded to origin/main f19c750 for the dashboard"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Owner approved spec sha256 822a7ec107ae on f19c750"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: dependabot_baseline
+    phase: implement
+    details: "0 open alerts for the orchestrate manifest"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 1-3 complete"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "origin/chore/clo-942-pi-upgrade at 68ae5d7"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "All evaluations except AC8 (post-merge) pass"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Codex PASS, no defects; Gemini unavailable"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: validation_gate_decision
+    phase: implement
+    details: "Owner chose proceed; implement complete, moving to PR"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: session_wrap_proposed
+    phase: pr
+    details: "3 lessons in .pi/lessons/clo-942-pi-upgrade-lessons.md (uncommitted, post-merge-docs-pr); 2 follow-up candidates"
+  - timestamp: '2026-11-18T00:00:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt, clippy -D warnings, cargo test pass; one flaky Vertex bearer test failure in the first run, 3 clean reruns, logged as T2"
+  - timestamp: '2026-11-18T22:10:22Z'
+    action: pr_created
+    phase: pr
+    details: "PR #84 created; mergeable CLEAN; Linear CLO-942 moved to In Review with PR comment"
+  - timestamp: '2026-11-18T22:15:00Z'
+    action: ci_passed
+    phase: pr
+    details: "CI run 44408948501 green on macos-latest and ubuntu-latest"
