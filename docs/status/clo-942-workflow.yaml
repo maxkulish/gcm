@@ -24,8 +24,8 @@ linear:
   priority: Low
   branch_actual: chore/clo-942-pi-upgrade
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-11-18T00:00:00Z'
   updated_at: '2026-11-18T00:00:00Z'
 phases:
@@ -79,8 +79,8 @@ phases:
     codex_report: docs/reviews/clo-942-codex-validation.md
     gemini_validation_report: null
     gemini_skipped_reason: "gemini CLI not installed; gpt-5.4 rejected for ChatGPT account, Codex default model used"
-  pr: { status: in_progress, ci_passed: true, pr_url: 'https://github.com/maxkulish/gcm/pull/84', pr_number: 84 }
-  complete: { status: pending }
+  pr: { status: complete, approved: true, ci_passed: true, pr_url: 'https://github.com/maxkulish/gcm/pull/84', pr_number: 84 }
+  complete: { status: complete, merged_at: '2026-11-18T22:22:59Z', merge_commit: bbd2204, aggregation_files_updated: true, ac8_open_alerts_after_merge: 0, lessons_file: .pi/lessons/clo-942-pi-upgrade-lessons.md, lessons_verified: false }
 history:
   - timestamp: '2026-11-18T00:00:00Z'
     action: workflow_started
@@ -154,3 +154,19 @@ history:
     action: ci_passed
     phase: pr
     details: "CI run 44408948501 green on macos-latest and ubuntu-latest"
+  - timestamp: '2026-11-18T22:22:59Z'
+    action: pr_merged
+    phase: complete
+    details: "PR #84 squash-merged by owner as bbd2204"
+  - timestamp: '2026-11-18T22:30:00Z'
+    action: ac8_checked
+    phase: complete
+    details: "0 open Dependabot alerts for .pi/extensions/orchestrate/package-lock.json (baseline 0)"
+  - timestamp: '2026-11-18T22:30:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT Recently Completed, ROADMAP Done (Maintenance 4/4), DEPENDENCIES row removed; Linear Done"
+  - timestamp: '2026-11-18T22:30:00Z'
+    action: workflow_complete
+    phase: complete
+    details: "Close-out docs PR from docs/clo-942-complete carries aggregation files and lessons; session-knowledge verify after it merges"
