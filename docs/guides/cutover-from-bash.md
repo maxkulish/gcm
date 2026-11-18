@@ -84,7 +84,7 @@ source ~/.zshrc
 Before relying on the new tool, sanity-check it on a scratch repo:
 
 ```sh
-gcm --plan-only        # preview grouping; touches nothing, no API key needed on the --all path
+gcm --plan-only        # preview the plan (or the single-commit message with --all); stages and commits nothing
 gcm --dry-run          # preview the message/plan; stages and commits nothing
 ```
 

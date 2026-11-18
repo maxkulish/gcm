@@ -1232,12 +1232,113 @@ else
   skip "AC-493-9 needs signing"
 fi
 
-note "AC-493-10: --all --plan-only --json is single plan preview"
-d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"
+note "AC-493-10: --all --plan-only --json is single plan preview with the message (CLO-940)"
+MOCK_MSG="chore(test): mock commit message"
+# Requests the mock received since the last `: > "$CAPTURE"`.
+reqs() { wc -l < "$CAPTURE" | tr -d ' '; }
+# Assert on /tmp/gcm-json.out; $1 is a python expression over the envelope `d`.
+env_ok() { python3 -c "import json,sys; d=json.load(open('/tmp/gcm-json.out')); m=sys.argv[1]; assert $1, d" "$MOCK_MSG"; }
+d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"; : > "$CAPTURE"
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --plan-only --json >/tmp/gcm-json.out 2>/tmp/gcm-json.err ); rc=$?
-python3 -c "import json; d=json.load(open('/tmp/gcm-json.out')); assert d['status']=='plan' and d['mode']=='single' and isinstance(d['changed_files'],list), d"
-[ $? -eq 0 ] && ok "--all --plan-only JSON valid" || bad "--all --plan-only JSON invalid"
+env_ok "d['v']==1 and d['status']=='plan' and d['mode']=='single' and sorted(d['changed_files'])==['a.txt','b.txt'] and d['plan']=={'groups':[]} and d['cached'] is False" \
+  && ok "--all --plan-only JSON keeps the v1 plan fields" || bad "--all --plan-only JSON shape"
+env_ok "d.get('message')==m" && ok "--all --plan-only JSON carries the generated message" || bad "--all --plan-only JSON message"
+[ "$(reqs)" = "1" ] && ok "one message request" || bad "--all --plan-only made $(reqs) requests"
 [ $rc -eq 0 ] && ok "exit 0" || bad "--all --plan-only exit (rc=$rc)"
+rm -rf "$d"
+
+note "CLO-940-1: --all --plan-only prints the preview and changes nothing"
+d="$(new_repo)"; printf 'init\n' > "$d/seed.txt"
+git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+git -C "$d" -c commit.gpgsign=false commit -qm init
+echo hi > "$d/a.txt"; printf 'changed\n' > "$d/seed.txt"; : > "$CAPTURE"
+head_before="$(git -C "$d" rev-parse HEAD)"; tree_before="$(git -C "$d" write-tree)"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --plan-only >/tmp/gcm-out 2>/tmp/gcm-err ); rc=$?
+[ $rc -eq 0 ] && ok "exit 0" || bad "--all --plan-only human exit (rc=$rc)"
+grep -qF "$MOCK_MSG" /tmp/gcm-out && ok "preview prints the generated message on stdout" || bad "message not on stdout"
+[ "$(reqs)" = "1" ] && ok "one message request" || bad "human --all --plan-only made $(reqs) requests"
+[ "$(git -C "$d" rev-parse HEAD)" = "$head_before" ] && ok "HEAD unchanged" || bad "HEAD moved"
+[ "$(git -C "$d" write-tree)" = "$tree_before" ] && ok "index unchanged" || bad "index changed"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run >/tmp/gcm-out-dry 2>/dev/null )
+cmp -s /tmp/gcm-out /tmp/gcm-out-dry && ok "stdout matches the --all --dry-run preview" || bad "--all --plan-only stdout differs from --all --dry-run"
+rm -rf "$d" /tmp/gcm-out-dry
+
+note "CLO-940-2: --all --plan-only leaves the repo's plan cache byte-identical"
+c940="$(mktemp -d)"; d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"
+printf '%s' '{"groups":[{"files":["a.txt","b.txt"],"summary":"ab","commit_message":"feat: ab"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_CACHE_DIR="$c940" "$BIN" --dry-run --json >/dev/null 2>&1 )
+cfile="$(ls "$c940"/plan-*.json 2>/dev/null | head -1)"
+if [ -n "$cfile" ]; then
+  ok "grouped --dry-run warmed this repo's plan cache"
+  cp "$cfile" "$c940.copy"
+  ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" GCM_CACHE_DIR="$c940" "$BIN" --all --plan-only >/dev/null 2>&1 ); rc=$?
+  [ $rc -eq 0 ] && ok "exit 0" || bad "--all --plan-only exit (rc=$rc)"
+  cmp -s "$cfile" "$c940.copy" && ok "cache file byte-identical" || bad "cache file changed or deleted"
+  [ "$(ls "$c940"/plan-*.json 2>/dev/null | wc -l | tr -d ' ')" = "1" ] && ok "no new cache file" || bad "cache file count changed"
+else
+  bad "grouped --dry-run did not warm the cache"
+fi
+: > "$PLAN_FILE"; rm -rf "$d" "$c940" "$c940.copy"
+
+note "CLO-940-3: --all --dry-run --json carries the generated message"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --all --dry-run --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+[ $rc -eq 0 ] && ok "exit 0" || bad "--all --dry-run exit (rc=$rc)"
+env_ok "d['status']=='plan' and d['mode']=='single' and d.get('message')==m" && ok "--all --dry-run JSON message" || bad "--all --dry-run JSON message"
+rm -rf "$d"
+
+note "CLO-940-4: clean merge in progress: --plan-only unchanged, --dry-run carries the message"
+d="$(new_repo)"
+printf 'a\n' > "$d/a.txt"; printf 'b\n' > "$d/b.txt"
+git -C "$d" -c commit.gpgsign=false add -A >/dev/null
+git -C "$d" -c commit.gpgsign=false commit -qm base
+main_b="$(git -C "$d" branch --show-current)"
+git -C "$d" switch -q -c feature
+printf 'a2\n' > "$d/a.txt"; git -C "$d" -c commit.gpgsign=false commit -qam feat
+git -C "$d" switch -q "$main_b"
+printf 'b2\n' > "$d/b.txt"; git -C "$d" -c commit.gpgsign=false commit -qam mainline
+git -C "$d" merge --no-commit --no-ff feature >/dev/null 2>&1 || true
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+[ $rc -eq 0 ] && ok "merge --plan-only exit 0" || bad "merge --plan-only exit (rc=$rc)"
+env_ok "d['status']=='plan' and d['mode']=='single' and d['plan']=={'groups':[]} and 'message' not in d" && ok "merge --plan-only: empty plan, no message" || bad "merge --plan-only envelope"
+[ "$(reqs)" = "0" ] && ok "merge --plan-only made no request" || bad "merge --plan-only made $(reqs) requests"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+[ $rc -eq 0 ] && ok "merge --dry-run exit 0" || bad "merge --dry-run exit (rc=$rc)"
+env_ok "d['status']=='plan' and d['mode']=='single' and d.get('message')==m" && ok "merge --dry-run JSON message" || bad "merge --dry-run envelope"
+[ "$(reqs)" = "1" ] && ok "merge --dry-run made one request" || bad "merge --dry-run made $(reqs) requests"
+git -C "$d" rev-parse --verify --quiet MERGE_HEAD >/dev/null && ok "merge still in progress" || bad "merge state lost"
+rm -rf "$d"
+
+note "CLO-940-5: grouping fallback: --plan-only unchanged, --dry-run carries the message"
+d="$(new_repo)"; echo hi > "$d/a.txt"; echo there > "$d/b.txt"; : > "$PLAN_FILE"; : > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+[ $rc -eq 0 ] && ok "fallback --plan-only exit 0" || bad "fallback --plan-only exit (rc=$rc)"
+env_ok "d['status']=='plan' and d['mode']=='single' and d['plan']=={'groups':[]} and 'message' not in d" && ok "fallback --plan-only: empty plan, no message" || bad "fallback --plan-only envelope"
+[ "$(reqs)" = "1" ] && ok "fallback --plan-only made only the grouping request" || bad "fallback --plan-only made $(reqs) requests"
+: > "$CAPTURE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --dry-run --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+[ $rc -eq 0 ] && ok "fallback --dry-run exit 0" || bad "fallback --dry-run exit (rc=$rc)"
+env_ok "d['status']=='plan' and d['mode']=='single' and d.get('message')==m" && ok "fallback --dry-run JSON message" || bad "fallback --dry-run envelope"
+[ "$(reqs)" = "2" ] && ok "fallback --dry-run made the grouping and message requests" || bad "fallback --dry-run made $(reqs) requests"
+rm -rf "$d"
+
+note "CLO-940-6: grouped --plan-only --json with a valid plan has no message"
+d="$(new_repo)"; echo hi > "$d/a.txt"
+printf '%s' '{"groups":[{"files":["a.txt"],"summary":"a","commit_message":"feat: a"}]}' > "$PLAN_FILE"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="$MOCK_URL" "$BIN" --plan-only --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+env_ok "d['status']=='plan' and d['mode']=='plan_only' and 'message' not in d" && ok "grouped preview has no message" || bad "grouped preview envelope (rc=$rc)"
+: > "$PLAN_FILE"; rm -rf "$d"
+
+note "CLO-940-7: --all --plan-only provider error -> exit 1, error envelope, no message"
+d="$(new_repo)"; echo hi > "$d/a.txt"; : > "$CAPTURE"
+tree_before="$(git -C "$d" write-tree)"
+( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/fail500/v1" GCM_RETRY_MAX=0 "$BIN" --all --plan-only --json >/tmp/gcm-json.out 2>/dev/null ); rc=$?
+[ $rc -eq 1 ] && ok "exit 1" || bad "provider error exit (rc=$rc)"
+[ "$(reqs)" = "1" ] && ok "one request reached the provider" || bad "provider error case made $(reqs) requests"
+env_ok "d['status']=='error' and d['mode']=='single' and d['error']['code']=='Provider' and 'message' not in d" && ok "Provider error envelope, mode single, no message" || bad "provider error envelope"
+[ "$(git -C "$d" write-tree)" = "$tree_before" ] && ok "index unchanged" || bad "index changed"
 rm -rf "$d"
 
 note "AC-493-11: GCM_LOG_LEVEL governs stderr logs and stdout stays JSON"

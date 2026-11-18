@@ -914,8 +914,10 @@ fn single_commit_path(
 ) -> Envelope {
     let changed_paths: Vec<String> = changed.iter().map(|c| c.path.clone()).collect();
 
-    if args.plan_only {
-        // Non-destructive single-path preview: no provider call needed.
+    if args.plan_only && !args.all {
+        // `--plan-only` on a merge in progress or the grouping fallback stays a
+        // non-destructive preview without a message-generation call. With
+        // `--all` it generates the message below, like `--dry-run --all`.
         return output::plan(
             Some(provider_name),
             Some(model),
@@ -974,18 +976,11 @@ fn single_commit_path(
         }
     };
 
-    if args.dry_run {
+    if args.dry_run || args.plan_only {
         if !args.json {
             ui_preview(&message);
         }
-        return output::plan(
-            Some(provider_name),
-            Some(model),
-            output::MODE_SINGLE,
-            Plan { groups: vec![] },
-            changed_paths,
-            false,
-        );
+        return output::single_preview(Some(provider_name), Some(model), message, changed_paths);
     }
 
     // `--all`, a clean merge, and the grouping fallback all clear the cached
@@ -1242,8 +1237,8 @@ fn print_human(env: &Envelope) {
             }
         }
         output::STATUS_PLAN => {
-            // The preview itself was already printed during execution (the
-            // message is not part of the stable envelope). Nothing to repeat.
+            // The preview, including a single-commit message, was already
+            // printed during execution. Nothing to repeat.
         }
         output::STATUS_COMMITTED => {
             if let Some(commit) = &env.commit {
