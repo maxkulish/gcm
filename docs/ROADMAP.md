@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-18 (CLO-940 and CLO-941 merged; CLO-942, CLO-943 and CLO-944 filed)
+**Last Updated**: 2026-11-18 (CLO-940 and CLO-941 merged; CLO-942 started; CLO-943 and CLO-944 filed)
 
 ## Summary
 
@@ -124,4 +124,4 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 | CLO-545 | Migrate OpenAI provider to GPT-5.6 (terra default, luna selectable), validate to GPT-5.6 family | Done | CLO-489 (related) |
 | CLO-547 | Harden `gcm provider` model discovery: capability filtering + no-inject-after-live + transport tests | Done | CLO-516 (related), split from CLO-545 |
 | CLO-564 | Add live Vertex model discovery + refresh Gemini catalog (default → gemini-3.5-flash-lite) | Done | CLO-547/537/516 (related); closed CLO-537 design-D4 deferral |
-| [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | Move the orchestrate pi extension to pi 1.5.x and remove the undici and minimatch overrides | Backlog | PR #81 (follow-up) |
+| [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | Move the orchestrate pi extension to pi 1.5.x and remove the undici and minimatch overrides | In Progress | PR #81 (follow-up) |
