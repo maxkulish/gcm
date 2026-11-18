@@ -1,4 +1,6 @@
 task_id: clo-940
+task_title: "Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message"
+linear_url: https://linear.app/cloud-ai/issue/CLO-940
 task_type: specification
 classification:
   recommended: specification
@@ -17,6 +19,7 @@ linear:
   team: Cloud-ai
   project: GCM
   status_at_start: Todo
+  status_at_complete: Done
   blocks: []
   blocked_by: []
   related: [CLO-941]
@@ -55,6 +58,7 @@ phases:
     live_check: "Vertex gemini-4-hydrogen: --plan-only --all prints preview, --json carries message, nothing staged; PTY run and clean-tree noop (no request) verified"
     codex_validated: true
     codex_verdict: PASS_WITH_NOTES
+    validation_fix_iteration_count: 1
     codex_report: docs/reviews/clo-940-codex-validation.md
     codex_model: account default
     gemini_validation_report: null  # gemini CLI not installed
@@ -72,6 +76,7 @@ phases:
     merged_at: '2026-11-18T07:33:11Z'
     aggregation_files_updated: true
     lessons: none  # session notes had no entries
+    merge_commit: d08e6db
 history:
   - timestamp: '2026-11-17T22:00:00Z'
     action: workflow_started
