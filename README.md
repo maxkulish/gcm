@@ -283,6 +283,23 @@ Example:
 gcm --json --plan-only | jq -e '.status == "plan" and .mode == "plan_only"'
 ```
 
+A single-commit preview (`status: "plan"`, `mode: "single"`) also carries a top-level
+`message` field with the generated commit message. The field is present on successful
+`--plan-only --all` and `--dry-run --all` runs, and on `--dry-run` without `--plan-only`
+during a clean merge or when grouping falls back to a single commit. Without `--all`,
+`--plan-only` takes precedence over `--dry-run`: `--plan-only` (with or without
+`--dry-run`) during a clean merge or when grouping falls back to a single commit returns
+the plan without `message`. Grouped previews and every non-`plan` envelope, including
+`noop` and `error`, have no `message`. The message of a real commit is under
+`commit.message`, not the top-level `message`.
+
+To read the preview message in a script (empty output and a non-zero exit when the field
+is absent):
+
+```sh
+gcm --json --plan-only --all | jq -er '.message // empty'
+```
+
 ### Providers
 
 Select with `--provider` or `GCM_PROVIDER` (precedence: flag > env > default `groq`).
