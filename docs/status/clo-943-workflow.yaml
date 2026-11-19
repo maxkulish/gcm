@@ -1,0 +1,82 @@
+task_id: CLO-943
+title: "Document the `message` field of the single-commit preview in the README `--json` section"
+linear_url: https://linear.app/cloud-ai/issue/CLO-943/document-the-message-field-of-the-single-commit-preview-in-the-readme
+branch: docs/clo-943-json-message
+task_type: specification
+workflow:
+  current_phase: implement
+  status: in_progress
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:         { lean: spec, note: "One file: README.md section 'Machine-readable mode (--json)' (README.md:272)" }
+    architecture_novelty: { lean: spec, note: "Docs only; field already exists (src/output.rs:55 Option<String>), no code change" }
+    prior_art:            { lean: spec, note: "Existing jq example at README.md:283 is the template" }
+    requirement_clarity:  { lean: spec, note: "Scope and AC are explicit; source of truth is docs/specs/2026-11-17-clo-940-plan-only-all-preview.md + scripts/acceptance.sh" }
+    scope_signal:         { lean: spec, note: "Priority Low, no estimate, two checklist items" }
+  rationale: "Single-section README addition for an already-shipped field; requirements are fully derivable from the CLO-940 spec."
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-19-clo-943-json-message.md
+    approved: true
+    review_gemini: null
+    review_ollama: null
+    review_claude: docs/reviews/clo-943-spec-review-claude-fallback.md
+    review_synthesis: docs/reviews/clo-943-spec-review-synthesis.md
+    review_verdict: APPROVE_WITH_SUGGESTIONS
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "jq example uses '.message // empty' (plain -er prints null, exit 1)"
+      - "missing-message edge case requires empty stdout"
+      - "fallback wording widened to 'when grouping falls back to a single commit' (4 triggers cited)"
+      - "evaluation #5 uses a saved envelope"
+      - "error-envelope citation -> CLO-940-7"
+      - "new example gets its own lead-in; existing 'Example:' unchanged"
+    flagged_suggestions: []
+    owner_review_round_1:
+      - "--dry-run cases qualified 'without --plan-only'; --plan-only precedence without --all stated (src/main.rs:917); presence scoped to successful previews"
+      - "fallback request count limited to the CLO-940-5 fixture (cached-plan and budget triggers fall back before a grouping request)"
+      - "evaluation #7 compares failure sets against a same-environment baseline on b724366 (AC-488-1, AC-493-7 environment-dependent)"
+  implement: { status: in_progress }
+  pr: { status: pending }
+  complete: { status: pending }
+history:
+  - timestamp: 2026-11-19T21:40:00Z
+    action: workflow_started
+    phase: init
+    details: "New workflow; Linear issue fetched (Backlog, Low, related CLO-940), no comments"
+  - timestamp: 2026-11-19T21:42:00Z
+    action: task_classified
+    phase: init
+    details: "recommended=specification, chosen=specification, confidence=high (5/5)"
+  - timestamp: 2026-11-19T21:45:00Z
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work 1/3, ROADMAP In Progress, removed from DEPENDENCIES Unblocked & Ready"
+  - timestamp: 2026-11-19T21:55:00Z
+    action: spec_written
+    phase: spec
+    details: "docs/specs/2026-11-19-clo-943-json-message.md (S, 1 sub-task); scope widened to fallback --plan-only per CLO-940-5"
+  - timestamp: 2026-11-19T22:05:00Z
+    action: spec_review_complete
+    phase: spec
+    details: "APPROVE_WITH_SUGGESTIONS from Claude fallback only; Gemini (opencode run invocation) and Ollama (glm-5 retired) failed"
+  - timestamp: 2026-11-19T22:07:00Z
+    action: spec_review_applied
+    phase: spec
+    details: "6/6 suggestions applied, 0 conflicts"
+  - timestamp: 2026-11-19T22:30:00Z
+    action: spec_revised
+    phase: spec
+    details: "Owner review round 1: 2 fixes applied (flag precedence, same-environment acceptance baseline); both verified against src/main.rs:917, :494, :621 and scripts/acceptance.sh:1201"
+  - timestamp: 2026-11-19T22:45:00Z
+    action: spec_approved
+    phase: spec
+    details: "Owner approved revised spec blob 4f61983 (both round-1 findings resolved); acceptance runs pending after README edit"
