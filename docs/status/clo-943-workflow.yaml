@@ -5,7 +5,7 @@ branch: docs/clo-943-json-message
 task_type: specification
 workflow:
   current_phase: pr
-  status: in_progress
+  status: checkpoint
 classification:
   recommended: specification
   chosen: specification
@@ -59,7 +59,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/87
     pr_number: 87
-    ci_passed: false
+    ci_passed: true
     preflight_note: "one cargo test run had 1 failure, not reproduced in 4 reruns (docs-only change)"
 
   complete: { status: pending }
@@ -112,3 +112,7 @@ history:
     action: pr_created
     phase: pr
     details: "PR #87; session:wrap distilled 3 lessons into .session/notes.md (post-merge-docs-pr flow, propose after lesson files exist)"
+  - timestamp: 2026-11-19T23:30:00Z
+    action: ci_passed
+    phase: pr
+    details: "CI run 44623421988 success; PR #87 mergeStateStatus CLEAN; awaiting owner squash-merge"
