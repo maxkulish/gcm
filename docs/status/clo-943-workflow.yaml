@@ -55,7 +55,13 @@ phases:
     gemini_validation_report: null
     gemini_skip_reason: "Gemini backend failed earlier in session (opencode run invocation)"
 
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/87
+    pr_number: 87
+    ci_passed: false
+    preflight_note: "one cargo test run had 1 failure, not reproduced in 4 reruns (docs-only change)"
+
   complete: { status: pending }
 history:
   - timestamp: 2026-11-19T21:40:00Z
@@ -98,3 +104,11 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "PASS_WITH_NOTES; 2 LOW findings applied in 88e95c8 (README opening sentence scoped, spec names single_commit_path)"
+  - timestamp: 2026-11-19T23:20:00Z
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt, clippy -D warnings, cargo test pass; one flaky cargo test failure did not repeat"
+  - timestamp: 2026-11-19T23:22:00Z
+    action: pr_created
+    phase: pr
+    details: "PR #87; session:wrap distilled 3 lessons into .session/notes.md (post-merge-docs-pr flow, propose after lesson files exist)"
