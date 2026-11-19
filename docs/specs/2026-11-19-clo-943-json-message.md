@@ -31,7 +31,7 @@ Presence table, from the CLO-940 spec (`docs/specs/2026-11-17-clo-940-plan-only-
 
 The table lists successful previews. If message generation fails, the run returns an `error` envelope without `message`; a clean tree returns a `noop` envelope without `message`.
 
-Flag precedence: the CLI accepts `--dry-run --plan-only` together. Without `--all`, `--plan-only` wins on the clean-merge and fallback paths: `run_single` returns the `plan` envelope before it checks `--dry-run` (`src/main.rs:917`), so no message is generated.
+Flag precedence: the CLI accepts `--dry-run --plan-only` together. Without `--all`, `--plan-only` wins on the clean-merge and fallback paths: `single_commit_path` returns the `plan` envelope before it checks `--dry-run` (`src/main.rs:917`), so no message is generated. CLO-940-4 and CLO-940-5 test each flag separately; the combined-flag behavior was confirmed by mock runs during the Codex validation (`docs/reviews/clo-943-codex-validation.md`).
 
 Grouping falls back to a single commit through `run_fallback` on four triggers: an invalid cached plan (`src/main.rs:494-511`), a prompt-budget refusal (`src/main.rs:621`), a provider error classed as fallback (`src/main.rs:689-695`), and a plan that fails validation (`src/main.rs:699`). The README names the case as "when grouping falls back to a single commit" and does not list the triggers. The provider request count on the fallback depends on the trigger: an invalid cached plan and a prompt-budget refusal fall back before any grouping request. The README does not state a request count.
 

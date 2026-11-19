@@ -4,7 +4,7 @@ linear_url: https://linear.app/cloud-ai/issue/CLO-943/document-the-message-field
 branch: docs/clo-943-json-message
 task_type: specification
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
 classification:
   recommended: specification
@@ -44,7 +44,17 @@ phases:
       - "--dry-run cases qualified 'without --plan-only'; --plan-only precedence without --all stated (src/main.rs:917); presence scoped to successful previews"
       - "fallback request count limited to the CLO-940-5 fixture (cached-plan and budget triggers fall back before a grouping request)"
       - "evaluation #7 compares failure sets against a same-environment baseline on b724366 (AC-488-1, AC-493-7 environment-dependent)"
-  implement: { status: in_progress }
+  implement:
+    status: complete
+    commits: [34e6a25, 3cb47f7, 88e95c8]
+    acceptance_baseline: "base (README at b724366): PASS=294 FAIL=1 SKIP=1"
+    acceptance_revision: "final README: PASS=294 FAIL=1 SKIP=1, failure sets equal (AC-488-1 only), same binary sha"
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-943-codex-validation.md
+    gemini_validation_report: null
+    gemini_skip_reason: "Gemini backend failed earlier in session (opencode run invocation)"
+
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -80,3 +90,11 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved revised spec blob 4f61983 (both round-1 findings resolved); acceptance runs pending after README edit"
+  - timestamp: 2026-11-19T23:00:00Z
+    action: implementation_complete
+    phase: implement
+    details: "README --json section extended (AC-1..AC-6); evals 1-7 pass; acceptance failure sets equal on base and revision"
+  - timestamp: 2026-11-19T23:10:00Z
+    action: codex_validation_complete
+    phase: implement
+    details: "PASS_WITH_NOTES; 2 LOW findings applied in 88e95c8 (README opening sentence scoped, spec names single_commit_path)"
