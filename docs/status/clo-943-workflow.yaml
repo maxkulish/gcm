@@ -3,6 +3,10 @@ title: "Document the `message` field of the single-commit preview in the README 
 linear_url: https://linear.app/cloud-ai/issue/CLO-943/document-the-message-field-of-the-single-commit-preview-in-the-readme
 branch: docs/clo-943-json-message
 task_type: specification
+task_title: "Document the `message` field of the single-commit preview in the README `--json` section"
+linear:
+  status_at_complete: Done
+  branch_actual: docs/clo-943-json-message
 workflow:
   current_phase: complete
   status: complete
@@ -67,6 +71,13 @@ phases:
   complete:
     status: complete
     merged_at: 2026-11-20T08:16:25Z
+    merge_commit: 01418f1
+    linear_done: true
+    lessons_file: .pi/lessons/clo-943-json-message-lessons.md
+    lessons_learned:
+      - "L1: grouping falls back to a single commit on four triggers; --plan-only beats --dry-run without --all"
+      - "L2: judge scripts/acceptance.sh by the failure set against a same-environment baseline"
+      - "lok-workflow-templates L2: a spec-review synthesis can report a verdict with no second model behind it"
     aggregation_files_updated: true
     closeout_branch: docs/clo-943-complete
     lessons:
