@@ -73,7 +73,7 @@
 
 3. **If design doc exists but not finalized**:
    - Display: "Design document exists but not finalized."
-   - **If `review_completed: false`**: Run `/design-doc:review CLO-XX` then Apply Review Feedback
+   - **If `review_completed: false`**: Run `/design-doc:review CLO-XX`, check the results (see "Check Review Results" below), then Apply Review Feedback only from the usable reports of this run
    - **If `review_completed: true` but `review_applied: false`**: Run Apply Review Feedback only
    - Update state: `phases.design.status: checkpoint`
 
