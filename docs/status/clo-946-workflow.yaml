@@ -59,6 +59,11 @@ phases:
       - "N8/N10: scalar counter, no length(array), no bashisms"
       - "N9: review_classify header comment updated"
       - "N11: comparison sha pinned to 9772049"
+    owner_revisions:
+      - "R1 (2026-11-20): P4 added - the three exact pre-PR legend bullets are placeholders in synthesis-prepr only; one fixture per bullet exits 1; non-exact prose stays a verdict"
+      - "R2: Evaluation 13 stubs use APPROVE / NEEDS_REVISION with Priority Actions for spec-review and design-review, PASS / FAIL with Must Fix Before PR for pre-pr-validation"
+      - "R3: AC3 clarified - a P2 line is not a token line, so a real verdict on the next line counts; earlier PASS plus P2 heading with body FAIL exits 3"
+      - "R4: AC5 parity limited to cases where the first qualifying section stays the same; documented 0-to-1 change for H3 conditional PASS then H2 real PASS"
     flagged_suggestions: []
   implement: { status: pending }
   pr: { status: pending }
@@ -88,3 +93,7 @@ history:
     action: spec_review_applied
     phase: spec
     details: "All synthesis Priority Actions applied; prototype re-validated (824 checks, no difference vs 9772049; all fixtures as expected); no ADR conflicts"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Owner chose revise: P4 legend placeholders, Evaluation 13 phase tokens, AC3 P2 rule, AC5 parity narrowed; prototype re-validated (836 checks, no difference vs 9772049; new fixtures as expected)"
