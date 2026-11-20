@@ -132,10 +132,12 @@ phases:
     revised_5_sha256_prefix: d9c54fcfb20a
   implement:
     status: in_progress
-    last_phase_completed: 2
+    last_phase_completed: 5
     commits:
       - 5cf6b4a  # sub-task 1: shared review guard and usable-report check
       - 20b65c9  # sub-task 2: spec-review workflow
+      - 9f3fc37  # sub-task 3: design-review workflow
+      - 02404df  # sub-tasks 4 and 5: pre-PR validation workflow
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -207,3 +209,15 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "fix/clo-945-review-gates at 20b65c9"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-task 3: design-review on the spec-review structure (9f3fc37); stub cases ok, one failing, both failing, no Actionable Feedback, data, zero reviews and staging failure pass"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 4 and 5: pre-PR validation with branch diff input, guard, restricted fallback and synthesis, staged writer and verdict_gate (02404df); stub cases incl. input failure (#20), NO_REVIEWS, SYNTHESIS_FAILED, model-written NO_REVIEWS (#8d) and staging failure pass"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-945-review-gates at 02404df"
