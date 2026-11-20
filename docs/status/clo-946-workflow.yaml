@@ -70,6 +70,11 @@ phases:
     commits:
       - "f9b38d0 fix(CLO-946): review verdict check reads every verdict heading"
       - "9deacbf test(CLO-946): review guard tests in CI"
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-946-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-946-gemini-validation.md
+    gemini_verdict: PASS_WITH_NOTES
     evidence:
       tests: "sh and dash on macOS awk; mawk and gawk on ubuntu:24.04 - all tests passed"
       red_first: "23 cases fail against the guard at 9772049 (conflicts, P3/P4 placeholders, h3cond, named reasons)"
@@ -120,3 +125,7 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "fix/clo-946-verdict-check pushed with f9b38d0 and 9deacbf"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Gate at d141fc4: usable=2; Codex FAIL (dash matcher accepts --- and PASSor; prepr upper-cases the second token), Gemini PASS_WITH_NOTES; both Codex findings reproduced"
