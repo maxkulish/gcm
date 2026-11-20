@@ -344,11 +344,7 @@ if [ "$N" -eq 0 ]; then
 elif [ "$SYN_SUCCESS" = true ] && review_usable synthesis-review "$RUN/synthesis.final"; then
   { printf '%s\n' "# Spec Review Synthesis: $SLUG" '' "**Reviewers**: $REVIEWERS" "**Synthesized**: $REVIEW_DATE" '**Pipeline**: lok spec-review' '' '---' ''; cat "$RUN/synthesis.final"; } > "$STAGE/synthesis.md" || exit 1
 else
-  case "$SYN_SUCCESS" in
-    skipped) WHY="synthesis step did not run" ;;
-    true) WHY="synthesis output failed the synthesis check" ;;
-    *) WHY="synthesis step failed" ;;
-  esac
+  WHY=$(review_synthesis_reason "$SYN_SUCCESS" synthesis-review "$RUN/synthesis.final")
   { echo "SYNTHESIS_FAILED: $WHY"; SYN_HEAD; echo "Usable reports:"; for f in $USABLE_LIST; do echo "- $f"; done; } > "$STAGE/synthesis.md" || exit 1
 fi
 
