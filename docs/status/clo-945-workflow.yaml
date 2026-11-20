@@ -132,12 +132,14 @@ phases:
     revised_5_sha256_prefix: d9c54fcfb20a
   implement:
     status: in_progress
-    last_phase_completed: 5
+    last_phase_completed: 7
     commits:
       - 5cf6b4a  # sub-task 1: shared review guard and usable-report check
       - 20b65c9  # sub-task 2: spec-review workflow
       - 9f3fc37  # sub-task 3: design-review workflow
       - 02404df  # sub-tasks 4 and 5: pre-PR validation workflow
+      - 19e6f2a  # sub-task 6: inline validation gate and lok.toml backends
+      - 6d83a3f  # sub-task 7: phase docs and templates
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -221,3 +223,15 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "fix/clo-945-review-gates at 02404df"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-task 6: inline gate in implement.md runs from a temp script file behind the guard, lok.toml gemini on google-vertex and ollama disabled (19e6f2a); stub cases ok/ok, one failing, both failing, prose, help, data, slow codex, dev-task docs and no-main input failure pass"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-task 7: spec/design phases, orchestrate, design-doc:review and both templates name Codex, read failures by REVIEW_FAILED prefix, add validation_override_no_reviews (6d83a3f); only legacy review_ollama reads remain"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-945-review-gates at 6d83a3f"
