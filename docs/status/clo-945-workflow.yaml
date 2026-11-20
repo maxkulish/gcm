@@ -130,7 +130,9 @@ phases:
       - "Gemini: min_deps_success = 0 on fallback_status; disproved by lok/src/workflow.rs:1631-1638"
       - "Gemini: env -u CLAUDECODE for claude -p; disproved by a probe with CLAUDECODE=1"
     revised_5_sha256_prefix: d9c54fcfb20a
-  implement: { status: pending }
+  implement:
+    status: in_progress
+    commits: []
   pr: { status: pending }
   complete: { status: pending }
 history:
