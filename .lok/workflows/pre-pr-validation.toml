@@ -393,7 +393,7 @@ CU=0; printf '%s\n' "$STATUS" | grep -qx 'codex=usable' && CU=1
 FU=0; [ "$FSTATUS" = "fallback=usable" ] && FU=1
 SYN_TARGET="docs/reviews/$SLUG-validation-synthesis.md"
 if [ -f "$RUN/input-failed" ]; then
-  { echo "REVIEW_INPUT_FAILED: $(sed -n '1p' "$RUN/input-failed")"; printf '%s\n' '' "# Pre-PR Validation Synthesis: $SLUG" '' "**Validated**: $REVIEW_DATE" '**Pipeline**: lok pre-pr-validation' '' '---' '' 'The branch diff could not be prepared, so no reviewer ran.'; } > "$STAGE/synthesis.md" || exit 1
+  { echo "REVIEW_INPUT_FAILED: $(sed -n '1p' "$RUN/input-failed")"; printf '%s\n' '' "# Pre-PR Validation Synthesis: $SLUG" '' '**Reviewers**: none usable' "**Validated**: $REVIEW_DATE" '**Pipeline**: lok pre-pr-validation' '' '---' '' 'The branch diff could not be prepared, so no reviewer ran.'; } > "$STAGE/synthesis.md" || exit 1
   mv -f "$STAGE/synthesis.md" "$SYN_TARGET" || exit 1
   echo "REVIEW_INPUT_FAILED: see $SYN_TARGET"
   exit 1
