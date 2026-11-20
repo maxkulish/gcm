@@ -13,6 +13,12 @@
 #       "REVIEW_FAILED: <reviewer> <model>: <reason>". Always returns 0.
 #   review_fail_line <reviewer> <model> <reason> <stderr-file>
 #       Print one REVIEW_FAILED line with the stderr excerpt.
+#   review_classify <success> <output-file> <phase>
+#       Print "usable", "guard" (the output starts with REVIEW_FAILED:), or the
+#       failure reason: "check rejected output", "step failed", "not a usable report".
+#   review_fill_template <template> <out-file> <KEY>...
+#       Copy <template> to <out-file>, replacing each __KEY__ with the value of the
+#       environment variable RV_KEY, literally (no escapes, no regex).
 #
 # Variables:
 #   REVIEW_OPENCODE_PERMISSION  read-only permission config for opencode (OPENCODE_CONFIG_CONTENT)
@@ -156,4 +162,39 @@ review_guard() {
   fi
   cat "$_rg_out"
   return 0
+}
+
+review_classify() {
+  _rc_first=$(sed -n '1p' "$2" 2>/dev/null)
+  case "$_rc_first" in
+    REVIEW_FAILED:*) echo guard; return 0 ;;
+  esac
+  if [ "$1" != true ]; then
+    if grep -q '[^[:space:]]' "$2" 2>/dev/null; then echo "check rejected output"; else echo "step failed"; fi
+    return 0
+  fi
+  if review_usable "$3" "$2"; then echo usable; else echo "not a usable report"; fi
+}
+
+review_fill_template() {
+  _ft_tpl=$1
+  _ft_out=$2
+  shift 2
+  awk -v keys="$*" '
+    BEGIN { nk = split(keys, K, " ") }
+    {
+      line = $0; out = ""
+      while (1) {
+        best = 0; bk = ""
+        for (i = 1; i <= nk; i++) {
+          p = index(line, "__" K[i] "__")
+          if (p > 0 && (best == 0 || p < best)) { best = p; bk = K[i] }
+        }
+        if (best == 0) break
+        out = out substr(line, 1, best - 1) ENVIRON["RV_" bk]
+        line = substr(line, best + length(bk) + 4)
+      }
+      print out line
+    }
+  ' "$_ft_tpl" > "$_ft_out"
 }
