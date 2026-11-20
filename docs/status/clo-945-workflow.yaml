@@ -1,0 +1,192 @@
+task_id: clo-945
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "4 files in one area: .lok/workflows/{spec-review,design-review,pre-pr-validation}.toml and .claude/commands/task/phases/implement.md" }
+    architecture_novelty: { lean: spec, note: "No new dependency or interface; flag, model-pin and output-validation edits" }
+    prior_art: { lean: spec, note: "REVIEW_FAILED checks and GEMINI_MODEL/OLLAMA_MODEL env overrides already exist in the workflows" }
+    requirement_clarity: { lean: spec, note: "Maintainer decisions dated 2026-11-18 and 7 testable acceptance criteria" }
+    scope_signal: { lean: spec, note: "No estimate, Bug label, M-sized edit set" }
+  rationale: "Well-scoped review-gate fix with settled maintainer decisions; a design phase adds nothing."
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Todo
+  blocks: []
+  blocked_by: []
+  related: [CLO-941, CLO-942, CLO-944]
+  branch_suggested: kmamemo/clo-945-fix-the-task-phase-review-gates-when-a
+  priority: Medium
+  branch_actual: fix/clo-945-review-gates
+workflow:
+  current_phase: implement
+  status: in_progress
+  created_at: '2026-11-19T00:00:00Z'
+  updated_at: '2026-11-20T00:00:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-19-clo-945-review-gates.md
+    approved: true
+    approved_sha256_prefix: d9c54fcfb20a
+    approved_on_commit: b724366
+    review_method: "Fixed commands run by hand (owner choice); lok spec-review is the subject of this task"
+    review_gemini: docs/reviews/clo-945-spec-review-gemini.md
+    review_codex: docs/reviews/clo-945-spec-review-codex.md
+    review_ollama: null
+    review_synthesis: docs/reviews/clo-945-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "Problem statement: defects 6-9 added (unguarded claude_fallback, substring REVIEW_FAILED, rejected or stale output passing, unreliable health checks)"
+      - "AC2 and constraints: Gemini runs with opencode --agent plan (read-only), verified on Vertex"
+      - "AC3 and AC5: lok.toml model only in the model field (lok appends --model), ollama backend without glm-5"
+      - "AC6: help matches anchored to the first 5 non-empty lines, trimmed length, one-line flattened stderr excerpt"
+      - "AC7: child timeout at least 60 s under the lok step timeout"
+      - "AC8: failure detected by REVIEW_FAILED: prefix, not substring"
+      - "AC9: writers publish only successful, unrejected output; stale reports removed per run"
+      - "AC10: Reviewers line added to spec-review and pre-pr synthesis"
+      - "AC12: design-review template guards, heredoc, codex=false short-circuit, validator noise list"
+      - "AC13: health checks require exit 0 and grep -qiw ok"
+      - "AC14: zero usable reviews give NO_REVIEWS_AVAILABLE; inline gate offers override or pause, codex_validated only on a real review"
+      - "AC15: templates included; legacy review_ollama read on resume"
+      - "AC16: inline gate env overrides, per-PID wait, mktemp stderr files"
+      - "AC17: live run must produce real reviews; REVIEW_FAILED no longer satisfies it"
+      - "Constraints: POSIX sh, RC capture, is-defined guards, read-only reviewers; Must on synthesis relaxed for the template fix"
+      - "Decomposition: design-review split into its own sub-task (6 sub-tasks), 12 files, templates in sub-task 6"
+      - "Evaluation: #1 regex narrowed to opencode --dir and extended, #3 per pattern per file, stub rows for combinations, timeouts, rejection, stale files, zero reviews, both overrides, inline gate, lok workflow validate"
+      - "Follow-ups: Pi review_ollama in index.ts, TODO placeholder in pre-PR fallback prompt, lok gemini backend DangerFullAccess flag"
+    flagged_suggestions: []
+    owner_review_sha256_prefix: 5ca885b4789d
+    owner_revisions:
+      - "Defects 10-12: unusable report passes via min_length(200) + on_error pass; plan agent ran a shell command under --auto (MARKER-42); model output can end a heredoc"
+      - "AC18-AC19: phase verdict and minimum structure required of every report, external and fallback; checkpoint reports pass the rule"
+      - "AC14 and AC9: deterministic NO_REVIEWS_AVAILABLE in the shell writers, pre-PR exits non-zero; inline gate counts its own usable reports; stale reports removed in the health check"
+      - "AC2 and AC20: Gemini under --standalone with OPENCODE_CONFIG_CONTENT deny-all-except-read; verified, only read/grep/glob/skill offered"
+      - "AC21: model output passed with shell_escape, no heredocs"
+      - "AC22: Pi handoff tested both ways; no compatibility file, because Pi never consumed the writer file names (it records clo-XX-spec-ollama.md, which no current lok workflow writes)"
+      - "Evaluation: #8 split into validator rejection (400-char fixture reaches Haiku), validator outage and stale/zero; live run on slug clo-945-live; rows #14-#17"
+    revised_sha256_prefix: 0985b1998667
+    owner_review_2_sha256_prefix: 0985b1998667
+    owner_revisions_2:
+      - "Defect 13 and AC14: a failing last step leaves lok at exit 0 (reproduced); synthesis continue_on_error, pre-PR writer exits 1 at zero usable reports, verdict_gate step depends on it; Pi's lok workflow run invocation asserted in Evaluation #8c"
+      - "Defect 14 and AC8: review_status step decides usability after replace_output; fallback when, synthesis and writer use it; spec.md and design.md detect failure by prefix; Evaluation #8d"
+      - "Defect 15, AC16 and AC23: branch diff written to .lok/local/review-input (gitignored, read by read-only Gemini, verified); pre-PR prompt diff instruction replaced at assembly; inline gate uses phases.spec.spec_file for specification tasks; Evaluation #11 cites a change and an AC"
+      - "Defect 16 and AC24: design-review assembled prompt prescribes the AC18 headings including 8. Actionable Feedback; live design review in Evaluation #18"
+      - "Defect 17 and AC21: arguments passed with shell_escape and inserted without sed; report body compared with lok's trimmed output; Evaluation #16 and #19"
+      - "Pi facts narrowed: no current lok workflow writes the Pi-recorded names; clo-799-design-gemini.md came from a direct opencode run"
+    revised_2_sha256_prefix: 5c434bc8f048
+    review_r2_gemini: docs/reviews/clo-945-spec-review-r2-gemini.md
+    review_r2_codex: docs/reviews/clo-945-spec-review-r2-codex.md
+    review_r2_synthesis: docs/reviews/clo-945-spec-review-r2-synthesis.md
+    review_r2_reviewed_sha256_prefix: 5c434bc8f048
+    review_r2_verdict: NEEDS_REVISION
+    applied_suggestions_r2:
+      - "AC8: review_status always runs (exit 0); fallback_status classifies the Claude fallback; synthesis reads only the status steps"
+      - "AC9: failure-report layout (sentinel line, header, stderr excerpt); guard line kept over validator rejection; stderr files under .lok/local/review-runs/<slug>/; run-directory reset plus atomic renames keep tracked reports on a failed rerun"
+      - "AC14: SYNTHESIS_FAILED with exit 1 in pre-PR; one-review outcome stated (workflow passes, Pi blocks by its own checklist)"
+      - "AC18: design and spec reports need an Actionable Feedback heading"
+      - "AC23: diff base main or origin/main; REVIEW_INPUT_FAILED stops dispatch"
+      - "AC7: reviewer steps set retries = 0"
+      - "Evaluation: #1 continued-line --dir check; #4 layout; new #8e, #8f, #8g, #20, #21"
+    flagged_suggestions_r2:
+      - "Codex: split sub-tasks 2-4 further; not changed, left to the plan"
+    revised_3_sha256_prefix: dd1f31a7190b
+    owner_review_3_sha256_prefix: dd1f31a7190b
+    owner_revisions_3:
+      - "Defect 18 and AC9: verdict_gate in all three workflows; a failed or interrupted rerun keeps the old reports and exits non-zero, and the phases read no report after a non-zero exit; Evaluation #8c and #8f reconciled"
+      - "Defect 19, AC14, AC24 and AC25: synthesis gets its own format check (Priority Actions, Must Fix Before PR); spec and design fallback prompts use the AC18 headings; a fallback-only run feeds the phase from the fallback's Actionable Feedback; Evaluation #8h end to end"
+      - "Defect 20 and AC23: input failure recorded in the run directory; the writer publishes REVIEW_INPUT_FAILED once, before any zero-review rule; fallback skipped via usable=none"
+      - "Defect 21 and AC26: Claude fallback becomes a shell step with claude -p --tools Read,Grep,Glob --strict-mcp-config (verified: only Read, Grep, Glob and advisor offered; without --strict-mcp-config MCP tools stayed); Evaluation #22"
+    revised_4_sha256_prefix: 1fdf4ba2d04b
+    review_r3_gemini: docs/reviews/clo-945-spec-review-r3-gemini.md
+    review_r3_codex: docs/reviews/clo-945-spec-review-r3-codex.md
+    review_r3_synthesis: docs/reviews/clo-945-spec-review-r3-synthesis.md
+    review_r3_reviewed_sha256_prefix: 1fdf4ba2d04b
+    review_r3_verdict: NEEDS_REVISION
+    applied_suggestions_r3:
+      - "Defect 22 and AC26: every Claude call restricted (owner choice 'restrict all'); synthesis is a shell step with --tools \"\" --strict-mcp-config; [steps.validate] keeps only min_length(200); Must relaxed to 'keep its heuristic check'"
+      - "Defect 23 and AC23: every pre-PR prompt, the fallback included, names the diff file and the task documents; no git diff instruction"
+      - "AC9: staged writes under the run directory, synthesis renamed last; a rename failure exits non-zero; callers trust reports only on exit 0"
+      - "AC7, AC12, AC13: child timeout and retries = 0 on every CLI shell step; health-check reason carried into the short-circuit line"
+      - "AC8: fallback_status runs without min_deps_success (lok keeps no result for a when-skipped step); synthesis when in all three workflows"
+      - "AC14: rewritten as (a)-(d); validation_override_no_reviews history action; Pi boundary stated"
+      - "AC16: inline gate captures output to temp files, then writes the AC9 layout by rename"
+      - "AC22 narrowed; AC24 limited to the spec-review fallback; AC25 makes NO_REVIEWS_AVAILABLE writer-only"
+      - "Decomposition: pre-PR split into input/dispatch and publication/exit; 7 sub-tasks, still 12 files"
+      - "Evaluation: #3, #5, #8a-#8d, #14, #18, #22 updated; new #23 for the inline gate branches"
+    flagged_suggestions_r3:
+      - "Concurrent runs on one slug: assumption stated in the header comments, not built"
+      - "Pi decision tests with each reviewer missing: guarantee narrowed instead, .pi/ out of scope"
+    rejected_suggestions_r3:
+      - "Gemini: min_deps_success = 0 on fallback_status; disproved by lok/src/workflow.rs:1631-1638"
+      - "Gemini: env -u CLAUDECODE for claude -p; disproved by a probe with CLAUDECODE=1"
+    revised_5_sha256_prefix: d9c54fcfb20a
+  implement: { status: pending }
+  pr: { status: pending }
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: "Workflow created in worktree gcm--fix-clo-945-review-gates on branch fix/clo-945-review-gates"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended=specification chosen=specification confidence=high (5/5 signals)"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work 1/3; ROADMAP.md Maintenance row In Progress; DEPENDENCIES.md had no CLO-945 entry"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_written
+    phase: spec
+    details: "Spec drafted; Codex gpt-6.2-sol high replaces Ollama, Gemini on google-vertex/gemini-4-hydrogen#high via opencode"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "Gemini (google-vertex/gemini-4-hydrogen#high) and Codex (gpt-6.2-sol, effort high) both produced real reviews, run by hand; both NEEDS_REVISION"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "18 suggestions applied, 0 conflicts; scope 12 files, 6 sub-tasks, 17 ACs"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Owner review (sha 5ca885b4789d) found 4 gaps; revised to 22 ACs, still 12 files and 6 sub-tasks (sha 0985b1998667)"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Second owner review (sha 0985b1998667) found 5 gaps, all reproduced; revised to 24 ACs, still 12 files and 6 sub-tasks (sha 5c434bc8f048); AI review rerun on the new hash"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "Round 2 on sha 5c434bc8f048: Gemini (google-vertex/gemini-4-hydrogen#high) APPROVE_WITH_SUGGESTIONS, Codex (gpt-6.2-sol, effort high) NEEDS_REVISION; both real reviews"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Round 2: 7 groups of suggestions applied, 1 left to the plan; 24 ACs, 12 files; sha dd1f31a7190b"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Third owner review (sha dd1f31a7190b) found 4 gaps, all confirmed in code; revised to 26 ACs, still 12 files and 6 sub-tasks (sha 1fdf4ba2d04b); AI review rerun on the new hash"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "Round 3 on sha 1fdf4ba2d04b: Gemini (google-vertex/gemini-4-hydrogen#high) and Codex (gpt-6.2-sol, effort high) both NEEDS_REVISION; both real reviews"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Round 3: 10 groups applied, 2 flagged, 2 Gemini claims disproved; owner chose to restrict every Claude call; 26 ACs, 12 files, 7 sub-tasks; sha d9c54fcfb20a"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Owner approved spec sha256 d9c54fcfb20a on b724366 (restrict-all Must relaxation included); moving to implement"
