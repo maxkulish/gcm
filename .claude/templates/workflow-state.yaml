@@ -42,7 +42,7 @@ phases:
     probe_decision: null  # design | ops | pivot | skip
     # AI review tracking (per-model)
     review_gemini: null     # Path to Gemini review file
-    review_ollama: null     # Path to Ollama review file
+    review_codex: null      # Path to Codex review file
     review_verdict: null    # APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION (strictest of both)
     review_completed: false # Whether AI review ran successfully
     # Review feedback application tracking
@@ -118,7 +118,7 @@ history:
 #   discovery_probe_complete  - Multi-model discovery probe finished
 #   design_started            - Design doc creation began
 #   design_draft_ready        - Design doc draft completed
-#   design_review_started     - AI review (Gemini + Ollama) launched
+#   design_review_started     - AI review (Gemini + Codex) launched
 #   design_review_complete    - Both reviews completed with verdicts
 #   design_review_timeout     - One or both reviews timed out
 #   design_review_failed      - One or both reviews encountered an error
@@ -131,6 +131,7 @@ history:
 #   phase_completed           - Implementation phase finished
 #   implementation_complete   - All plan tasks done
 #   codex_validation_complete - Codex + Gemini pre-PR validation finished
+#   validation_override_no_reviews - User continued past a validation gate with zero usable reports
 #   commit_created            - Git commit made
 #   pushed_to_remote          - Branch pushed to origin
 #   pre_flight_checks_passed  - All local CI checks passed

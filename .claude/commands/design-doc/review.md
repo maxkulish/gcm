@@ -11,33 +11,31 @@ allowed-tools:
 
 # /design-doc:review - AI Review of Design Documents
 
-**Purpose**: Automatically review design documents using multiple AI models (Gemini + Ollama/Codex) with Claude as a guaranteed fallback. Identifies architectural issues, ADR compliance, blind spots, and provides actionable feedback before human review.
+**Purpose**: Automatically review design documents using multiple AI models (Gemini + Codex) with Claude as a guaranteed fallback. Identifies architectural issues, ADR compliance, blind spots, and provides actionable feedback before human review.
 
 **Usage**:
 - `/design-doc:review CLO-XX` - Review with both models + Claude fallback if needed
 - `/design-doc:review CLO-XX --model gemini` - Gemini only
-- `/design-doc:review CLO-XX --model ollama` - Ollama only
+- `/design-doc:review CLO-XX --model codex` - Codex only
 - `/design-doc:review CLO-XX --persona all` - Run all domain-specific persona reviews
 - `/design-doc:review` - Interactive mode
 
 **Resilience guarantees**:
-- Pre-flight health check skips unreachable models immediately (no 5-minute timeout waste)
-- Empty output short-circuit avoids burning validator API calls on trivially detectable failures
-- Gemini falls back to `GEMINI_FALLBACK_MODEL` after empty output from primary model
-- Claude fallback reviewer activates when both external models fail - at least one review is always produced
+- Pre-flight health check skips unreachable models immediately
+- A shared review guard (`.lok/lib/review-guard.sh`) turns a non-zero exit, a timeout, empty or short output, help or usage text, and a report without a verdict into one `REVIEW_FAILED: <reviewer> <model>: <reason>` line
+- Claude fallback reviewer (read-only tools) activates when both external models fail
 - Synthesis adapts format: multi-review (Agreement/Disagreement) vs single-review (Key Findings)
 
 ---
 
-## Key Differences: Gemini vs Ollama (via Codex)
+## Key Differences: Gemini vs Codex
 
-| Aspect | Gemini CLI | Ollama (Codex) |
-|--------|-----------|----------------|
-| **File Reading** | Built-in file system tool | Shell commands in read-only sandbox (`cat`, `find`, `head`) |
-| **Directory Access** | `--include-directories docs` flag | Full project read access via `--sandbox read-only` |
+| Aspect | Gemini (opencode, Vertex) | Codex |
+|--------|---------------------------|-------|
+| **File Reading** | opencode read, grep, glob and list tools | Shell commands in a read-only sandbox (`cat`, `find`, `head`) |
+| **Permissions** | `OPENCODE_CONFIG_CONTENT` denies every tool except read, grep, glob and list | `-s read-only` (no writes allowed) |
 | **Approach** | Model reads files itself | Agent reads files via shell |
-| **Command** | `gemini --model gemini-3.1-pro-preview -y --sandbox --include-directories dirs -p "..."` | `ollama launch codex --model MODEL -- exec "..." --sandbox read-only --oss --local-provider ollama` |
-| **Sandbox** | Gemini's `--sandbox` flag | Codex `--sandbox read-only` (no writes allowed) |
+| **Command** | `opencode run "..." --model "google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}" --agent plan --auto --standalone` | `codex exec -m "${CODEX_MODEL:-gpt-6.2-sol}" -c model_reasoning_effort='"high"' -s read-only --ephemeral -o <file> "..."` |
 
 ---
 
@@ -165,7 +163,7 @@ OUTPUT FORMAT:
 
 1. **Parse arguments**:
    - Extract task number (e.g., `CLO-21` or `clo-21`)
-   - Check for `--model gemini`, `--model ollama`, or default to both
+   - Check for `--model gemini`, `--model codex`, or default to both
    - Check for `--persona [security|concurrency|backend-integration|all]` (optional, adds domain-specific reviews)
 
 2. **If no task number provided**:
@@ -214,12 +212,13 @@ Construct the unified prompt (from the template above) by replacing `[DESIGN_DOC
 
 Run the lok design-review workflow. The workflow executes this pipeline:
 
-1. **Health check** (10s) - verifies Gemini CLI and Ollama are reachable. Unreachable models are skipped immediately instead of timing out after 300s.
-2. **Gemini review** (up to 300s) - runs primary model, falls back to `GEMINI_FALLBACK_MODEL` on empty output.
-3. **Ollama review** (up to 300s) - runs in parallel with Gemini, short-circuits on empty output.
-4. **Claude fallback** (up to 120s) - runs only if both Gemini and Ollama failed. Reads the design doc and context files directly to guarantee at least one review.
-5. **Synthesis** - cross-references all successful reviews, includes reviewer status table with failure reasons.
-6. **Write files** - saves individual reviews and synthesis.
+1. **Health check** - probes Gemini through opencode on Vertex and checks the Codex CLI. An unreachable model is skipped immediately with a `REVIEW_FAILED` line.
+2. **Gemini review** (up to 19 minutes) - runs behind the review guard.
+3. **Codex review** (up to 19 minutes) - runs in parallel with Gemini, behind the review guard.
+4. **Review status** - marks each report usable or failed with the shared usable-report check.
+5. **Claude fallback** - runs only when no external report is usable. It reads the design doc and context files with read-only tools.
+6. **Synthesis** - cross-references the usable reports only, with a reviewer status table.
+7. **Write files** - stages every report, then renames them over the targets, the synthesis last. With zero usable reports the writer itself writes `NO_REVIEWS_AVAILABLE`; with an unusable synthesis it writes `SYNTHESIS_FAILED: <reason>`.
 
 Run in background:
 ```bash
@@ -231,22 +230,22 @@ lok run .lok/workflows/design-review.toml \
 ```
 
 This produces:
-- `docs/reviews/clo-[XX]-review-gemini.md` (validated Gemini review or REVIEW_FAILED)
-- `docs/reviews/clo-[XX]-review-ollama.md` (validated Ollama review or REVIEW_FAILED)
+- `docs/reviews/clo-[XX]-review-gemini.md` (usable Gemini review or REVIEW_FAILED)
+- `docs/reviews/clo-[XX]-review-codex.md` (usable Codex review or REVIEW_FAILED)
 - `docs/reviews/clo-[XX]-review-claude-fallback.md` (only if both external models failed)
 - `docs/reviews/clo-[XX]-review-synthesis.md` (cross-referenced synthesis with reviewer status)
 
 ### Step 7: Save Review Outputs
 
 **Gemini review**: `docs/reviews/clo-XX-review-gemini.md`
-**Ollama review**: `docs/reviews/clo-XX-review-ollama.md`
+**Codex review**: `docs/reviews/clo-XX-review-codex.md`
 
 **Format for each**:
 ```markdown
 # Design Review: CLO-XX - [Title]
 
 **Reviewed**: [Current Date YYYY-MM-DD]
-**Reviewer**: [Gemini 3.1 Pro | Codex via Ollama (glm-5:cloud)]
+**Reviewer**: [Gemini (google-vertex/<GEMINI_MODEL>) | Codex (<CODEX_MODEL>, effort high)]
 **Design Document**: docs/design-docs/clo-XX-[description].md
 **Review Duration**: [X seconds]
 
@@ -287,7 +286,7 @@ If `--persona` flag was provided, run additional domain-specific reviews. These 
 
 ### Step 8: Analyze All Reviews and Produce Synthesis
 
-After all reviews complete (Gemini + Ollama + optional personas), read all review files and produce a synthesis following the template at `.claude/templates/review-synthesis.md`:
+After all reviews complete (Gemini + Codex + optional personas), read all review files and produce a synthesis following the template at `.claude/templates/review-synthesis.md`:
 
 ```markdown
 ## Review Synthesis
@@ -330,7 +329,7 @@ Design Document: docs/design-docs/clo-XX-[description].md
 
 Reviews Generated:
   - docs/reviews/clo-XX-review-gemini.md (Xs)
-  - docs/reviews/clo-XX-review-ollama.md (Xs)
+  - docs/reviews/clo-XX-review-codex.md (Xs)
   - docs/reviews/clo-XX-review-synthesis.md
   [If personas ran:]
   - docs/reviews/clo-XX-review-security.md
@@ -339,7 +338,7 @@ Reviews Generated:
 
 Verdicts:
   - Gemini: [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
-  - Ollama: [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
+  - Codex: [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
   [If personas ran:]
   - Security: [SAFE | CONCERNS_HIGH | CONCERNS_MEDIUM]
   - Concurrency: [SAFE | CONCERNS_HIGH | CONCERNS_MEDIUM]
@@ -361,7 +360,7 @@ Full reviews saved to: docs/reviews/
 
 **Check review results**
 
-Read `docs/reviews/clo-[XX]-review-synthesis.md`. The synthesis always starts with a **Reviewer Status** table showing which models succeeded, failed, or were skipped.
+If lok exited non-zero, treat the run as "no AI reviews available" and read no report file. Otherwise read `docs/reviews/clo-[XX]-review-synthesis.md`. A report has failed only when its first line starts with `REVIEW_FAILED:`. A synthesis whose first line is `SYNTHESIS_FAILED: <reason>` lists the usable individual reports to read instead. Otherwise the synthesis starts with a **Reviewer Status** table showing which models succeeded, failed, or were skipped.
 
 **Interpreting the synthesis:**
 
@@ -370,7 +369,8 @@ Read `docs/reviews/clo-[XX]-review-synthesis.md`. The synthesis always starts wi
 | 2+ reviews valid | Multi Review (Agreement/Disagreement/Novel) | Normal multi-perspective synthesis |
 | 1 review valid | Single Review (Key Findings) | One external model + possibly Claude fallback |
 | Claude fallback only | Single Review, source = Claude | Both external models failed, fallback activated |
-| `NO_REVIEWS_AVAILABLE` | Status table only | All reviewers failed (rare - Claude fallback should prevent this) |
+| `SYNTHESIS_FAILED` | First line, then the usable reports | At least one usable report, but the synthesis failed its check |
+| `NO_REVIEWS_AVAILABLE` | Written by the shell step, not a model | All reviewers failed, the Claude fallback included |
 
 **Failure diagnostics:**
 
@@ -380,14 +380,14 @@ The Reviewer Status table in the synthesis includes failure reasons inline:
 ## Reviewer Status
 | Reviewer | Status | Detail |
 |----------|--------|--------|
-| Gemini | REVIEW_FAILED | Network timeout after 300s |
-| Ollama | REVIEW_FAILED | Empty output, CLI startup failure |
+| Gemini | REVIEW_FAILED | exit 124 (timeout) |
+| Codex | REVIEW_FAILED | output too short (0 characters) |
 | Claude (fallback) | OK | Produced full review |
 ```
 
 For deeper diagnostics:
-- Gemini stderr: `/tmp/lok-gemini-stderr.log`
-- Ollama stderr: `/tmp/lok-ollama-stderr.log`
+- Gemini stderr: `.lok/local/review-runs/clo-XX/gemini.stderr`
+- Codex stderr: `.lok/local/review-runs/clo-XX/codex.stderr`
 
 **The `NO_REVIEWS_AVAILABLE` case should be rare.** The Claude fallback reviewer has no external dependencies - it reads files directly. If even the fallback fails, it indicates a problem with the lok pipeline itself, not network issues.
 
@@ -399,16 +399,13 @@ For deeper diagnostics:
 
 | Provider | Model | Integration | Notes |
 |----------|-------|-------------|-------|
-| Gemini | `gemini-3.1-pro-preview` | Gemini CLI | Explicitly set via `--model` flag to prevent auto-routing to Flash |
-| Ollama | `glm-5:cloud` | Codex | `ollama launch codex --model MODEL --oss --local-provider ollama` |
+| Gemini | `google-vertex/gemini-4-hydrogen#high` | opencode | Always under the `google-vertex/` provider |
+| Codex | `gpt-6.2-sol`, effort high | Codex CLI | `codex exec -m MODEL -c model_reasoning_effort='"high"'` |
 
 ### Environment Variables
 
-- `GEMINI_MODEL` - Override default Gemini model (default: `gemini-3.1-pro-preview`)
-- `GEMINI_FALLBACK_MODEL` - Gemini model to try when primary returns empty output (default: `gemini-2.5-pro`)
-- `OLLAMA_MODEL` - Override default Ollama model (default: `glm-5:cloud`)
-- `GEMINI_TIMEOUT` - Override Gemini timeout in seconds (default: 300)
-- `OLLAMA_TIMEOUT` - Override Ollama timeout in seconds (default: 300)
+- `GEMINI_MODEL` - Override the Gemini model, without the provider (default: `gemini-4-hydrogen#high`, always run as `google-vertex/<model>`)
+- `CODEX_MODEL` - Override the Codex model (default: `gpt-6.2-sol`)
 
 ---
 
@@ -417,7 +414,7 @@ For deeper diagnostics:
 | File | Purpose | When created |
 |------|---------|--------------|
 | `docs/reviews/clo-XX-review-gemini.md` | Gemini AI review | Always (may contain REVIEW_FAILED) |
-| `docs/reviews/clo-XX-review-ollama.md` | Codex/Ollama AI review | Always (may contain REVIEW_FAILED) |
+| `docs/reviews/clo-XX-review-codex.md` | Codex AI review | Always (may contain REVIEW_FAILED) |
 | `docs/reviews/clo-XX-review-claude-fallback.md` | Claude fallback review | Only when both external models failed |
 | `docs/reviews/clo-XX-review-synthesis.md` | Cross-referenced synthesis with reviewer status | Always |
 
@@ -444,29 +441,25 @@ PROJECT CONTEXT: Rust CLI tool for multi-LLM orchestration. Linear workspace: cl
 
 [... full review criteria and output format ...]"
 
-# Run Gemini (background)
-(
-  start=$(date +%s)
-  timeout 300 gemini --model gemini-3.1-pro-preview -y --sandbox --include-directories docs,src \
-    -p "$REVIEW_PROMPT" -o text > docs/reviews/clo-125-review-gemini.md 2>&1
-  echo -e "\n\n**Duration**: $(($(date +%s) - start))s" >> docs/reviews/clo-125-review-gemini.md
-) &
+# Run Gemini (background); output to a temporary file, never straight to docs/reviews
+. .lok/lib/review-guard.sh
+T=$(mktemp -d)
+OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" timeout 1140 opencode run "$REVIEW_PROMPT" \
+  --model "google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}" --agent plan --auto --standalone \
+  </dev/null >"$T/gemini.out" 2>"$T/gemini.stderr" &
+GP=$!
 
-# Run Ollama/Codex (background)
-(
-  start=$(date +%s)
-  env -u CLAUDECODE timeout 300 ollama launch codex --model glm-5:cloud -- \
-    exec "$REVIEW_PROMPT" \
-    --sandbox read-only \
-    --oss --local-provider ollama \
-    --ephemeral \
-    -o docs/reviews/clo-125-review-ollama.md
-  echo -e "\n\n**Duration**: $(($(date +%s) - start))s" >> docs/reviews/clo-125-review-ollama.md
-) &
+# Run Codex (background)
+timeout 1140 codex exec -m "${CODEX_MODEL:-gpt-6.2-sol}" -c model_reasoning_effort='"high"' \
+  -s read-only --ephemeral -o "$T/codex.out" "$REVIEW_PROMPT" \
+  </dev/null >"$T/codex.stdout" 2>"$T/codex.stderr" &
+CP=$!
 
-# Wait for both
-wait
-echo "Both reviews complete."
+# Wait for each by PID and keep each exit status
+GRC=0; wait "$GP" || GRC=$?
+CRC=0; wait "$CP" || CRC=$?
+review_guard Gemini "google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}" "$GRC" "$T/gemini.out" "$T/gemini.stderr" review
+review_guard Codex "${CODEX_MODEL:-gpt-6.2-sol}" "$CRC" "$T/codex.out" "$T/codex.stderr" review
 ```
 
 ---
@@ -477,7 +470,7 @@ echo "Both reviews complete."
 
 **Creates**:
 - `docs/reviews/clo-XX-review-gemini.md` (always)
-- `docs/reviews/clo-XX-review-ollama.md` (always)
+- `docs/reviews/clo-XX-review-codex.md` (always)
 - `docs/reviews/clo-XX-review-claude-fallback.md` (only when both external models failed)
 - `docs/reviews/clo-XX-review-synthesis.md` (always)
 - `docs/reviews/clo-XX-review-{persona}.md` (if --persona used)

@@ -120,6 +120,7 @@ history:
 | `plan_approved` | Plan approved for implementation |
 | `phase_completed` | Implementation phase finished |
 | `implementation_complete` | All plan tasks done |
+| `validation_override_no_reviews` | User continued past a pre-PR validation gate that produced zero usable reports |
 | `commit_created` | Git commit made |
 | `pushed_to_remote` | Branch pushed to origin |
 | `pr_created` | Pull request created |
@@ -145,7 +146,7 @@ history:
 | `/prd create` | Discovery | Draft lightweight PRD if none exists |
 | `/prd-discovery` | Discovery | Multi-model PRD review, prior-art research, assumption mapping |
 | `/design-doc:create` | Design | Interactive design creation (receives discovery report) |
-| `/design-doc:review` | Design | AI review (Gemini + Ollama) |
+| `/design-doc:review` | Design | AI review (Gemini + Codex) |
 | `/design-doc:finalize` | Design | Mark design as approved |
 | `/plan:create` | Plan | Generate implementation plan |
 | `/plan:implement` | Implement | Execute plan phases |
@@ -162,7 +163,7 @@ history:
 |-------|-------|---------|
 | `/project:sync --start` | Entry | Validate WIP limit, add to Active Work |
 | `/spec` | Spec | Write 5-section autonomous specification |
-| Gemini + Ollama review | Spec | AI review of specification (parallel, same pattern as design review) |
+| Gemini + Codex review | Spec | AI review of specification (parallel, same pattern as design review) |
 | `/plan:implement` | Implement | Execute spec decomposition |
 | `/pr:create` | PR | Create pull request |
 | `/pr:review` | PR | Handle review feedback |
