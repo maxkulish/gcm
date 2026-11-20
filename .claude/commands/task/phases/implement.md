@@ -52,6 +52,7 @@ Environment overrides for one run: `GEMINI_MODEL` (model without provider, defau
 ```bash
 GATE_SH=$(mktemp) && cat > "$GATE_SH" <<'GATE'
 . .lok/lib/review-guard.sh
+review_valid_slug "$SLUG" || { echo "REVIEW_INPUT_FAILED: invalid slug '$SLUG'"; exit 3; }
 GM="google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}"
 CM="${CODEX_MODEL:-gpt-6.2-sol}"
 mkdir -p .lok/local/review-runs .lok/local/review-input docs/reviews || exit 1
@@ -104,18 +105,17 @@ review_fill_template "$T/prompt.tpl" "$T/prompt" DOC1 DOC2 DIFF || exit 1
 PROMPT=$(cat "$T/prompt")
 
 OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" \
-  timeout 1140 opencode run "$PROMPT" --model "$GM" --agent plan --auto --standalone </dev/null >"$T/gemini.out" 2>"$T/gemini.stderr" &
+  timeout -k 30 1140 opencode run "$PROMPT" --model "$GM" --agent plan --auto --standalone </dev/null >"$T/gemini.out" 2>"$T/gemini.stderr" &
 GP=$!
-timeout 1140 codex exec -m "$CM" -c model_reasoning_effort='"high"' -s read-only --ephemeral -o "$T/codex.out" "$PROMPT" </dev/null >"$T/codex.stdout" 2>"$T/codex.stderr" &
+timeout -k 30 1140 codex exec -m "$CM" -c model_reasoning_effort='"high"' -s read-only --ephemeral -o "$T/codex.out" "$PROMPT" </dev/null >"$T/codex.stdout" 2>"$T/codex.stderr" &
 CP=$!
 GRC=0; wait "$GP" || GRC=$?
 CRC=0; wait "$CP" || CRC=$?
 
 DATE=$(date +%Y-%m-%d)
-N=0
-# publish <name> <model> <label> <rc> <out> <stderr> <target>
-publish() {
-  review_guard "$1" "$2" "$4" "$5" "$6" prepr > "$5.final"
+# stage <name> <model> <label> <rc> <out> <stderr>: write <out>.md, set ST
+stage() {
+  review_guard "$1" "$2" "$4" "$5" "$6" prepr > "$5.final" || return 1
   case "$(sed -n '1p' "$5.final")" in
     REVIEW_FAILED:*)
       { sed -n '1p' "$5.final"; printf '%s\n' '' "**Reviewer**: $3" "**Validated**: $DATE" '**Pipeline**: implement.md validation gate'
@@ -125,13 +125,17 @@ publish() {
       { printf '%s\n' "# Pre-PR Validation: $SLUG" '' "**Reviewer**: $3" "**Validated**: $DATE" '**Pipeline**: implement.md validation gate' '' '---' ''; cat "$5.final"; } > "$5.md" || return 1
       ST=usable ;;
   esac
-  mv -f "$5.md" "$7" || return 1
-  echo "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')=$ST report=$7 label=$3"
-  [ "$ST" = usable ] && N=$((N + 1))
-  return 0
 }
-publish Codex "$CM" "Codex ($CM, effort high)" "$CRC" "$T/codex.out" "$T/codex.stderr" "docs/reviews/$SLUG-codex-validation.md" || exit 1
-publish Gemini "$GM" "Gemini ($GM)" "$GRC" "$T/gemini.out" "$T/gemini.stderr" "docs/reviews/$SLUG-gemini-validation.md" || exit 1
+CL="Codex ($CM, effort high)"; GL="Gemini ($GM)"
+CR="docs/reviews/$SLUG-codex-validation.md"; GR="docs/reviews/$SLUG-gemini-validation.md"
+stage Codex "$CM" "$CL" "$CRC" "$T/codex.out" "$T/codex.stderr" || exit 1; CST=$ST
+stage Gemini "$GM" "$GL" "$GRC" "$T/gemini.out" "$T/gemini.stderr" || exit 1; GST=$ST
+mv -f "$T/codex.out.md" "$CR" && mv -f "$T/gemini.out.md" "$GR" || exit 1
+N=0
+[ "$CST" = usable ] && N=$((N + 1))
+[ "$GST" = usable ] && N=$((N + 1))
+echo "codex=$CST report=$CR label=$CL"
+echo "gemini=$GST report=$GR label=$GL"
 echo "usable=$N"
 GATE
 SLUG='clo-XX' DOC1='<DOC1>' DOC2='<DOC2>' sh "$GATE_SH"; GATE_RC=$?; rm -f "$GATE_SH"; echo "gate exit $GATE_RC"
@@ -140,6 +144,8 @@ SLUG='clo-XX' DOC1='<DOC1>' DOC2='<DOC2>' sh "$GATE_SH"; GATE_RC=$?; rm -f "$GAT
 The block prints one line per reviewer (`codex=usable|failed`, `gemini=usable|failed`, with the report path and the model label) and `usable=<N>`. A usable report has passed the shared usable-report check; a failed report starts with `REVIEW_FAILED:` and names the reason.
 
 If the block prints `REVIEW_INPUT_FAILED: <reason>` (exit 3), no reviewer ran. Show the reason and offer only `[pause]`.
+
+If the block ends with any other non-zero exit (`gate exit 1`), a setup or write step failed. The block moves the reports into `docs/reviews/` only after both are staged, but a failed second move can leave one new report next to an older one. Read no report, show the last lines of the block output, and offer only `[pause]`.
 
 ### Display Results
 
