@@ -62,6 +62,20 @@ review_usable() {
       }
       return 0
     }
+    function single_verdict(s,   r) {
+      if (phase == "review" || phase == "synthesis-review") r = "(APPROVE_WITH_SUGGESTIONS|NEEDS_REVISION|APPROVE)"
+      else if (phase == "prepr") r = "(PASS_WITH_NOTES|PASS|FAIL|APPROVE_WITH_CHANGES|APPROVE|REWORK)"
+      else r = "(PASS_WITH_NOTES|PASS|FAIL)"
+      s = ltrim(s)
+      gsub(/^[*_>` \t-]+/, "", s)
+      if (tolower(substr(s, 1, 8)) == "overall:") s = substr(s, 9)
+      s = ltrim(s)
+      gsub(/^[*_` \t]+/, "", s)
+      if (phase == "prepr") s = toupper(s)
+      if (!match(s, "^" r)) return 0
+      s = substr(s, RLENGTH + 1)
+      return !match(s, "^[*_` \t]*([/|,]|[Oo][Rr][ \t])[*_` \t]*" r "([^A-Za-z0-9_]|$)")
+    }
     BEGIN { n = 0; fence = 0; noreviews = 0 }
     {
       line = $0
@@ -83,15 +97,20 @@ review_usable() {
         if (p == 0) continue
         rest = substr(L[i], p + 7)
         gsub(/^[*_ \t]*:?[ \t]*/, "", rest)
-        if (rtrim(rest) != "" && verdict_token(rest)) { verdict = 1; vline = i; break }
+        found = 0; bad = 0
+        if (rtrim(rest) != "" && verdict_token(rest)) { found = 1; if (!single_verdict(rest)) bad = 1 }
         seen = 0
         for (j = i + 1; j <= n && seen < 3; j++) {
           t = rtrim(ltrim(L[j]))
           if (t == "") continue
           if (t ~ /^#+[ \t]/) break
           seen++
-          if (verdict_token(t)) { verdict = 1; vline = i; break }
+          if (verdict_token(t)) {
+            if (found || !single_verdict(t)) bad = 1
+            found = 1
+          }
         }
+        if (found && !bad) { verdict = 1; vline = i }
       }
       if (!verdict) exit 1
       af = 0; pa = 0; mf = 0; other = 0; nonaf = 0
