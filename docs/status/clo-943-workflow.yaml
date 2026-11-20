@@ -4,8 +4,8 @@ linear_url: https://linear.app/cloud-ai/issue/CLO-943/document-the-message-field
 branch: docs/clo-943-json-message
 task_type: specification
 workflow:
-  current_phase: pr
-  status: checkpoint
+  current_phase: complete
+  status: complete
 classification:
   recommended: specification
   chosen: specification
@@ -56,13 +56,26 @@ phases:
     gemini_skip_reason: "Gemini backend failed earlier in session (opencode run invocation)"
 
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/87
     pr_number: 87
     ci_passed: true
     preflight_note: "one cargo test run had 1 failure, not reproduced in 4 reruns (docs-only change)"
+    merge_conflicts_resolved: "106bc73 merged origin/main (CLO-944 PR #86); conflicts only in PROJECT/ROADMAP/DEPENDENCIES start rows"
+    merge_commit: 01418f1
 
-  complete: { status: pending }
+  complete:
+    status: complete
+    merged_at: 2026-11-20T08:16:25Z
+    aggregation_files_updated: true
+    closeout_branch: docs/clo-943-complete
+    lessons:
+      - .pi/lessons/lok-workflow-templates.md#L2
+      - .pi/lessons/clo-943-json-message-lessons.md#L1
+      - .pi/lessons/clo-943-json-message-lessons.md#L2
+    followup_candidates:
+      - "Repair the lok spec-review backends (Gemini opencode run invocation, Ollama glm-5 retired)"
+      - "Refresh the model invocations in the implement.md validation gate"
 history:
   - timestamp: 2026-11-19T21:40:00Z
     action: workflow_started
@@ -116,3 +129,19 @@ history:
     action: ci_passed
     phase: pr
     details: "CI run 44623421988 success; PR #87 mergeStateStatus CLEAN; awaiting owner squash-merge"
+  - timestamp: 2026-11-20T08:05:00Z
+    action: review_addressed
+    phase: pr
+    details: "Merge conflicts with main (CLO-944 PR #86) resolved in 106bc73; CI run 44700157474 green"
+  - timestamp: 2026-11-20T08:16:25Z
+    action: pr_merged
+    phase: complete
+    details: "Owner squash-merged PR #87 as 01418f1"
+  - timestamp: 2026-11-20T08:25:00Z
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT Recently Completed, ROADMAP Done (Bug fixes 11/15), DEPENDENCIES timestamp; 3 lessons written and proposed"
+  - timestamp: 2026-11-20T08:30:00Z
+    action: workflow_complete
+    phase: complete
+    details: "Close-out on docs/clo-943-complete"
