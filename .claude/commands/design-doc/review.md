@@ -284,39 +284,20 @@ If `--persona` flag was provided, run additional domain-specific reviews. These 
 
 ---
 
-### Step 8: Analyze All Reviews and Produce Synthesis
+### Step 8: Keep the lok Synthesis and Summarize Personas
 
-After all reviews complete (Gemini + Codex + optional personas), read all review files and produce a synthesis following the template at `.claude/templates/review-synthesis.md`:
+The lok run already wrote `docs/reviews/clo-XX-review-synthesis.md`, and its writer applied the synthesis check. Do not write, rewrite or append to that file. Its first line (`NO_REVIEWS_AVAILABLE`, `SYNTHESIS_FAILED: <reason>` or the synthesis heading) is the outcome that `phases/design.md` reads.
+
+If personas ran, write their results to `docs/reviews/clo-XX-review-persona-summary.md`:
 
 ```markdown
-## Review Synthesis
-
-### Agreement (High Confidence)
-[Items where 2+ reviewers independently identified the same concern]
-
-### Disagreement (Needs Human Decision)
-[Items where reviewers hold divergent positions]
-
-### Novel Insights (Single Reviewer)
-[Items found by only one reviewer]
-
-### Persona Summary (if applicable)
+## Persona Summary
 | Persona | Verdict | Key Finding |
 |---------|---------|-------------|
-| Audio Safety | [verdict] | [1-line summary] |
-| FFI Safety | [verdict] | [1-line summary] |
-| State Machine | [verdict] | [1-line summary] |
-
-### Consolidated Verdict
-[Apply consensus rules: ANY NEEDS_REVISION -> NEEDS_REVISION, all APPROVE -> APPROVE, else APPROVE_WITH_SUGGESTIONS]
-
-### Priority Actions
-1. [Highest priority - agreement items first]
-2. [Second priority]
-3. [Third priority]
+| [persona] | [verdict] | [1-line summary] |
 ```
 
-Save synthesis to `docs/reviews/clo-XX-review-synthesis.md`.
+Report the persona findings next to the lok synthesis in Step 9. They do not change the consolidated verdict of the lok synthesis.
 
 ### Step 9: Return Summary
 
@@ -335,6 +316,7 @@ Reviews Generated:
   - docs/reviews/clo-XX-review-security.md
   - docs/reviews/clo-XX-review-concurrency.md
   - docs/reviews/clo-XX-review-backend-integration.md
+  - docs/reviews/clo-XX-review-persona-summary.md
 
 Verdicts:
   - Gemini: [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
