@@ -85,7 +85,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/92
     pr_number: 92
-    ci_passed: false
+    ci_passed: true
   complete: { status: pending }
 history:
   - timestamp: '2026-11-20T00:00:00Z'
@@ -140,3 +140,7 @@ history:
     action: pr_created
     phase: pr
     details: "PR #92 opened after pre-flight checks passed"
+  - timestamp: '2026-11-20T21:15:00Z'
+    action: ci_passed
+    phase: pr
+    details: "CI run 44817097243 green on ubuntu and macos, Review guard test passed on both"
