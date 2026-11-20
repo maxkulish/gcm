@@ -238,20 +238,33 @@ step still runs and produces the binding verdict.
 
 If `lok workflow run` exits non-zero or any of the three required files
 is missing/empty, treat the gate as failed: do **not** transition phases.
-Instead, mark the workflow blocked and stop:
+Before any rerun (the next run's `health_check` deletes the run
+directory), read the run files:
+
+- If lok shows `REVIEW_PUBLISH_FAILED: see the run publish-failed file`,
+  read `.lok/local/review-runs/clo-xx/publish-failed`. Its line names the
+  first report target that was not published (for example, a directory
+  at that path) and the reason. Later targets were not attempted.
+- If `.lok/local/review-runs/clo-xx/input-failed` exists, read it, also
+  when lok shows no `REVIEW_PUBLISH_FAILED` line. It holds the reason the
+  branch diff could not be prepared.
+
+Treat the report files in `docs/reviews/` as untrusted after a failed
+run: they can come from different runs, for example a new Gemini report
+next to an old Codex report. Mark the workflow blocked and stop:
 
 ```ts
 update_workflow_state({
   task_id: "CLO-XX",
   phase: "implement",
   action: "validation_gate_failed",
-  details: "lok pre-pr-validation exited non-zero (or required review files missing). See docs/reviews/clo-XX-*.md and lok output.",
+  details: "lok pre-pr-validation exited non-zero (or required review files missing). See .lok/local/review-runs/clo-xx/publish-failed and input-failed, and the lok output; the report files of this run are untrusted.",
   workflow_updates: { status: "blocked" },
 });
 ```
 
-Then investigate the failure (re-run with `--verbose`, inspect the
-reviewer report files), fix the root cause, and re-run the workflow.
+Then investigate the failure (the run files above first, then a re-run
+with `--verbose`), fix the root cause, and re-run the workflow.
 Only after a clean run produces all three review files may the workflow
 status return to `active` and the phase resume. Never patch around the
 failure by hand-writing review files. Do **not** call `transition_phase`

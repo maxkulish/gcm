@@ -59,7 +59,7 @@ This produces:
 
 **2c-post. Check review results**
 
-1. **lok exit status first.** If lok exited non-zero, the reports of this run are not trustworthy. Note "No AI reviews available", read no report file, and go to the checkpoint.
+1. **lok exit status first.** If lok exited non-zero, the reports of this run are not trustworthy. Note "No AI reviews available", read no report file, and go to the checkpoint. If lok also shows `REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read `.lok/local/review-runs/<slug>/publish-failed` before any rerun: its line names the first report target that was not published (for example a directory at that path) and the reason. Later targets of that run were not attempted, and the next run deletes the file.
 2. **Synthesis first line.** Read the first line of `docs/reviews/clo-[XX]-spec-review-synthesis.md`:
    - `NO_REVIEWS_AVAILABLE`: Gemini, Codex and the Claude fallback all failed. Note "No AI reviews available" and go to the checkpoint.
    - `SYNTHESIS_FAILED: <reason>`: the synthesis is not usable. Use the usable individual reports it lists, and read no `Priority Actions` from the synthesis.
