@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-11-20 (CLO-945 merged in PR #90)
+**Last Updated**: 2026-11-20 (CLO-947 started)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one
@@ -100,7 +100,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
-| — | No active work | — | — | — |
+| [CLO-947](https://linear.app/cloud-ai/issue/CLO-947) | Fix review report publication succeeding when the target path is an existing directory | In Progress | Spec | - |
 
 ## Up Next (Ready - no open blockers)
 
