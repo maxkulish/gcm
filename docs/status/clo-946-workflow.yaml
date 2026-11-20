@@ -92,7 +92,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/93
     pr_number: 93
-    ci_passed: true
+    ci_passed: false
   complete: { status: pending }
 history:
   - timestamp: '2026-11-20T00:00:00Z'
@@ -159,3 +159,7 @@ history:
     action: ci_passed
     phase: pr
     details: "PR #93 CI green on ubuntu-latest and macos-latest; mergeable CLEAN"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: rebased_on_main
+    phase: pr
+    details: "Rebased onto origin/main bb503c6 (CLO-947, PR #92); ci.yml keeps both guard-test steps, PROJECT.md and ROADMAP.md keep both rows (Maintenance 7/5); scripts/test-review-guard.sh and .lok/tests/review-guard-test.sh pass under sh and dash"
