@@ -8,8 +8,9 @@
 #       review | prepr | synthesis-review | synthesis-prepr
 #       Exit 1 when it is not usable, 2 for an unknown phase, and 3 when its
 #       verdict headings give two or more different verdicts, or a verdict line
-#       joins two tokens in a form that is not a template placeholder
-#       (a run of 3 or more dashes, or a second token in another case).
+#       joins a token other than FAIL to a second token in a form that is not a
+#       template placeholder (a run of 3 or more dashes, or a second token in
+#       another case). Such a line that starts with FAIL is a FAIL verdict.
 #   review_stderr_excerpt <stderr-file>
 #       First 5 stderr lines on one line, joined with " | ", at most 500 characters.
 #   review_guard <reviewer> <model> <exit-code> <output-file> <stderr-file> <phase>
@@ -87,7 +88,7 @@ review_usable() {
       }
       return 0
     }
-    function verdict_value(s,   r, v, t, u, sep, dash) {
+    function verdict_value(s,   r, v, t, u, sep, dash, end) {
       if (!verdict_token(s)) return ""
       if (phase == "synthesis-prepr") {
         t = rtrim(ltrim(s))
@@ -109,12 +110,13 @@ review_usable() {
       sep = "([/|,&]|([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
       dash = "(--?|\342\200\224|\342\200\223)"
       if (match(t, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "?"
-      if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])")) return "?"
-      if (match(tolower(t), "^[*_` \t]*[ \t](if|when|unless|otherwise)([^a-z0-9_]|$)")) return "?"
+      end = "([*` \t.)]*$|[*` \t]*([/|,&]|--?([^-]|$)|\342\200\224|\342\200\223)|[*` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
+      if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r end)) return "?"
+      if (match(tolower(t), "^[*_` \t]*[ \t][*_` \t]*(if|when|unless|otherwise)([^a-z0-9_]|$)")) return "?"
       u = toupper(t)
       dash = "(-+|\342\200\224|\342\200\223)"
-      if (match(u, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "!"
-      if (match(u, "^[*_` \t]*" dash "[*_` \t]*" r "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])")) return "!"
+      end = "([*` \t.)]*$|[*` \t]*([/|,&]|" dash ")|[*` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
+      if (match(u, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)") || match(u, "^[*_` \t]*" dash "[*_` \t]*" r end)) return (v == "FAIL") ? v : "!"
       return v
     }
     BEGIN { n = 0; fence = 0; noreviews = 0 }

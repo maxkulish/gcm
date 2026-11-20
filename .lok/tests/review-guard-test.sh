@@ -89,6 +89,16 @@ fx amb-3dash '## Verdict: PASS --- FAIL' '' '## Findings' '- none'
 expect prepr amb-3dash 3
 fx amb-3dash-syn '## Verdict' 'PASS --- FAIL' '' '## Must Fix Before PR' '- none'
 expect synthesis-prepr amb-3dash-syn 3
+fx conflict-underscore '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL - PASS_'
+expect prepr conflict-underscore 3
+fx conflict-dash-3dash '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL - PASS --- details'
+expect prepr conflict-dash-3dash 3
+fx conflict-dash-syn '## Verdict' 'PASS' '' '## Must Fix Before PR' '- none' '' '## Final Verdict' 'FAIL - PASS criteria were not met'
+expect synthesis-prepr conflict-dash-syn 3
+fx fail-lower '## Verdict: FAIL - fail' '' '## Findings' '- none'
+expect prepr fail-lower 0
+fx ph-if-bold '## Verdict: PASS **if** tests pass' '' '## Findings' '- none'
+expect prepr ph-if-bold 1
 
 # Placeholders only
 fx ph-if '## Verdict: PASS if no finding is HIGH or above' '' '## Findings' '- none'

@@ -8,20 +8,21 @@
 
 ## Verdict: FAIL
 
-The supplied diff matches `d141fc4` against `main` at `9772049`. The branch catches the specified conflict fixtures, but a later `FAIL` can still be discarded. I reproduced that failure in the binding pre-PR workflow.
+Reviewed the supplied diff at `1ca7d7e` and the subsequent branch commit `12ac629` against `main` at `9772049`. Both revisions can still accept a binding pre-PR synthesis that contains conflicting verdicts.
 
 ## Findings
 
-- **HIGH — The dash matcher can hide a conflicting `FAIL` in the binding synthesis.** After an earlier `PASS`, both `FAIL --- PASS` and `FAIL - PASSor FAIL` returned `0` instead of `3`. P1 permits one or two ASCII dashes and requires a word boundary after the second token. The matcher accepts three dashes and reads `PASS` inside `PASSor`. In a full `lok` stub run, `FAIL --- PASS` produced a usable synthesis and the workflow exited `0`. [Guard](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:102) · [P1 specification](/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md:30)
-- **MEDIUM — `prepr` applies the wrong case rule to the second token.** The parser uppercases the entire verdict line, so `FAIL / pass` and `FAIL - pass` become placeholders. Both returned `0` after an earlier `PASS`. Under AC2, lowercase `pass` is prose, so the `FAIL` stands and the conflict should return `3`. [Guard](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:98) · [AC2](/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md:46)
+- **HIGH — The dash matcher can hide a later `FAIL`.** After an earlier `PASS`, both `FAIL - PASS_` and `FAIL - PASS --- details` return `0` in both pre-PR phases. The first slips past P1’s second-token boundary. The second lets the regex match a prefix of an unsupported three-dash separator. Both should return `3`. A stubbed pre-PR workflow on the supplied revision published the first synthesis as usable and exited `0`. [Guard](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:106) · [P1 specification](/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md:30)
+- **MEDIUM — The latest commit rejects reports with one valid verdict.** A report whose sole verdict is `FAIL - fail` now returns `3` in both pre-PR phases and gets reported as conflicting. Under AC2, lowercase `fail` is prose. Under AC4, the sole `FAIL` must keep the report usable so its findings reach the gate. The new fixtures also expect `3` for standalone `PASS --- FAIL`, which the approved grammar reads as `PASS`. [Guard](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:108) · [Tests](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh:84) · [Acceptance criteria](/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md:46)
+- **MEDIUM — Markdown can turn a conditional placeholder into a verdict.** `PASS **if** tests pass` returns `0` as the sole verdict and creates a false conflict alongside a valid `FAIL`. P3 allows whitespace anywhere in the run of Markdown markers before `if`. The matcher requires whitespace immediately before `if`. [Guard](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:107) · [P3 specification](/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md:32)
 
 ## Missing Items
 
-- The committed suite needs explicit coverage of AC1’s three-line cutoff. Direct probes confirmed that a conflicting verdict on the third non-empty line returns `3` and the same verdict on the fourth returns `0`.
-- GitHub has no PR for this branch and no hosted checks for `d141fc4`. The AC11 PR-body record and the Ubuntu and macOS CI results are pending.
-
-The committed suite passed locally under `sh` and `dash` with macOS awk. All three specified workflow stub runs produced the expected named conflict and exit status. The corpus sweep found zero differences across 836 checks, and all three CLO-946 spec-review reports remained usable. CLO-537 returned `0` with a consistent `FAIL` verdict.
+- **AC13** — The committed suite checks `FAIL - PASS criteria were not met` only in `prepr`. AC6 also calls for that case in `synthesis-prepr`. [Test fixture](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh:62)
+- **AC11 and hosted CI** — CLO-537 returned `0` with a consistent `FAIL`. GitHub showed no PR for the branch, so the PR-body evidence and Ubuntu/macOS CI results are pending. [AC11](/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md:55) · [CI matrix](/Users/mk/Code/gcm--fix-clo-946-verdict-check/.github/workflows/ci.yml:17)
 
 ## Recommendations
 
-Validate both tokens against the same phase-specific case rules, enforce the second token’s word boundary, and restrict dash matching to the four specified forms. Add regression fixtures for both findings and the lookahead cutoff, then rerun the binding workflow stub and record the evidence in the PR.
+Enforce the second-token boundary and match the full dash separator. Accept P3 whitespace anywhere in the allowed Markdown run. Reserve exit `3` for distinct verdicts from qualifying sections, then add regression fixtures for the cases above.
+
+The committed suite passed under `dash` on macOS. Each revision matched `main` on all 828 stored-file checks. All three workflow stubs produced the expected status and named failure for ordinary conflicts on the supplied revision.

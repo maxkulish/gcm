@@ -8,27 +8,27 @@
 
 ## Verdict: PASS_WITH_NOTES
 
-The branch changes cleanly and accurately implement the specification in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md` across `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh`, the three workflow files, `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh`, and `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.github/workflows/ci.yml`. Portable POSIX `sh` / `awk` constraints, exit codes (`0`/`1`/`2`/`3`), caller contracts, and all committed test fixtures match the spec.
+The current implementation on disk in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh`, `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh`, the three `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/workflows/*.toml` files, and `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.github/workflows/ci.yml` satisfies AC1–AC9 and AC13 of `/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/specs/2026-11-20-clo-946-verdict-check.md`, and resolves the `d141fc4` validation findings (`---` dash matching, `PASSor` boundary, `prepr` `toupper` on the second token, and explicit 3-line lookahead test coverage).
 
-*(Note: Review performed by static inspection in read-only mode; test execution was not run directly in this session, though `/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/status/clo-946-workflow.yaml` records macOS `sh`/`dash` and Ubuntu `mawk`/`gawk` runs.)*
+*(Note: This review was performed by static inspection in read-only mode; `.lok/tests/review-guard-test.sh` was not executed in this session.)*
 
 ## Findings
 
-1. **[LOW] Unconditional `toupper(s)` in `prepr` affects the second token in P1 alternation checks** (`/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:98-105`)
-   - `verdict_value` calls `verdict_token(s)` first (line 83), so a line starting with lowercase `pass`, `pass_with_notes`, or `fail` is properly rejected before `toupper(s)` runs.
-   - However, line 98 runs `if (phase == "prepr") s = toupper(s)` across the entire string before matching the second token in `t`. As a result, a line in `prepr` whose first token is valid uppercase followed by a lowercase non-token word (for example `FAIL - pass` or `FAIL / pass`) gets upper-cased to `FAIL - PASS` and classified as P1 (`"?"`) rather than `FAIL`. Unlikely in real reports, and matches how `single_verdict` previously behaved.
+1. **[MEDIUM] Snapshot diff is stale relative to the working tree** (`/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/local/review-input/clo-946-branch.diff:70-100`)
+   - `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/local/review-input/clo-946-branch.diff` still reflects the earlier `d141fc4` state (with `if (phase == "prepr") s = toupper(s)` and `-+` dash alternation), whereas the actual files on disk (`/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:82-107` and `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh:76-83,146-149`) already include the fixes for the prior Codex findings.
+   - Ensure validation evidence and the PR diff are captured from the current HEAD/working tree rather than the stale `d141fc4` snapshot.
 
-2. **[LOW] P3 regex requires horizontal whitespace at the end of closing markdown** (`/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:106`)
-   - Line 106 uses `^[*_` \t]*[ \t](if|when|unless|otherwise)([^a-z0-9_]|$)`.
-   - The spec defines closing markdown as any run of `*`, `_`, `` ` ``, and horizontal whitespace, and P3 as closing markdown containing at least one space or tab. A malformed line like `**PASS **if` (space inside closing markdown, none after `**`) would not match line 106, whereas standard markdown (`PASS if`, `**PASS** if`) matches as intended.
+2. **[LOW] P3 regex requires whitespace immediately before the condition word** (`/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:105`)
+   - `match(tolower(t), "^[*_` \t]*[ \t](if|when|unless|otherwise)([^a-z0-9_]|$)")` handles normal markdown (`PASS if ...`, `**PASS** otherwise`), but would not match malformed closing markdown where whitespace precedes trailing formatting characters (for example `**PASS **if ...`), even though the spec defines P3 as closing markdown containing at least one space or tab.
+
+3. **[LOW] Trailing `_` in closing markdown class can match an underscored suffix in P1** (`/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:103-104`)
+   - Because `[*_` \t]*` / `[*_` \t]+` includes `_`, an unlikely input such as `FAIL - PASS_or FAIL` or `**PASS**_or FAIL` can match `_` as closing markdown before `or ` rather than treating `_` as part of an identifier boundary.
 
 ## Missing Items
 
-None in the implementation or committed test suite:
-- **AC1-AC9 & AC13**: Implemented in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh`, `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/workflows/spec-review.toml:346`, `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/workflows/design-review.toml:387`, `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/workflows/pre-pr-validation.toml:426`, `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh`, and `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.github/workflows/ci.yml:59-60`.
-- **AC10-AC12**: The committed test script covers the three AC19 reports and `clo-537-codex-validation.md`. The full corpus sweep (Evaluation #10), CLO-537 PR-body record (AC11 / Evaluation #11), AC12 spec-review report checks (Evaluation #12), and workflow stub runs (Evaluation #13) are PR-evidence / CI items (with results already logged in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/status/clo-946-workflow.yaml:73-79`).
+- **PR & CI verification (AC10–AC12 / Evaluation #10–#14)**: Opening the PR, confirming `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.github/workflows/ci.yml` (`Review guard tests`) passes on both `ubuntu-latest` and `macos-latest`, and recording the post-fix corpus sweep (AC10), CLO-537 check (AC11), AC12 spec-review checks, and workflow stub runs (Evaluation #13) in the PR body.
 
 ## Recommendations
 
-- **(Optional, LOW)** If strict `prepr` case rules are desired on the second P1 token as well, build `r` for `prepr` with `PASS_WITH_NOTES|PASS|FAIL` uppercase-only and `[Aa][Pp][Pp][Rr][Oo][Vv][Ee]...` / `[Rr][Ee][Ww][Oo][Rr][Kk]` case-insensitive patterns instead of `s = toupper(s)` in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:98`.
-- **(PR checklist)** Ensure the PR description includes the Evaluation #10-#13 outputs recorded in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/status/clo-946-workflow.yaml` and confirm the new `Review guard tests` CI step passes on both `ubuntu-latest` and `macos-latest` (Evaluation #14).
+1. Re-run `sh /Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/tests/review-guard-test.sh` and the Evaluation #10–#13 checks against the updated `.lok/lib/review-guard.sh`, refresh `/Users/mk/Code/gcm--fix-clo-946-verdict-check/docs/status/clo-946-workflow.yaml` if needed, and record the results in the PR body.
+2. *(Optional, LOW)* If you want exact closing-markdown compliance for P3 in `/Users/mk/Code/gcm--fix-clo-946-verdict-check/.lok/lib/review-guard.sh:105`, match `^[*_` \t]*[ \t][*_` \t]*(if|when|unless|otherwise)([^a-z0-9_]|$)`.

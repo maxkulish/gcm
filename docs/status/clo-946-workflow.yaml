@@ -70,6 +70,8 @@ phases:
     commits:
       - "f9b38d0 fix(CLO-946): review verdict check reads every verdict heading"
       - "9deacbf test(CLO-946): review guard tests in CI"
+      - "723bcfa fix(CLO-946): tighten the alternation matcher"
+      - "12ac629 fix(CLO-946): treat loose alternations as conflicting verdicts"
     codex_validated: true
     codex_verdict: FAIL
     codex_report: docs/reviews/clo-946-codex-validation.md
@@ -129,3 +131,7 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Gate at d141fc4: usable=2; Codex FAIL (dash matcher accepts --- and PASSor; prepr upper-cases the second token), Gemini PASS_WITH_NOTES; both Codex findings reproduced"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Gate 2 at 1ca7d7e (Codex also read 12ac629): usable=2; Codex FAIL (FAIL - PASS_ and FAIL - PASS --- details hide a later FAIL; FAIL - fail exits 3; PASS **if** not a placeholder), Gemini PASS_WITH_NOTES (stale snapshot diff, P3 markdown, _ in closing class); all reproduced and fixed with tests; security review fail-open (PASS / fail, PASS --- FAIL) fixed in 12ac629"
