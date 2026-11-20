@@ -73,6 +73,7 @@ phases:
       - "723bcfa fix(CLO-946): tighten the alternation matcher"
       - "12ac629 fix(CLO-946): treat loose alternations as conflicting verdicts"
       - "910f72f fix(CLO-946): second-token boundary, full dash separator and P3 markdown"
+      - "a6fb88b fix(CLO-946): conditional FAIL and underscore emphasis cannot hide a FAIL"
     codex_validated: true
     codex_verdict: FAIL
     codex_report: docs/reviews/clo-946-codex-validation.md
@@ -87,7 +88,11 @@ phases:
       clo_537: "prepr exit 0 (verdict FAIL, template line 30 ignored)"
       ac12: "clo-946 spec-review gemini/codex exit 0 in review; synthesis exit 0 in synthesis-review"
       stub_runs: "spec-review and design-review (APPROVE then NEEDS_REVISION, Priority Actions) and pre-pr-validation (PASS then FAIL, Must Fix Before PR) all write SYNTHESIS_FAILED: synthesis output has conflicting verdicts; pre-pr lok exit 1"
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/93
+    pr_number: 93
+    ci_passed: false
   complete: { status: pending }
 history:
   - timestamp: '2026-11-20T00:00:00Z'
@@ -146,3 +151,7 @@ history:
     action: pre_flight_checks_passed
     phase: pr
     details: "cargo fmt --check, clippy -D warnings, cargo test all pass; security review findings (FAIL unless, _FAIL_ emphasis) fixed with tests before PR"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #93 created; Linear CLO-946 set to In Review with PR comment"
