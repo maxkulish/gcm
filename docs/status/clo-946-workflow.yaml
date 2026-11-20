@@ -24,17 +24,17 @@ linear:
   priority: Medium
   branch_actual: fix/clo-946-verdict-check
 workflow:
-  current_phase: spec
-  status: checkpoint
+  current_phase: implement
+  status: in_progress
   created_at: '2026-11-20T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
   spec:
-    status: checkpoint
+    status: complete
     spec_file: docs/specs/2026-11-20-clo-946-verdict-check.md
-    approved: false
+    approved: true
     placeholder_definition: "template forms P1-P3 (owner choice 2026-11-20)"
     review_gemini: docs/reviews/clo-946-spec-review-gemini.md
     review_codex: docs/reviews/clo-946-spec-review-codex.md
@@ -65,7 +65,18 @@ phases:
       - "R3: AC3 clarified - a P2 line is not a token line, so a real verdict on the next line counts; earlier PASS plus P2 heading with body FAIL exits 3"
       - "R4: AC5 parity limited to cases where the first qualifying section stays the same; documented 0-to-1 change for H3 conditional PASS then H2 real PASS"
     flagged_suggestions: []
-  implement: { status: pending }
+  implement:
+    status: in_progress
+    commits:
+      - "f9b38d0 fix(CLO-946): review verdict check reads every verdict heading"
+      - "9deacbf test(CLO-946): review guard tests in CI"
+    evidence:
+      tests: "sh and dash on macOS awk; mawk and gawk on ubuntu:24.04 - all tests passed"
+      red_first: "23 cases fail against the guard at 9772049 (conflicts, P3/P4 placeholders, h3cond, named reasons)"
+      sweep: "836 checks over docs/reviews x 4 phases, no difference vs 9772049"
+      clo_537: "prepr exit 0 (verdict FAIL, template line 30 ignored)"
+      ac12: "clo-946 spec-review gemini/codex exit 0 in review; synthesis exit 0 in synthesis-review"
+      stub_runs: "spec-review and design-review (APPROVE then NEEDS_REVISION, Priority Actions) and pre-pr-validation (PASS then FAIL, Must Fix Before PR) all write SYNTHESIS_FAILED: synthesis output has conflicting verdicts; pre-pr lok exit 1"
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -97,3 +108,15 @@ history:
     action: spec_revised
     phase: spec
     details: "Owner chose revise: P4 legend placeholders, Evaluation 13 phase tokens, AC3 P2 rule, AC5 parity narrowed; prototype re-validated (836 checks, no difference vs 9772049; new fixtures as expected)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Owner approved revised spec (2b4b18e); proceeding to implement"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 1-4 done: verdict scan, named failures, test script plus CI step, evidence (sweep, red-first, stub runs)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-946-verdict-check pushed with f9b38d0 and 9deacbf"
