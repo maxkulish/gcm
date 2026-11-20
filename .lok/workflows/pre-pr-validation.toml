@@ -16,6 +16,12 @@ description = "Pre-PR validation by Codex and Gemini on the branch diff, with us
 # lok exits non-zero when the diff cannot be prepared (REVIEW_INPUT_FAILED), when no
 # report is usable (NO_REVIEWS_AVAILABLE) or when the synthesis fails (SYNTHESIS_FAILED).
 # A non-zero exit blocks the PR, whatever the report files hold.
+# When a report cannot be published (for example, a directory at the target path), lok shows
+# "REVIEW_PUBLISH_FAILED: see the run publish-failed file". Before any rerun, read
+# .lok/local/review-runs/<slug>/publish-failed: it names the first target that failed and the
+# reason; later targets were not attempted. Also read .lok/local/review-runs/<slug>/input-failed
+# when it exists, with or without that line: it holds the reason the diff could not be prepared.
+# The next run's health_check deletes both files.
 
 # Step 1: reset the run directory, write the branch diff, assemble the reviewer prompt, probe the reviewers
 [[steps]]
@@ -46,8 +52,8 @@ fi
 if [ -z "$WHY" ]; then
   if ! { timeout -k 5 50 git diff --stat "$BASE...HEAD" && timeout -k 5 50 git diff "$BASE...HEAD"; } > "$DIFF.tmp" 2>"$RUN/diff.stderr"; then
     WHY="git diff $BASE...HEAD failed: $(review_stderr_excerpt "$RUN/diff.stderr")"
-  elif ! mv -f "$DIFF.tmp" "$DIFF"; then
-    WHY="cannot write $DIFF"
+  elif ! PUB=$(review_publish "$DIFF.tmp" "$DIFF" 2>&1); then
+    WHY="cannot write $DIFF: ${PUB#"REVIEW_PUBLISH_FAILED: $DIFF: "}"
   fi
 fi
 if [ -z "$WHY" ]; then
@@ -349,6 +355,7 @@ RUN=".lok/local/review-runs/$SLUG"
 . .lok/lib/review-guard.sh
 STAGE="$RUN/stage"
 review_valid_slug "$SLUG" || { echo "invalid slug: $SLUG"; exit 1; }
+rm -f "$RUN/publish-failed"
 rm -rf "$STAGE" && mkdir -p "$STAGE" docs/reviews || exit 1
 REVIEW_DATE=$(date +%Y-%m-%d)
 GM="google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}"
@@ -396,7 +403,7 @@ FU=0; [ "$FSTATUS" = "fallback=usable" ] && FU=1
 SYN_TARGET="docs/reviews/$SLUG-validation-synthesis.md"
 if [ -f "$RUN/input-failed" ]; then
   { echo "REVIEW_INPUT_FAILED: $(sed -n '1p' "$RUN/input-failed")"; printf '%s\n' '' "# Pre-PR Validation Synthesis: $SLUG" '' '**Reviewers**: none usable' "**Validated**: $REVIEW_DATE" '**Pipeline**: lok pre-pr-validation' '' '---' '' 'The branch diff could not be prepared, so no reviewer ran.'; } > "$STAGE/synthesis.md" || exit 1
-  mv -f "$STAGE/synthesis.md" "$SYN_TARGET" || exit 1
+  review_publish "$STAGE/synthesis.md" "$SYN_TARGET" "$RUN/publish-failed" || exit 1
   echo "REVIEW_INPUT_FAILED: see $SYN_TARGET"
   exit 1
 fi
@@ -431,10 +438,10 @@ else
   { echo "SYNTHESIS_FAILED: $WHY"; SYN_HEAD; echo "Usable reports:"; for f in $USABLE_LIST; do echo "- $f"; done; } > "$STAGE/synthesis.md" || exit 1
 fi
 
-mv -f "$STAGE/gemini.md" "docs/reviews/$SLUG-gemini-validation.md" || exit 1
-mv -f "$STAGE/codex.md" "docs/reviews/$SLUG-codex-validation.md" || exit 1
-if [ "$FALLBACK_RAN" = 1 ]; then mv -f "$STAGE/fallback.md" "docs/reviews/$SLUG-claude-fallback-validation.md" || exit 1; fi
-mv -f "$STAGE/synthesis.md" "$SYN_TARGET" || exit 1
+review_publish "$STAGE/gemini.md" "docs/reviews/$SLUG-gemini-validation.md" "$RUN/publish-failed" || exit 1
+review_publish "$STAGE/codex.md" "docs/reviews/$SLUG-codex-validation.md" "$RUN/publish-failed" || exit 1
+if [ "$FALLBACK_RAN" = 1 ]; then review_publish "$STAGE/fallback.md" "docs/reviews/$SLUG-claude-fallback-validation.md" "$RUN/publish-failed" || exit 1; fi
+review_publish "$STAGE/synthesis.md" "$SYN_TARGET" "$RUN/publish-failed" || exit 1
 echo "usable=$N"
 echo "Pre-PR reports written to docs/reviews/$SLUG-*-validation.md and $SYN_TARGET"
 first=$(sed -n '1p' "$SYN_TARGET")

@@ -66,8 +66,8 @@ fi
 if [ -z "$WHY" ]; then
   if ! { git diff --stat "$BASE...HEAD" && git diff "$BASE...HEAD"; } > "$DIFF.tmp" 2>"$T/diff.stderr"; then
     WHY="git diff $BASE...HEAD failed: $(review_stderr_excerpt "$T/diff.stderr")"
-  elif ! mv -f "$DIFF.tmp" "$DIFF"; then
-    WHY="cannot write $DIFF"
+  elif ! PUB=$(review_publish "$DIFF.tmp" "$DIFF" 2>&1); then
+    WHY="cannot write $DIFF: ${PUB#"REVIEW_PUBLISH_FAILED: $DIFF: "}"
   fi
 fi
 if [ -n "$WHY" ]; then rm -f "$DIFF.tmp"; echo "REVIEW_INPUT_FAILED: $WHY"; exit 3; fi
@@ -130,7 +130,7 @@ CL="Codex ($CM, effort high)"; GL="Gemini ($GM)"
 CR="docs/reviews/$SLUG-codex-validation.md"; GR="docs/reviews/$SLUG-gemini-validation.md"
 stage Codex "$CM" "$CL" "$CRC" "$T/codex.out" "$T/codex.stderr" || exit 1; CST=$ST
 stage Gemini "$GM" "$GL" "$GRC" "$T/gemini.out" "$T/gemini.stderr" || exit 1; GST=$ST
-mv -f "$T/codex.out.md" "$CR" && mv -f "$T/gemini.out.md" "$GR" || exit 1
+review_publish "$T/codex.out.md" "$CR" && review_publish "$T/gemini.out.md" "$GR" || exit 1
 N=0
 [ "$CST" = usable ] && N=$((N + 1))
 [ "$GST" = usable ] && N=$((N + 1))
@@ -145,7 +145,7 @@ The block prints one line per reviewer (`codex=usable|failed`, `gemini=usable|fa
 
 If the block prints `REVIEW_INPUT_FAILED: <reason>` (exit 3), no reviewer ran. Show the reason and offer only `[pause]`.
 
-If the block ends with any other non-zero exit (`gate exit 1`), a setup or write step failed. The block moves the reports into `docs/reviews/` only after both are staged, but a failed second move can leave one new report next to an older one. Read no report, show the last lines of the block output, and offer only `[pause]`.
+If the block ends with any other non-zero exit (`gate exit 1`), a setup or write step failed. A line `REVIEW_PUBLISH_FAILED: <target>: <reason>` names a report that could not be published, for example because `<target>` is a directory. The block moves the reports into `docs/reviews/` only after both are staged, but a failed second move can leave one new report next to an older one. Read no report, show the last lines of the block output, and offer only `[pause]`.
 
 ### Display Results
 

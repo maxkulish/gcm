@@ -56,5 +56,8 @@ jobs:
       - name: Surface check (no commit-domain types in public API)
         run: scripts/check-public-surface.sh
 
+      - name: Review guard test
+        run: sh scripts/test-review-guard.sh
+
       - name: Build (release)
         run: cargo build --release

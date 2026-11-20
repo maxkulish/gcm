@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-20 (CLO-945 merged in PR #90)
+**Last Updated**: 2026-11-20 (CLO-947 started)
 
 ## Summary
 
@@ -126,3 +126,4 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 | CLO-564 | Add live Vertex model discovery + refresh Gemini catalog (default → gemini-3.5-flash-lite) | Done | CLO-547/537/516 (related); closed CLO-537 design-D4 deferral |
 | [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | Move the orchestrate pi extension to pi 1.5.x and remove the undici and minimatch overrides | Done | PR #81 (follow-up) |
 | [CLO-945](https://linear.app/cloud-ai/issue/CLO-945) | Fix the task-phase review gates when a reviewer CLI or pinned model is unavailable | Done | CLO-941, CLO-942 (related - found in their review reports); PR #90 |
+| [CLO-947](https://linear.app/cloud-ai/issue/CLO-947) | Fix review report publication succeeding when the target path is an existing directory | In Progress | CLO-945 (follow-up from the PR #90 review) |

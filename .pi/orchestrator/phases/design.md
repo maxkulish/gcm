@@ -226,6 +226,15 @@ lok run .lok/workflows/design-review.toml \
 
 This produces gemini + synthesis review files in `docs/reviews/`.
 
+If `lok run` exits non-zero, the reports of this run are not trustworthy:
+read no report file. If lok shows
+`REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read
+`.lok/local/review-runs/CLO-XX/publish-failed` before any rerun (the
+directory name is the slug exactly as passed to `lok run`). Its line
+names the first report target that was not published (for example, a
+directory at that path) and the reason. Later targets were not attempted,
+and the next run of `design-review` deletes the file.
+
 If lok tooling is unavailable in this repo, you may invoke the persona
 directly via the agent: `pi run gemini-architect --input
 docs/designs/clo-XX-<slug>.md`. If neither path works, set:

@@ -125,6 +125,15 @@ Outputs:
 - `docs/reviews/clo-XX-spec-ollama.md`
 - `docs/reviews/clo-XX-spec-synthesis.md`
 
+If `lok run` exits non-zero, the reports of this run are not trustworthy:
+read no report file. If lok shows
+`REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read
+`.lok/local/review-runs/CLO-XX/publish-failed` before any rerun (the
+directory name is the slug exactly as passed to `lok run`). Its line
+names the first report target that was not published (for example, a
+directory at that path) and the reason. Later targets were not attempted,
+and the next run of `spec-review` deletes the file.
+
 ```ts
 update_workflow_state({
   task_id: "CLO-XX",
