@@ -7,7 +7,9 @@
 #       Exit 0 when <file> is a usable report for <phase>:
 #       review | prepr | synthesis-review | synthesis-prepr
 #       Exit 1 when it is not usable, 2 for an unknown phase, and 3 when its
-#       verdict headings give two or more different verdicts.
+#       verdict headings give two or more different verdicts, or a verdict line
+#       joins two tokens in a form that is not a template placeholder
+#       (a run of 3 or more dashes, or a second token in another case).
 #   review_stderr_excerpt <stderr-file>
 #       First 5 stderr lines on one line, joined with " | ", at most 500 characters.
 #   review_guard <reviewer> <model> <exit-code> <output-file> <stderr-file> <phase>
@@ -85,7 +87,7 @@ review_usable() {
       }
       return 0
     }
-    function verdict_value(s,   r, v, t, sep, dash) {
+    function verdict_value(s,   r, v, t, u, sep, dash) {
       if (!verdict_token(s)) return ""
       if (phase == "synthesis-prepr") {
         t = rtrim(ltrim(s))
@@ -109,6 +111,10 @@ review_usable() {
       if (match(t, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "?"
       if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])")) return "?"
       if (match(tolower(t), "^[*_` \t]*[ \t](if|when|unless|otherwise)([^a-z0-9_]|$)")) return "?"
+      u = toupper(t)
+      dash = "(-+|\342\200\224|\342\200\223)"
+      if (match(u, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "!"
+      if (match(u, "^[*_` \t]*" dash "[*_` \t]*" r "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])")) return "!"
       return v
     }
     BEGIN { n = 0; fence = 0; noreviews = 0 }
@@ -124,7 +130,7 @@ review_usable() {
     END {
       if (phase != "review" && phase != "prepr" && phase != "synthesis-review" && phase != "synthesis-prepr") exit 2
       if (phase ~ /^synthesis/ && noreviews) exit 1
-      nv = 0; vline = 0
+      nv = 0; vline = 0; amb = 0
       for (i = 1; i <= n; i++) {
         if (L[i] !~ /^#+[ \t]/) continue
         lo = tolower(L[i])
@@ -133,7 +139,7 @@ review_usable() {
         rest = substr(L[i], p + 7)
         gsub(/^[*_ \t]*:?[ \t]*/, "", rest)
         found = 0; bad = 0; sv = ""
-        if (rtrim(rest) != "") { v = verdict_value(rest); if (v == "?") bad = 1; else if (v != "") { found = 1; sv = v } }
+        if (rtrim(rest) != "") { v = verdict_value(rest); if (v == "!") amb = 1; if (v == "?" || v == "!") bad = 1; else if (v != "") { found = 1; sv = v } }
         seen = 0
         for (j = i + 1; j <= n && seen < 3; j++) {
           t = rtrim(ltrim(L[j]))
@@ -142,7 +148,8 @@ review_usable() {
           seen++
           v = verdict_value(t)
           if (v == "") continue
-          if (v == "?" || found) bad = 1
+          if (v == "!") amb = 1
+          if (v == "?" || v == "!" || found) bad = 1
           found = 1; sv = v
         }
         if (found && !bad) {
@@ -150,7 +157,7 @@ review_usable() {
           if (!(sv in V)) { V[sv] = 1; nv++ }
         }
       }
-      if (nv > 1) exit 3
+      if (nv > 1 || amb) exit 3
       verdict = (nv == 1)
       if (!verdict) exit 1
       af = 0; pa = 0; mf = 0; other = 0; nonaf = 0

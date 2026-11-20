@@ -81,6 +81,14 @@ fx conflict-lower-slash '## Verdict: PASS' '' '## Findings' '- none' '' '## Fina
 expect prepr conflict-lower-slash 3
 fx conflict-lower-dash '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL - pass'
 expect prepr conflict-lower-dash 3
+fx amb-lower-slash '## Verdict: PASS / fail' '' '## Findings' '- none'
+expect prepr amb-lower-slash 3
+fx amb-lower-dash '## Verdict: PASS - fail' '' '## Findings' '- none'
+expect prepr amb-lower-dash 3
+fx amb-3dash '## Verdict: PASS --- FAIL' '' '## Findings' '- none'
+expect prepr amb-3dash 3
+fx amb-3dash-syn '## Verdict' 'PASS --- FAIL' '' '## Must Fix Before PR' '- none'
+expect synthesis-prepr amb-3dash-syn 3
 
 # Placeholders only
 fx ph-if '## Verdict: PASS if no finding is HIGH or above' '' '## Findings' '- none'
