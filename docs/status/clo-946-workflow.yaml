@@ -24,8 +24,8 @@ linear:
   priority: Medium
   branch_actual: fix/clo-946-verdict-check
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-11-20T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
 phases:
@@ -89,11 +89,17 @@ phases:
       ac12: "clo-946 spec-review gemini/codex exit 0 in review; synthesis exit 0 in synthesis-review"
       stub_runs: "spec-review and design-review (APPROVE then NEEDS_REVISION, Priority Actions) and pre-pr-validation (PASS then FAIL, Must Fix Before PR) all write SYNTHESIS_FAILED: synthesis output has conflicting verdicts; pre-pr lok exit 1"
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/93
     pr_number: 93
-    ci_passed: false
-  complete: { status: pending }
+    ci_passed: true
+    merged: true
+    merge_commit: b31ad12
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-11-20T21:38:12Z'
+    linear_status: Done
 history:
   - timestamp: '2026-11-20T00:00:00Z'
     action: workflow_started
@@ -167,3 +173,15 @@ history:
     action: rebased_on_main
     phase: pr
     details: "Rebased onto origin/main 622f03b (CLO-947 close-out, PR #94); PROJECT.md and ROADMAP.md take main as base with CLO-947 Done and add only the CLO-946 row, WIP note and Maintenance 7/6; both guard test scripts pass under sh and dash"
+  - timestamp: '2026-11-20T21:38:12Z'
+    action: pr_merged
+    phase: pr
+    details: "Owner squash-merged PR #93 as b31ad12"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT.md: CLO-946 to Recently Completed, no WIP slot in use; ROADMAP.md: CLO-946 Done, Maintenance 7/7 Complete; DEPENDENCIES.md: CLO-946 blocked nothing"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-946 fully completed; Linear Done"
