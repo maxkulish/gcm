@@ -19,12 +19,22 @@
 #   review_fill_template <template> <out-file> <KEY>...
 #       Copy <template> to <out-file>, replacing each __KEY__ with the value of the
 #       environment variable RV_KEY, literally (no escapes, no regex).
+#   review_valid_slug <slug>
+#       Exit 0 when <slug> is safe as one path component under .lok/local/review-runs/:
+#       not empty, no leading dot, only letters, digits, ".", "_" and "-".
 #
 # Variables:
 #   REVIEW_OPENCODE_PERMISSION  read-only permission config for opencode (OPENCODE_CONFIG_CONTENT)
 #   REVIEW_GUARD_SKIP_USABLE=1  test only: skip the usable-report check inside review_guard
 
 REVIEW_OPENCODE_PERMISSION='{"permission":{"*":"deny","read":"allow","grep":"allow","glob":"allow","list":"allow"}}'
+
+review_valid_slug() {
+  case "$1" in
+    ''|.*|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  return 0
+}
 
 review_usable() {
   _ru_phase=$1
@@ -74,7 +84,7 @@ review_usable() {
       if (phase == "prepr") s = toupper(s)
       if (!match(s, "^" r)) return 0
       s = substr(s, RLENGTH + 1)
-      return !match(s, "^[*_` \t]*([/|,&]|([Oo][Rr]|[Aa][Nn][Dd])[ \t])[*_` \t]*" r "([^A-Za-z0-9_]|$)")
+      return !match(s, "^[*_` \t]*([/|,&]|-+|\342\200\224|\342\200\223|([Oo][Rr]|[Aa][Nn][Dd])[ \t])[*_` \t]*" r "([^A-Za-z0-9_]|$)")
     }
     BEGIN { n = 0; fence = 0; noreviews = 0 }
     {
