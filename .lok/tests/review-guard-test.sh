@@ -73,6 +73,14 @@ fx conflict-synbody '## Verdict' '**PASS**' '' '## Must Fix Before PR' '- none' 
 expect synthesis-prepr conflict-synbody 3
 fx conflict-p2 '## Verdict: PASS' '' '## Findings' '- none' '' '## Verdict: [PASS | PASS_WITH_NOTES | FAIL]' 'FAIL' '' '## Missing Items' '- none'
 expect prepr conflict-p2 3
+fx conflict-3dash '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL --- PASS'
+expect prepr conflict-3dash 3
+fx conflict-glued '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL - PASSor FAIL'
+expect prepr conflict-glued 3
+fx conflict-lower-slash '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL / pass'
+expect prepr conflict-lower-slash 3
+fx conflict-lower-dash '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL - pass'
+expect prepr conflict-lower-dash 3
 
 # Placeholders only
 fx ph-if '## Verdict: PASS if no finding is HIGH or above' '' '## Findings' '- none'
@@ -135,6 +143,12 @@ fx lower-approve '## Verdict: approve' '' '## Findings' '- none'
 expect prepr lower-approve 0
 fx two-lines '## Verdict' '**PASS**' 'PASS_WITH_NOTES' '' '## Findings' '- none'
 expect prepr two-lines 1
+fx lookahead-3 '## Verdict: PASS' 'first line' 'second line' 'FAIL' '' '## Findings' '- none'
+expect prepr lookahead-3 1
+fx lookahead-4 '## Verdict: PASS' 'first line' 'second line' 'third line' 'FAIL' '' '## Findings' '- none'
+expect prepr lookahead-4 0
+fx lower-approve-alt '## Verdict: approve / rework' '' '## Findings' '- none'
+expect prepr lower-approve-alt 1
 fx unknown '## Verdict: PASS' '' '## Findings'
 expect nosuchphase unknown 2
 

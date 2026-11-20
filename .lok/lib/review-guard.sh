@@ -94,21 +94,20 @@ review_usable() {
         if (t == "- FAIL - any Pivot/Fundamental Scope Issue is present, OR the change diverges materially from the design, OR the change cannot be salvaged in one fix iteration") return "?"
       }
       if (phase == "review" || phase == "synthesis-review") r = "(APPROVE_WITH_SUGGESTIONS|NEEDS_REVISION|APPROVE)"
-      else if (phase == "prepr") r = "(PASS_WITH_NOTES|PASS|FAIL|APPROVE_WITH_CHANGES|APPROVE|REWORK)"
+      else if (phase == "prepr") r = "(PASS_WITH_NOTES|PASS|FAIL|[Aa][Pp][Pp][Rr][Oo][Vv][Ee]_[Ww][Ii][Tt][Hh]_[Cc][Hh][Aa][Nn][Gg][Ee][Ss]|[Aa][Pp][Pp][Rr][Oo][Vv][Ee]|[Rr][Ee][Ww][Oo][Rr][Kk])"
       else r = "(PASS_WITH_NOTES|PASS|FAIL)"
       s = ltrim(s)
       gsub(/^[*_>` \t-]+/, "", s)
       if (tolower(substr(s, 1, 8)) == "overall:") s = substr(s, 9)
       s = ltrim(s)
       gsub(/^[*_` \t]+/, "", s)
-      if (phase == "prepr") s = toupper(s)
       if (!match(s, "^" r)) return ""
-      v = substr(s, 1, RLENGTH)
+      v = toupper(substr(s, 1, RLENGTH))
       t = substr(s, RLENGTH + 1)
       sep = "([/|,&]|([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
-      dash = "(-+|\342\200\224|\342\200\223)"
+      dash = "(--?|\342\200\224|\342\200\223)"
       if (match(t, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "?"
-      if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r "([*_` \t.)]*$|[*_` \t]*(" sep "|" dash "))")) return "?"
+      if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])")) return "?"
       if (match(tolower(t), "^[*_` \t]*[ \t](if|when|unless|otherwise)([^a-z0-9_]|$)")) return "?"
       return v
     }
