@@ -25,17 +25,41 @@ linear:
   branch_actual: fix/clo-946-verdict-check
 workflow:
   current_phase: spec
-  status: in_progress
+  status: checkpoint
   created_at: '2026-11-20T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
   spec:
-    status: reviewing
+    status: checkpoint
     spec_file: docs/specs/2026-11-20-clo-946-verdict-check.md
     approved: false
     placeholder_definition: "template forms P1-P3 (owner choice 2026-11-20)"
+    review_gemini: docs/reviews/clo-946-spec-review-gemini.md
+    review_codex: docs/reviews/clo-946-spec-review-codex.md
+    review_synthesis: docs/reviews/clo-946-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "A1: AC2 states the exact token case rules per phase; value function tests verdict_token before upper-casing"
+      - "D1: dash alternation counts only when the second token ends the line or another separator follows; fixture FAIL - PASS criteria were not met exits 3"
+      - "D2: per-section rule kept; vline is the first section with a value (same as today)"
+      - "A2: new helper review_synthesis_reason replaces the case block in the 3 workflows; unit-tested in CI"
+      - "A3: CI runs the test script only; corpus sweep, CLO-537 check and workflow stub runs are PR evidence (sub-task 4)"
+      - "A4: exact P3 grammar with word boundary and closing markdown"
+      - "A5: fixtures for unless, otherwise, synthesis-review conflict, review-phase conflict, placeholder then conflict"
+      - "N1: prompt legend fixtures; single echoed legend line stated as a known limit"
+      - "N2: 3-line lookahead stated in AC1"
+      - "N3: AC12 per phase"
+      - "N4/N5: review_guard fixtures padded above 100 chars; red-first checks against main 9772049"
+      - "N6: escalate if CLO-946 pre-PR reviewers quote verdict headings at column 0"
+      - "N7: gate meaning for Pi and the inline gate defined"
+      - "N8/N10: scalar counter, no length(array), no bashisms"
+      - "N9: review_classify header comment updated"
+      - "N11: comparison sha pinned to 9772049"
+    flagged_suggestions: []
   implement: { status: pending }
   pr: { status: pending }
   complete: { status: pending }
@@ -56,3 +80,11 @@ history:
     action: spec_drafted
     phase: spec
     details: "Spec written; owner chose template-forms placeholder rule; prototype sweep over 206 reports x 4 phases shows no change; CLO-537 stays usable (FAIL)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "lok spec-review exit 0; Gemini APPROVE_WITH_SUGGESTIONS, Codex NEEDS_REVISION, synthesis NEEDS_REVISION"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "All synthesis Priority Actions applied; prototype re-validated (824 checks, no difference vs 9772049; all fixtures as expected); no ADR conflicts"
