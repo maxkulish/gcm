@@ -17,10 +17,11 @@ phases:
     auto_approved: true | false        # optional
     auto_approval_reason: "..."        # optional - if auto_approved
     review_completed: true
-    review_skip_reason: "..."          # optional - only if review tooling unavailable
-    review_gemini: "docs/reviews/clo-XX-spec-gemini.md"   | null    # optional
-    review_ollama: "docs/reviews/clo-XX-spec-ollama.md"   | null    # optional
-    review_synthesis: "docs/reviews/clo-XX-spec-synthesis.md" | null   # optional
+    review_skip_reason: "..."          # optional - only if no review of this run can be read
+    review_gemini: "docs/reviews/clo-XX-spec-review-gemini.md"   | null    # optional
+    review_codex: "docs/reviews/clo-XX-spec-review-codex.md"   | null    # optional
+    review_ollama: "..." | null        # optional - legacy key, read on resume only, never written
+    review_synthesis: "docs/reviews/clo-XX-spec-review-synthesis.md" | null   # optional
     review_verdict: "approve" | "approve_with_changes" | "rework" | null   # optional
     review_applied: true | false       # optional
     applied_suggestions: []            # optional
@@ -107,32 +108,63 @@ update_workflow_state({
 
 ## Step 3 - AI spec review (if available)
 
-If `.lok/workflows/spec-review.toml` exists:
+If `.lok/workflows/spec-review.toml` exists, review the spec saved in
+Step 2. Pass two arguments exactly:
+
+- the spec path: the `phases.spec.spec_file` value recorded in Step 2
+  (`docs/specs/<today>-clo-XX-<slug>.md`). The reviewers open this path,
+  so it must name the saved file.
+- the slug: the task id in lowercase, `clo-XX`. lok publishes the reports
+  under this slug, and every path below uses the same slug.
 
 ```bash
 lok run .lok/workflows/spec-review.toml \
-  specs/<today>-clo-XX-<slug>.md \
-  CLO-XX \
+  "<phases.spec.spec_file>" \
+  "clo-XX" \
   "<task title>" \
   "<short description>" \
   "<labels>" \
   --dir . --verbose
 ```
 
-Outputs:
+A run that exits 0 publishes:
 
-- `docs/reviews/clo-XX-spec-gemini.md`
-- `docs/reviews/clo-XX-spec-ollama.md`
-- `docs/reviews/clo-XX-spec-synthesis.md`
+- `docs/reviews/clo-XX-spec-review-gemini.md`
+- `docs/reviews/clo-XX-spec-review-codex.md`
+- `docs/reviews/clo-XX-spec-review-claude-fallback.md` (only when the
+  Claude fallback ran, that is when neither Gemini nor Codex was usable)
+- `docs/reviews/clo-XX-spec-review-synthesis.md`
 
-If `lok run` exits non-zero, the reports of this run are not trustworthy:
-read no report file. If lok shows
-`REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read
-`.lok/local/review-runs/CLO-XX/publish-failed` before any rerun (the
-directory name is the slug exactly as passed to `lok run`). Its line
-names the first report target that was not published (for example, a
-directory at that path) and the reason. Later targets were not attempted,
-and the next run of `spec-review` deletes the file.
+Check the results in this order:
+
+1. **lok exit status.** If `lok run` exits non-zero, the reports of this
+   run are not trustworthy: read no report file, record no report path,
+   and record `review_skip_reason: "spec-review failed: <first failure
+   line>"` with `review_completed: true`. If lok shows
+   `REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read
+   `.lok/local/review-runs/clo-XX/publish-failed` before any rerun. Its
+   line names the first report target that was not published (for
+   example, a directory at that path) and the reason. Later targets were
+   not attempted, and the next run of `spec-review` deletes the file.
+2. **Synthesis first line.** Read the first line of
+   `docs/reviews/clo-XX-spec-review-synthesis.md`:
+   - `NO_REVIEWS_AVAILABLE`: Gemini, Codex and the Claude fallback all
+     failed. Note "No AI reviews available" and go to Step 4.
+   - `SYNTHESIS_FAILED: <reason>`: the synthesis is not usable. Use the
+     usable individual reports it lists, and read no `Priority Actions`
+     from the synthesis.
+   - Anything else: the synthesis passed its check. Read
+     `Priority Actions` from it.
+3. **Individual reports.** A report has failed when its first line starts
+   with `REVIEW_FAILED:`. Test the first line only: a usable review can
+   quote the text `REVIEW_FAILED` in its body. Note which reviewer failed
+   and continue with the usable reports.
+4. **Claude fallback.** Read
+   `docs/reviews/clo-XX-spec-review-claude-fallback.md` only when the
+   synthesis `**Reviewers**:` line names `Claude (fallback`. Otherwise the
+   file can be left from an earlier run. When the fallback is the only
+   usable report, take its `Actionable Feedback` section as the review
+   feedback and name "Claude fallback" as the source.
 
 ```ts
 update_workflow_state({
@@ -142,25 +174,30 @@ update_workflow_state({
   details: "Verdict: <verdict>. Applied: <n>. Flagged: <m>.",
   phase_updates: {
     review_completed: true,
-    review_gemini: "docs/reviews/clo-XX-spec-gemini.md",
-    review_ollama: "docs/reviews/clo-XX-spec-ollama.md",
-    review_synthesis: "docs/reviews/clo-XX-spec-synthesis.md",
+    review_gemini: "docs/reviews/clo-XX-spec-review-gemini.md",
+    review_codex: "docs/reviews/clo-XX-spec-review-codex.md",
+    review_synthesis: "docs/reviews/clo-XX-spec-review-synthesis.md",
     review_verdict: "<verdict>",
     review_applied: true,
     applied_suggestions: [...],
     flagged_suggestions: [...]
   },
   token_usage: [
-    { provider: "gemini", model: "gemini-3.5-flash", prompt_tokens: <p>, completion_tokens: <c>, task_label: "spec-review-gemini" },
-    { provider: "ollama", model: "qwen-coder", prompt_tokens: <p>, completion_tokens: <c>, task_label: "spec-review-ollama" }
+    { provider: "gemini", model: "<model from the report Reviewer line>", prompt_tokens: <p>, completion_tokens: <c>, task_label: "spec-review-gemini" },
+    { provider: "codex", model: "<model from the report Reviewer line>", prompt_tokens: <p>, completion_tokens: <c>, task_label: "spec-review-codex" }
   ]
 })
 ```
 
 Token counts come from the `lok run ... --verbose` summary line printed by
-each provider. If the run did not report counts (local Ollama may omit
-them), pass `0` and add `task_label: "spec-review-ollama-no-count"` so the
-gap is visible later.
+each provider. If the run did not report counts, pass `0` and add the
+suffix `-no-count` to the `task_label` (for example
+`spec-review-codex-no-count`) so the gap is visible later.
+
+**Resume with a legacy key.** A workflow started before this change can
+have `phases.spec.review_ollama` and no `review_codex`. Read the
+`review_ollama` path as the second reviewer's report. Do not write
+`review_ollama` in a new run.
 
 If `.lok/workflows/spec-review.toml` is not present (current lok state),
 record the skip:

@@ -130,6 +130,7 @@ interface WorkflowState {
       review_completed?: boolean;
       review_skip_reason?: string;
       review_gemini?: string | null;
+      review_codex?: string | null;
       review_ollama?: string | null;
       review_synthesis?: string | null;
       review_verdict?: string | null;
