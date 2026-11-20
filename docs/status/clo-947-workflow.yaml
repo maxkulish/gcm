@@ -27,7 +27,7 @@ linear:
   priority: Medium
   branch_actual: fix/clo-947-report-publish
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-11-20T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
@@ -70,10 +70,18 @@ phases:
       - "R3: publish-failed names the first failed target; marker escalation limited to a failed report publish; diff-only exit has no marker"
       - "R4: six slug x entry-point runs listed; usable= checked on the writer stdout via a scratch copy"
   implement:
-    status: in_progress
-    commits: [21c6d99, 4ff7930]
+    status: complete
+    commits: [21c6d99, 4ff7930, 1f7cc10, 265a8cb]
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-947-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-947-gemini-validation.md
+    gemini_verdict: PASS
+    validation_rounds:
+      - "Round 1: Codex FAIL, Gemini PASS_WITH_NOTES; 5 findings fixed in 1f7cc10 (Pi slug case, review.md zero-exit read, record-write stderr leak, mv stderr tests, mv --)"
+      - "Round 2: Codex PASS_WITH_NOTES, Gemini PASS; inline && chain now asserted by the wiring test"
     evaluation: "Unit + wiring 19/19 (sh, dash); lok stub runs #8 (6 slug x entry combos), #9, #10, #10a, #11, #14 and inline #12, #13, #13a, #14 all as specified"
-  pr: { status: pending }
+  pr: { status: pending, ci_passed: false }
   complete: { status: pending }
 history:
   - timestamp: '2026-11-20T00:00:00Z'
@@ -116,3 +124,11 @@ history:
     action: implementation_complete
     phase: implement
     details: "All spec evaluation rows #1-#14 pass locally with stub reviewers; #7 (CI) pending on the PR"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Round 1 Codex FAIL / Gemini PASS_WITH_NOTES, owner chose fix-all; round 2 Codex PASS_WITH_NOTES / Gemini PASS"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Implement complete; moving to PR"
