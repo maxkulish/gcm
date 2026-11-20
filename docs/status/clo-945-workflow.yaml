@@ -132,7 +132,10 @@ phases:
     revised_5_sha256_prefix: d9c54fcfb20a
   implement:
     status: in_progress
-    commits: []
+    last_phase_completed: 2
+    commits:
+      - 5cf6b4a  # sub-task 1: shared review guard and usable-report check
+      - 20b65c9  # sub-task 2: spec-review workflow
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -192,3 +195,15 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved spec sha256 d9c54fcfb20a on b724366 (restrict-all Must relaxation included); moving to implement"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-task 1 (review-guard.sh, 5cf6b4a): usable-report check passes the 3 AC19 reports and rejects the fakes under sh and dash"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-task 2 (spec-review.toml, 20b65c9): stub runs pass Evaluation 4, 5, 6, 7, 8a, 8b, 8c, 8e, 8f, 8h (real fallback), 16, 19; health-check failure short-circuits"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-945-review-gates at 20b65c9"
