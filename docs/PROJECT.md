@@ -101,7 +101,7 @@ CLO-485  S0  ADR / decisions (HITL)            ← start here, gates everything
 | Task | Title | Status | Phase | Blocked By |
 |------|-------|--------|-------|------------|
 | [CLO-944](https://linear.app/cloud-ai/issue/CLO-944) | Fix acceptance case AC-488-1 (HTTP 429 retried then succeeds) failing on main | In Progress | Execute | - |
-| [CLO-945](https://linear.app/cloud-ai/issue/CLO-945) | Fix the task-phase review gates when a reviewer CLI or pinned model is unavailable | In Progress | Spec | - |
+| [CLO-945](https://linear.app/cloud-ai/issue/CLO-945) | Fix the task-phase review gates when a reviewer CLI or pinned model is unavailable | In Progress | PR | - |
 
 ## Up Next (Ready - no open blockers)
 
