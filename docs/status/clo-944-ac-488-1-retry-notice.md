@@ -21,9 +21,9 @@
    ...
    ```
 
-2. **The origin of the matched text.** CLO-798 (commit 96116ed, PR #60) promoted the retry notice in `retry_with` (`src/provider/http.rs:430`) from `debug_log!` to `warn_log!`, and changed the default log level from `Off` to `Warn`. Its spec requires this behaviour (AC-3 in `docs/specs/2026-09-16-clo-798-provider-call-visibility.md`): a retried request must say that it is retrying when no log variable is set. AC-488-1 predated CLO-798, and its case-insensitive "rate limit" grep matched the new progress notice.
+2. **The origin of the matched text.** CLO-798 (commit 96116ed, PR #60) promoted the retry notice in `retry_with` (`src/provider/http.rs:433`) from `debug_log!` to `warn_log!`, and changed the default log level from `Off` to `Warn`. Its spec requires this behaviour (AC-3 in `docs/specs/2026-09-16-clo-798-provider-call-visibility.md`): a retried request must say that it is retrying when no log variable is set. AC-488-1 predated CLO-798, and its case-insensitive "rate limit" grep matched the new progress notice.
 
-3. **The real failure text is different.** When the retries run out, the `RateLimit` error prints `Groq rate limit reached (HTTP 429); wait a moment and retry, or use a different provider.` (`src/provider/identity.rs:35`). The retry notice says "rate limited", so the phrase "rate limit reached" separates the failure from the progress notice.
+3. **The real failure text is different.** When the retries run out, the `RateLimit` error prints `Groq rate limit reached (HTTP 429); wait a moment and retry, or use a different provider.` (`src/provider/identity.rs:37`). The retry notice says "rate limited", so the phrase "rate limit reached" separates the failure from the progress notice.
 
 ## Fix
 
