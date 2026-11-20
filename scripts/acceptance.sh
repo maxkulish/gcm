@@ -792,7 +792,10 @@ d="$(new_repo)"; echo hi > "$d/a.txt"
 ( cd "$d" && GROQ_API_KEY=dummy GCM_GROQ_BASE_URL="http://127.0.0.1:$PORT/retry429/v1" "$BIN" --all --dry-run >/tmp/gcm-out 2>&1 ); rc=$?
 reqs=$(grep -c '"model"' "$CAPTURE" 2>/dev/null); reqs=${reqs:-0}
 [ $rc -eq 0 ] && ok "429-then-200 -> exit 0 (self-healed)" || bad "429 retry (rc=$rc; $(tail -1 /tmp/gcm-out))"
-grep -qi "rate limit" /tmp/gcm-out && bad "user saw a rate-limit failure despite recovery" || ok "no user-visible failure"
+# The retry notices ("rate limited (HTTP 429); attempt N of M") are on by default
+# since CLO-798, so match the terminal RateLimit error text, not any "rate limit".
+grep -qi "rate limit reached" /tmp/gcm-out && bad "user saw a rate-limit failure despite recovery" || ok "no user-visible failure"
+grep -q "attempt 2 of" /tmp/gcm-out && ok "retry notices shown while recovering (CLO-798)" || bad "no default retry notice"
 [ "$reqs" -eq 3 ] && ok "exactly 3 requests (2x429 + 1x200)" || bad "expected 3 requests, got $reqs"
 rm -rf "$d"
 

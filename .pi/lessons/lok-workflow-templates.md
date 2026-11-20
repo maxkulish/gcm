@@ -25,3 +25,17 @@ workflow, grep every later prompt for `steps.<name>.` and wrap each reference in
 `write_reports` shell step needs the same guard for `'{{ steps.X.output }}'`
 assignments. After editing, validate by forcing the skip path (make `when`
 false) and confirming the workflow still reaches its final write step.
+
+## L2 - A spec-review synthesis can report a verdict with no second model behind it
+
+**Source incident**: CLO-943 spec phase, 2026-11-19. Both cross-check backends of
+`.lok/workflows/spec-review.toml` failed: the Gemini step printed the `opencode run`
+help text (malformed invocation), and Ollama rejected the retired model `glm-5`.
+The synthesis still produced `APPROVE_WITH_SUGGESTIONS` from the Claude fallback alone.
+
+**Rule**: A review verdict counts as cross-checked only when the review files of
+the external backends hold a review, not an error or help text.
+
+**How to apply**: Before you record `review_completed: true`, open
+`docs/reviews/clo-XX-spec-review-gemini.md` and `-ollama.md`. If either holds an
+error, record the verdict as single-model in the workflow YAML and tell the owner.
