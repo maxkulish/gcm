@@ -163,3 +163,7 @@ history:
     action: rebased_on_main
     phase: pr
     details: "Rebased onto origin/main bb503c6 (CLO-947, PR #92); ci.yml keeps both guard-test steps, PROJECT.md and ROADMAP.md keep both rows (Maintenance 7/5); scripts/test-review-guard.sh and .lok/tests/review-guard-test.sh pass under sh and dash"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: rebased_on_main
+    phase: pr
+    details: "Rebased onto origin/main 622f03b (CLO-947 close-out, PR #94); PROJECT.md and ROADMAP.md take main as base with CLO-947 Done and add only the CLO-946 row, WIP note and Maintenance 7/6; both guard test scripts pass under sh and dash"
