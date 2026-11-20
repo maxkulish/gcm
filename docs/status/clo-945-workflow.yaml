@@ -132,7 +132,7 @@ phases:
     revised_5_sha256_prefix: d9c54fcfb20a
   implement:
     status: in_progress
-    last_phase_completed: 7
+    last_phase_completed: evaluation
     commits:
       - 5cf6b4a  # sub-task 1: shared review guard and usable-report check
       - 20b65c9  # sub-task 2: spec-review workflow
@@ -140,6 +140,12 @@ phases:
       - 02404df  # sub-tasks 4 and 5: pre-PR validation workflow
       - 19e6f2a  # sub-task 6: inline validation gate and lok.toml backends
       - 6d83a3f  # sub-task 7: phase docs and templates
+      - 254e9e4  # evaluation fix: guard rejects a verdict section with more than one verdict
+      - bf4e74f  # evaluation fix: design-doc review keeps the lok synthesis as written
+      - 84d6bed  # evaluation fix: guard rejects verdicts joined by and or &
+      - 969e52f  # evaluation fix: input-failure synthesis names its reviewers (AC10)
+      - 9f7d630  # evaluation fix: design resume checks the review results (AC9)
+      - 3801f83  # evaluation fix: inline gate exports the template variables
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -235,3 +241,19 @@ history:
     action: pushed_to_remote
     phase: implement
     details: "fix/clo-945-review-gates at 6d83a3f"
+  - timestamp: '2026-11-20T12:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Evaluation: stub cases as recorded per sub-task, rerun after the guard fix (#8d, #14, input failure, ok/ok per workflow), and #21 (timeout exit 124 at 840 s) pass; live #9 (SYNTHESIS_FAILED because the model quoted NO_REVIEWS_AVAILABLE, as AC25 requires), #10 (gpt-6.2-astra and gemini-4-hydrogen in stderr and headers), #11 (inline gate, both reports usable), #12, #13, #15, #17 a-c, #18 spec and design, #22 pass; disposable report files and the clo-99945 YAML deleted"
+  - timestamp: '2026-11-20T12:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Evaluation fixes 254e9e4, bf4e74f, 84d6bed, 969e52f, 9f7d630, 3801f83: one-verdict rule in the guard, design-doc review keeps the lok synthesis, Reviewers line in the input-failure synthesis, design resume runs Check Review Results, explicit export in the inline gate; guard result unchanged on 306 real reports"
+  - timestamp: '2026-11-20T12:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-945-review-gates at 3801f83"
+  - timestamp: '2026-11-20T12:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "All 7 sub-tasks and the evaluation fixes are on the branch; continuing to the validation gate"
