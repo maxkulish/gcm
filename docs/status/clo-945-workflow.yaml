@@ -24,10 +24,10 @@ linear:
   priority: Medium
   branch_actual: fix/clo-945-review-gates
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-11-19T00:00:00Z'
-  updated_at: '2026-11-20T00:00:00Z'
+  updated_at: '2026-11-20T11:40:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
@@ -157,10 +157,19 @@ phases:
       - 0c5d19c  # gate fix: workflows check the slug, timeout -k, fallback prompt check
       - 7545d1a  # gate fix: inline gate stages both reports, exit 1 handling
   pr:
-    status: in_progress
+    status: complete
+    approved: true
     pr_url: https://github.com/maxkulish/gcm/pull/90
     pr_number: 90
-  complete: { status: pending }
+    merge_commit: 9f9a643
+  complete:
+    status: complete
+    merged_at: '2026-11-20T11:19:51Z'
+    aggregation_files_updated: true
+    linear_status: Done
+    closeout_branch: docs/clo-945-complete
+    lessons: [.pi/lessons/clo-945-review-gates-lessons.md#L1, .pi/lessons/clo-945-review-gates-lessons.md#L2, .pi/lessons/clo-945-review-gates-lessons.md#L3]
+    follow_ups: "Listed in the PR #90 body; not filed as Linear issues"
 history:
   - timestamp: '2026-11-19T00:00:00Z'
     action: workflow_started
@@ -286,3 +295,15 @@ history:
     action: pr_created
     phase: pr
     details: "PR #90 created after merging origin/main twice (PROJECT.md and ROADMAP.md conflicts resolved); Linear CLO-945 set to In Review with a PR comment; all gate findings listed as follow-ups in the PR body"
+  - timestamp: '2026-11-20T11:19:51Z'
+    action: pr_merged
+    phase: pr
+    details: "PR #90 squash-merged by owner as 9f9a643"
+  - timestamp: '2026-11-20T11:40:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT.md Recently Completed, ROADMAP Done (Maintenance 5/5), DEPENDENCIES timestamp; no dependents to unblock"
+  - timestamp: '2026-11-20T11:40:00Z'
+    action: workflow_complete
+    phase: complete
+    details: "Linear CLO-945 Done; close-out docs PR carries aggregation files and lessons L1-L3"
