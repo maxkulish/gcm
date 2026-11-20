@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-19 (CLO-943 and CLO-944 started)
+**Last Updated**: 2026-11-20 (CLO-943 merged in PR #87; CLO-944 started)
 
 ## Summary
 
@@ -11,7 +11,7 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 15 | 10 | In Progress |
+| Bug fixes (cross-cutting) | 15 | 11 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 4 | 4 | Complete |
 
@@ -104,7 +104,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | Backlog | CLO-797 (follow-up) |
 | [CLO-940](https://linear.app/cloud-ai/issue/CLO-940) | Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message | Done | CLO-487 (related); PR #82 |
 | [CLO-941](https://linear.app/cloud-ai/issue/CLO-941) | Fix grouping failing with "unexpected end of file" when exactly one file changed | Done | CLO-487 (related); PR #79 |
-| [CLO-943](https://linear.app/cloud-ai/issue/CLO-943) | Document the `message` field of the single-commit preview in the README `--json` section | In Progress | CLO-940 (follow-up) |
+| [CLO-943](https://linear.app/cloud-ai/issue/CLO-943) | Document the `message` field of the single-commit preview in the README `--json` section | Done | CLO-940 (follow-up); PR #87 |
 | [CLO-944](https://linear.app/cloud-ai/issue/CLO-944) | Fix acceptance case AC-488-1 (HTTP 429 retried then succeeds) failing on main | In Progress | CLO-488 (related) |
 
 Both were found in one investigation of a 515-file commit and are measured in
