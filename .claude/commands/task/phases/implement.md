@@ -99,7 +99,8 @@ OUTPUT FORMAT:
 ## Recommendations
 [Specific actionable improvements]
 ENDTPL
-RV_DOC1=$DOC1 RV_DOC2=$DOC2 RV_DIFF=$DIFF review_fill_template "$T/prompt.tpl" "$T/prompt" DOC1 DOC2 DIFF || exit 1
+export RV_DOC1="$DOC1" RV_DOC2="$DOC2" RV_DIFF="$DIFF"
+review_fill_template "$T/prompt.tpl" "$T/prompt" DOC1 DOC2 DIFF || exit 1
 PROMPT=$(cat "$T/prompt")
 
 OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" \
