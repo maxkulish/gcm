@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-11-20 (CLO-943 merged in PR #87; CLO-944 merged in PR #86)
+**Last Updated**: 2026-11-20 (CLO-945 merged in PR #90)
 
 ## Current Blockers
 
