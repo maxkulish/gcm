@@ -74,7 +74,7 @@ review_usable() {
       if (phase == "prepr") s = toupper(s)
       if (!match(s, "^" r)) return 0
       s = substr(s, RLENGTH + 1)
-      return !match(s, "^[*_` \t]*([/|,]|[Oo][Rr][ \t])[*_` \t]*" r "([^A-Za-z0-9_]|$)")
+      return !match(s, "^[*_` \t]*([/|,&]|([Oo][Rr]|[Aa][Nn][Dd])[ \t])[*_` \t]*" r "([^A-Za-z0-9_]|$)")
     }
     BEGIN { n = 0; fence = 0; noreviews = 0 }
     {
