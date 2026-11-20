@@ -160,6 +160,12 @@ if [ "$n" = 3 ]; then ok "wiring: 3 calls in the $IMPL gate block"; else fail "w
 BAD=$(grep -n 'review_publish "' $TOMLS "$W/gate-block.sh" | grep -v -e '|| exit 1' -e 'elif !')
 if [ -z "$BAD" ]; then ok "wiring: every call has failure handling"; else fail "wiring: every call has failure handling" "$BAD"; fi
 
+if grep -qxF 'review_publish "$T/codex.out.md" "$CR" && review_publish "$T/gemini.out.md" "$GR" || exit 1' "$W/gate-block.sh"; then
+  ok "wiring: inline reports publish as one && chain"
+else
+  fail "wiring: inline reports publish as one && chain" "chain line not found in $IMPL"
+fi
+
 for pair in spec-review:4 design-review:4 pre-pr-validation:5; do
   f=".lok/workflows/${pair%%:*}.toml"
   n=$(grep -o 'review_publish "[^"]*" "[^"]*" "\$RUN/publish-failed"' "$f" | wc -l | tr -d ' ')
