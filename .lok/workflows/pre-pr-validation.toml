@@ -27,8 +27,9 @@ shell = '''
 TASK={{ arg.3 | shell_escape }}
 SLUG=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
 RUN=".lok/local/review-runs/$SLUG"
-rm -rf "$RUN" && mkdir -p "$RUN" || { echo "gemini=false: run directory unavailable"; echo "codex=false: run directory unavailable"; exit 0; }
 . .lok/lib/review-guard.sh
+review_valid_slug "$SLUG" || { echo "gemini=false: invalid slug"; echo "codex=false: invalid slug"; exit 0; }
+rm -rf "$RUN" && mkdir -p "$RUN" || { echo "gemini=false: run directory unavailable"; echo "codex=false: run directory unavailable"; exit 0; }
 
 export RV_DESIGN_DOC={{ arg.1 | shell_escape }}
 export RV_PLAN_FILE={{ arg.2 | shell_escape }}
@@ -43,7 +44,7 @@ if [ -z "$WHY" ]; then
   mkdir -p .lok/local/review-input || WHY="cannot create .lok/local/review-input"
 fi
 if [ -z "$WHY" ]; then
-  if ! { timeout 50 git diff --stat "$BASE...HEAD" && timeout 50 git diff "$BASE...HEAD"; } > "$DIFF.tmp" 2>"$RUN/diff.stderr"; then
+  if ! { timeout -k 5 50 git diff --stat "$BASE...HEAD" && timeout -k 5 50 git diff "$BASE...HEAD"; } > "$DIFF.tmp" 2>"$RUN/diff.stderr"; then
     WHY="git diff $BASE...HEAD failed: $(review_stderr_excerpt "$RUN/diff.stderr")"
   elif ! mv -f "$DIFF.tmp" "$DIFF"; then
     WHY="cannot write $DIFF"
@@ -72,7 +73,7 @@ printf '%s\n' "$DIFF" > "$RUN/diff.path"
 
 GM="google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}"
 RC=0
-OUT=$(OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" timeout 60 opencode run "Reply with the single word: ok" --model "$GM" --agent plan --auto --standalone </dev/null 2>"$RUN/health-gemini.stderr") || RC=$?
+OUT=$(OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" timeout -k 10 60 opencode run "Reply with the single word: ok" --model "$GM" --agent plan --auto --standalone </dev/null 2>"$RUN/health-gemini.stderr") || RC=$?
 if [ "$RC" -ne 0 ]; then
   echo "gemini=false: exit $RC"
 elif printf '%s\n' "$OUT" | grep -qiw ok; then
@@ -105,7 +106,7 @@ case "$HEALTH" in
 esac
 PROMPT=$(cat "$RUN/review.prompt")
 RC=0
-OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" timeout 1140 opencode run "$PROMPT" --model "$GM" --agent plan --auto --standalone </dev/null >"$RUN/gemini.out" 2>"$RUN/gemini.stderr" || RC=$?
+OPENCODE_CONFIG_CONTENT="$REVIEW_OPENCODE_PERMISSION" timeout -k 20 1120 opencode run "$PROMPT" --model "$GM" --agent plan --auto --standalone </dev/null >"$RUN/gemini.out" 2>"$RUN/gemini.stderr" || RC=$?
 review_guard Gemini "$GM" "$RC" "$RUN/gemini.out" "$RUN/gemini.stderr" prepr
 exit 0
 '''
@@ -135,7 +136,7 @@ case "$HEALTH" in
 esac
 PROMPT=$(cat "$RUN/review.prompt")
 RC=0
-timeout 1140 codex exec -m "$CM" -c model_reasoning_effort='"high"' -s read-only --ephemeral -o "$RUN/codex.out" "$PROMPT" </dev/null >"$RUN/codex.stdout" 2>"$RUN/codex.stderr" || RC=$?
+timeout -k 20 1120 codex exec -m "$CM" -c model_reasoning_effort='"high"' -s read-only --ephemeral -o "$RUN/codex.out" "$PROMPT" </dev/null >"$RUN/codex.stdout" 2>"$RUN/codex.stderr" || RC=$?
 review_guard Codex "$CM" "$RC" "$RUN/codex.out" "$RUN/codex.stderr" prepr
 exit 0
 '''
@@ -224,10 +225,10 @@ export RV_DESIGN_DOC={{ arg.1 | shell_escape }}
 export RV_PLAN_FILE={{ arg.2 | shell_escape }}
 export RV_CLO_ID="$TASK"
 export RV_DIFF_FILE="$DIFF"
-review_fill_template "$RUN/fallback.tpl" "$RUN/fallback.prompt" DESIGN_DOC PLAN_FILE CLO_ID DIFF_FILE
+review_fill_template "$RUN/fallback.tpl" "$RUN/fallback.prompt" DESIGN_DOC PLAN_FILE CLO_ID DIFF_FILE && [ -s "$RUN/fallback.prompt" ] || { review_fail_line Claude default "fallback prompt not written" /dev/null; exit 0; }
 PROMPT=$(cat "$RUN/fallback.prompt")
 RC=0
-timeout 840 claude -p --output-format text --tools "Read,Grep,Glob" --strict-mcp-config -- "$PROMPT" </dev/null >"$RUN/fallback.out" 2>"$RUN/fallback.stderr" || RC=$?
+timeout -k 20 820 claude -p --output-format text --tools "Read,Grep,Glob" --strict-mcp-config -- "$PROMPT" </dev/null >"$RUN/fallback.out" 2>"$RUN/fallback.stderr" || RC=$?
 review_guard Claude default "$RC" "$RUN/fallback.out" "$RUN/fallback.stderr" prepr
 exit 0
 '''
@@ -329,7 +330,7 @@ ENDTPL
 } > "$P" || exit 1
 PROMPT=$(cat "$P")
 RC=0
-timeout 540 claude -p --output-format text --tools "" --strict-mcp-config -- "$PROMPT" </dev/null >"$RUN/synthesis.out" 2>"$RUN/synthesis.stderr" || RC=$?
+timeout -k 20 520 claude -p --output-format text --tools "" --strict-mcp-config -- "$PROMPT" </dev/null >"$RUN/synthesis.out" 2>"$RUN/synthesis.stderr" || RC=$?
 if [ "$RC" -ne 0 ]; then echo "synthesis exit $RC"; exit 1; fi
 cat "$RUN/synthesis.out"
 '''
@@ -347,6 +348,7 @@ SLUG=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
 RUN=".lok/local/review-runs/$SLUG"
 . .lok/lib/review-guard.sh
 STAGE="$RUN/stage"
+review_valid_slug "$SLUG" || { echo "invalid slug: $SLUG"; exit 1; }
 rm -rf "$STAGE" && mkdir -p "$STAGE" docs/reviews || exit 1
 REVIEW_DATE=$(date +%Y-%m-%d)
 GM="google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}"
