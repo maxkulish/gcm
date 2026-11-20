@@ -1,6 +1,6 @@
 # Phase: Specification (Specification Tasks Only)
 
-**Purpose**: Run the `/spec` skill to produce a lean 5-section specification, run AI review (Gemini + Ollama in parallel), apply feedback, and checkpoint for approval or upgrade to full design-doc workflow.
+**Purpose**: Run the `/spec` skill to produce a lean 5-section specification, run AI review (Gemini + Codex in parallel), apply feedback, and checkpoint for approval or upgrade to full design-doc workflow.
 
 **Entry conditions**: `current_phase: spec` (task_type: specification)
 
@@ -20,7 +20,7 @@
 
 ## Status: reviewing
 
-### Step 2: AI Review of Specification (Gemini + Ollama in parallel)
+### Step 2: AI Review of Specification (Gemini + Codex in parallel)
 
 Before presenting the spec to the user for approval, run the same dual-model review pattern used in the design phase - adapted for spec documents.
 
@@ -53,27 +53,32 @@ lok run .lok/workflows/spec-review.toml \
 
 This produces:
 - `docs/reviews/clo-[XX]-spec-review-gemini.md`
-- `docs/reviews/clo-[XX]-spec-review-ollama.md`
+- `docs/reviews/clo-[XX]-spec-review-codex.md`
+- `docs/reviews/clo-[XX]-spec-review-claude-fallback.md` (only when both Gemini and Codex failed)
 - `docs/reviews/clo-[XX]-spec-review-synthesis.md`
 
 **2c-post. Check review results**
 
-Read `docs/reviews/clo-[XX]-spec-review-synthesis.md`.
-
-- If it contains `NO_REVIEWS_AVAILABLE`: Both models failed. Note "No AI reviews available" and proceed directly to step 2e (checkpoint).
-- If one review file contains `REVIEW_FAILED`: One model failed. Note which and proceed with the available review.
-- If both valid: Proceed with full synthesis.
+1. **lok exit status first.** If lok exited non-zero, the reports of this run are not trustworthy. Note "No AI reviews available", read no report file, and go to the checkpoint.
+2. **Synthesis first line.** Read the first line of `docs/reviews/clo-[XX]-spec-review-synthesis.md`:
+   - `NO_REVIEWS_AVAILABLE`: Gemini, Codex and the Claude fallback all failed. Note "No AI reviews available" and go to the checkpoint.
+   - `SYNTHESIS_FAILED: <reason>`: the synthesis is not usable. Use the usable individual reports it lists, and read no `Priority Actions` from the synthesis.
+   - Anything else: the synthesis passed its check. Read `Priority Actions` from it.
+3. **Individual reports.** A report has failed when its first line starts with `REVIEW_FAILED:`. Test the first line only: a usable review can quote the text `REVIEW_FAILED` in its body. Note which reviewer failed and continue with the usable reports.
+4. **Claude fallback.** When the Claude fallback report is the only usable report, take its `Actionable Feedback` section as the review feedback and name "Claude fallback" as the source.
 
 Update workflow state:
 - `phases.spec.review_gemini: docs/reviews/clo-[XX]-spec-review-gemini.md`
-- `phases.spec.review_ollama: docs/reviews/clo-[XX]-spec-review-ollama.md`
+- `phases.spec.review_codex: docs/reviews/clo-[XX]-spec-review-codex.md`
 - `phases.spec.review_synthesis: docs/reviews/clo-[XX]-spec-review-synthesis.md`
+
+**Resume with a legacy key.** A workflow started before this change, or started by Pi, can have `phases.spec.review_ollama` and no `review_codex`. Read the `review_ollama` path as the second reviewer's report.
 
 **2e. Apply review feedback**
 
 Follow the same pattern as design phase feedback application:
 
-1. **Extract actionable items** from both reviews' "Actionable Feedback" sections
+1. **Extract actionable items** from the "Actionable Feedback" sections of the usable reports (step 2c-post)
 2. **Classify each item**:
 
 | Classification | Criteria | Action |
@@ -89,7 +94,7 @@ Follow the same pattern as design phase feedback application:
    ```
    REVIEW CONFLICT - Item [N of M]
 
-   Suggestion (from [Gemini|Ollama|both]):
+   Suggestion (from [Gemini|Codex|both|Claude fallback]):
      "[exact suggestion text]"
 
    This conflicts with a prior decision:
@@ -129,7 +134,7 @@ Update state: `phases.spec.status: checkpoint`, `workflow.status: checkpoint`
    AI REVIEW RESULTS
 
    Gemini verdict:  [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
-   Ollama verdict:  [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
+   Codex verdict:   [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
    Consensus:       [strictest of both]
 
    Auto-applied [N] suggestions:
@@ -152,7 +157,7 @@ Update state: `phases.spec.status: checkpoint`, `workflow.status: checkpoint`
    1. [approve]  - Spec is approved, start implementation directly
    2. [revise]   - I have feedback (will re-invoke /spec)
    3. [view-gemini] - View full Gemini review
-   4. [view-ollama] - View full Ollama review
+   4. [view-codex] - View full Codex review
    5. [upgrade]  - This is more complex than expected, switch to full design-doc workflow
    6. [pause]    - Pause workflow, continue later
 
@@ -175,7 +180,7 @@ Update state: `phases.spec.status: checkpoint`, `workflow.status: checkpoint`
    - Return to checkpoint
 
 5. **If view-gemini**: Display `docs/reviews/clo-XX-spec-review-gemini.md`, return to options
-6. **If view-ollama**: Display `docs/reviews/clo-XX-spec-review-ollama.md`, return to options
+6. **If view-codex**: Display `docs/reviews/clo-XX-spec-review-codex.md` (or the legacy `review_ollama` path), return to options
 
 7. **If upgrade**:
    - Update state: `task_type: development`
@@ -198,7 +203,7 @@ phases.spec.spec_file: <path>                    # non-null
 phases.spec.approved: true
 phases.spec.status: complete
 phases.spec.review_gemini: <path|null>           # null if review failed/timed out
-phases.spec.review_ollama: <path|null>           # null if review failed/timed out
+phases.spec.review_codex: <path|null>            # null if review failed/timed out; legacy key review_ollama
 phases.spec.review_verdict: <verdict|null>       # null if review failed/timed out
 phases.spec.review_completed: <true|false>       # false if reviews failed/timed out
 phases.spec.review_applied: <true|false>         # false if no reviews or nothing to apply

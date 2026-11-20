@@ -57,15 +57,15 @@
      - `phases.design.draft_ready: true`
    - Add history entry: `design_draft_ready`
    - **Invoke AI Review**: `/design-doc:review CLO-XX`
-     - Display: "Running automated AI review (Gemini + Ollama in parallel, up to 5 minutes)..."
-     - Wait for both reviews to complete
+     - Display: "Running automated AI review (Gemini + Codex in parallel, up to 20 minutes)..."
+     - Wait for the review run to complete, then check the results (see "Check Review Results" below)
      - Update state:
        - `phases.design.review_gemini: docs/reviews/clo-XX-review-gemini.md`
-       - `phases.design.review_ollama: docs/reviews/clo-XX-review-ollama.md`
-       - `phases.design.review_verdict: [strictest verdict of both]`
+       - `phases.design.review_codex: docs/reviews/clo-XX-review-codex.md`
+       - `phases.design.review_verdict: [strictest verdict of the usable reports]`
        - `phases.design.review_completed: true`
      - Add history entry: `design_review_complete`
-     - **If both reviews time out or fail**: Skip apply step, continue to checkpoint (review is advisory)
+     - **If no report is usable**: Skip apply step, continue to checkpoint (review is advisory)
    - **Apply Review Feedback** (see section below)
    - Update state:
      - `phases.design.status: checkpoint`
@@ -73,15 +73,29 @@
 
 3. **If design doc exists but not finalized**:
    - Display: "Design document exists but not finalized."
-   - **If `review_completed: false`**: Run `/design-doc:review CLO-XX` then Apply Review Feedback
+   - **If `review_completed: false`**: Run `/design-doc:review CLO-XX`, check the results (see "Check Review Results" below), then Apply Review Feedback only from the usable reports of this run
    - **If `review_completed: true` but `review_applied: false`**: Run Apply Review Feedback only
    - Update state: `phases.design.status: checkpoint`
 
 ---
 
+## Check Review Results
+
+1. **lok exit status first.** If the review run exited non-zero, the reports of this run are not trustworthy. Note "No AI reviews available", read no report file, and go to the checkpoint.
+2. **Synthesis first line.** Read the first line of `docs/reviews/clo-XX-review-synthesis.md`:
+   - `NO_REVIEWS_AVAILABLE`: Gemini, Codex and the Claude fallback all failed. Note "No AI reviews available" and go to the checkpoint.
+   - `SYNTHESIS_FAILED: <reason>`: the synthesis is not usable. Use the usable individual reports it lists, and read no `Priority Actions` from the synthesis.
+   - Anything else: the synthesis passed its check. Read `Priority Actions` from it.
+3. **Individual reports.** A report has failed when its first line starts with `REVIEW_FAILED:`. Test the first line only: a usable review can quote the text `REVIEW_FAILED` in its body.
+4. **Claude fallback.** When both Gemini and Codex failed, the run writes `docs/reviews/clo-XX-review-claude-fallback.md`. When it is the only usable report, take its `Actionable Feedback` section as the review feedback and name "Claude fallback" as the source.
+
+**Resume with a legacy key.** A workflow started before this change, or started by Pi, can have `phases.design.review_ollama` and no `review_codex`. Read the `review_ollama` path as the second reviewer's report.
+
+---
+
 ## Apply Review Feedback
 
-This step runs automatically after both review files are written. It reads, consolidates, and acts on the actionable items from both AI reviewers without waiting for the user - **except** when a suggestion contradicts a documented prior decision.
+This step runs automatically after the review files are written. It reads, consolidates, and acts on the actionable items from the usable reports (see "Check Review Results") without waiting for the user - **except** when a suggestion contradicts a documented prior decision.
 
 **Prior decision sources to load** (read these files before classifying any suggestion):
 - `docs/adrs/` - Architecture Decision Records (61 files)
@@ -89,9 +103,9 @@ This step runs automatically after both review files are written. It reads, cons
 - `docs/context/system-patterns.md` - Active patterns and invariants
 - `.claude/CLAUDE.md` - Core Architecture Principles and Intent sections
 
-**Step 1 - Extract actionable items from both reviews**
+**Step 1 - Extract actionable items from the usable reports**
 
-Read the `## 8. Actionable Feedback` section from each review file. Build a combined list. Where the same point appears in both reviews, mark it as **high-confidence**.
+Read the `## 8. Actionable Feedback` section from each usable report (the Claude fallback report has an `Actionable Feedback` section as well). Build a combined list. Where the same point appears in both reviews, mark it as **high-confidence**.
 
 **Step 2 - Classify each item**
 
@@ -134,7 +148,7 @@ If any contradicting items were found, present them **one at a time**:
 ```
 REVIEW CONFLICT - Item [N of M]
 
-Suggestion (from [Gemini|Ollama|both]):
+Suggestion (from [Gemini|Codex|both|Claude fallback]):
   "[exact suggestion text]"
 
 This conflicts with a prior decision:
@@ -169,7 +183,7 @@ After all items are resolved, update state:
    AI REVIEW RESULTS
 
    Gemini verdict:  [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
-   Ollama verdict:  [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
+   Codex verdict:   [APPROVE | APPROVE_WITH_SUGGESTIONS | NEEDS_REVISION]
    Consensus:       [strictest of both]
 
    Auto-applied [N] suggestions:
@@ -187,14 +201,14 @@ After all items are resolved, update state:
    1. [approve] - Design is approved, finalize it
    2. [feedback] - I have changes to make
    3. [view-gemini] - View full Gemini review
-   4. [view-ollama] - View full Ollama review
+   4. [view-codex] - View full Codex review
    5. [pause] - Pause workflow, continue later
 
    Your choice:
    ```
 
 4. **If view-gemini**: Display `docs/reviews/clo-XX-review-gemini.md`, return to options
-5. **If view-ollama**: Display `docs/reviews/clo-XX-review-ollama.md`, return to options
+5. **If view-codex**: Display `docs/reviews/clo-XX-review-codex.md` (or the legacy `review_ollama` path), return to options
 
 6. **If approve**:
    - **Invoke**: `/design-doc:finalize CLO-XX`
@@ -228,7 +242,7 @@ phases.design.design_doc: <path to docs/design-docs/clo-XX-*.md>
 phases.design.draft_ready: true
 phases.design.discovery_context_used: <true|false>  # whether discovery report was available
 phases.design.review_gemini: <path|null>            # null if review failed/timed out
-phases.design.review_ollama: <path|null>            # null if review failed/timed out
+phases.design.review_codex: <path|null>             # null if review failed/timed out; legacy key review_ollama
 phases.design.review_verdict: <verdict|null>        # null if review failed/timed out
 phases.design.review_completed: <true|false>        # false if reviews failed/timed out
 phases.design.review_applied: <true|false>          # false if no reviews or nothing to apply

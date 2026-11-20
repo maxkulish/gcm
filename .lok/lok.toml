@@ -25,14 +25,13 @@ timeout = 900
 [backends.gemini]
 enabled = true
 command = "opencode"
-model = "google/gemini-2.5-flash"
-args = ["run", "--model", "google/gemini-3.5-flash", "--dangerously-skip-permissions", "--format", "default"]
+model = "google-vertex/gemini-4-hydrogen#high"
+args = ["run", "--auto", "--format", "default"]
 timeout = 300
 
 [backends.ollama]
-enabled = true
+enabled = false
 command = "http://localhost:11434"
-model = "glm-5:cloud"
 timeout = 300
 
 [roles.code_review]
