@@ -64,6 +64,11 @@ phases:
     flagged_suggestions:
       - "D1 contradicted the stderr-only decision; owner chose run file + fixed line"
       - "N8 declined: keep [ -f ] after the move; mv replaces a symlink at the target, so -f is enough"
+    owner_review_0465162:
+      - "R1: Pi readers (spec, design, pre-PR) get the publish-failed / input-failed lookup; Pi pre-PR failure paragraph no longer sends readers to possibly stale reports"
+      - "R2: AC4 corrected to 13 lok report calls; record asserted on the input-failed synthesis publish"
+      - "R3: publish-failed names the first failed target; marker escalation limited to a failed report publish; diff-only exit has no marker"
+      - "R4: six slug x entry-point runs listed; usable= checked on the writer stdout via a scratch copy"
   implement: { status: pending }
   pr: { status: pending }
   complete: { status: pending }
@@ -92,3 +97,7 @@ history:
     action: spec_review_applied
     phase: spec
     details: "Owner chose run-file route for lok diagnostics; 11 findings applied, N8 declined; fixed line probed through lok workflow run"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Owner review of 0465162 applied (R1-R4); run-file route kept; spec back at approval checkpoint"
