@@ -276,6 +276,7 @@ RUN=".lok/local/review-runs/$SLUG"
 . .lok/lib/review-guard.sh
 STAGE="$RUN/stage"
 review_valid_slug "$SLUG" || { echo "invalid slug: $SLUG"; exit 1; }
+rm -f "$RUN/publish-failed"
 rm -rf "$STAGE" && mkdir -p "$STAGE" docs/reviews || exit 1
 REVIEW_DATE=$(date +%Y-%m-%d)
 GM="google-vertex/${GEMINI_MODEL:-gemini-4-hydrogen#high}"
@@ -351,10 +352,10 @@ else
   { echo "SYNTHESIS_FAILED: $WHY"; SYN_HEAD; echo "Usable reports:"; for f in $USABLE_LIST; do echo "- $f"; done; } > "$STAGE/synthesis.md" || exit 1
 fi
 
-mv -f "$STAGE/gemini.md" "docs/reviews/$SLUG-spec-review-gemini.md" || exit 1
-mv -f "$STAGE/codex.md" "docs/reviews/$SLUG-spec-review-codex.md" || exit 1
-if [ "$FALLBACK_RAN" = 1 ]; then mv -f "$STAGE/fallback.md" "docs/reviews/$SLUG-spec-review-claude-fallback.md" || exit 1; fi
-mv -f "$STAGE/synthesis.md" "docs/reviews/$SLUG-spec-review-synthesis.md" || exit 1
+review_publish "$STAGE/gemini.md" "docs/reviews/$SLUG-spec-review-gemini.md" "$RUN/publish-failed" || exit 1
+review_publish "$STAGE/codex.md" "docs/reviews/$SLUG-spec-review-codex.md" "$RUN/publish-failed" || exit 1
+if [ "$FALLBACK_RAN" = 1 ]; then review_publish "$STAGE/fallback.md" "docs/reviews/$SLUG-spec-review-claude-fallback.md" "$RUN/publish-failed" || exit 1; fi
+review_publish "$STAGE/synthesis.md" "docs/reviews/$SLUG-spec-review-synthesis.md" "$RUN/publish-failed" || exit 1
 echo "usable=$N"
 echo "Spec reviews written to docs/reviews/$SLUG-spec-review-*.md"
 '''

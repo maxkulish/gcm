@@ -22,6 +22,12 @@
 #   review_valid_slug <slug>
 #       Exit 0 when <slug> is safe as one path component under .lok/local/review-runs/:
 #       not empty, no leading dot, only letters, digits, ".", "_" and "-".
+#   review_publish <src> <target> [<record>]
+#       Move <src> to <target> when <target> is missing or a regular file; silent, returns 0.
+#       Refuse a directory (or a link to one) at <target> and leave both paths unchanged.
+#       On failure return 1 with one line "REVIEW_PUBLISH_FAILED: <target>: <reason>" on
+#       stderr. With <record>, append that line to <record> instead and write only
+#       "REVIEW_PUBLISH_FAILED: see the run publish-failed file" to stderr.
 #
 # Variables:
 #   REVIEW_OPENCODE_PERMISSION  read-only permission config for opencode (OPENCODE_CONFIG_CONTENT)
@@ -226,4 +232,31 @@ review_fill_template() {
       print out line
     }
   ' "$_ft_tpl" > "$_ft_out"
+}
+
+review_publish() {
+  _rp_src=$1
+  _rp_tgt=$2
+  _rp_rec=${3-}
+  if [ -d "$_rp_tgt" ]; then
+    _rp_why="target is a directory"
+  else
+    _rp_err=$(mv -f "$_rp_src" "$_rp_tgt" 2>&1)
+    _rp_rc=$?
+    if [ "$_rp_rc" -ne 0 ]; then
+      _rp_first=$(printf '%s\n' "$_rp_err" | awk 'NF { sub(/\r$/, ""); print; exit }')
+      _rp_why="mv failed: ${_rp_first:-exit $_rp_rc}"
+    elif [ -f "$_rp_tgt" ]; then
+      return 0
+    else
+      _rp_why="not a regular file after the move"
+    fi
+  fi
+  _rp_line="REVIEW_PUBLISH_FAILED: $_rp_tgt: $_rp_why"
+  if [ -n "$_rp_rec" ] && printf '%s\n' "$_rp_line" >> "$_rp_rec" 2>/dev/null; then
+    printf '%s\n' 'REVIEW_PUBLISH_FAILED: see the run publish-failed file' >&2
+  else
+    printf '%s\n' "$_rp_line" >&2
+  fi
+  return 1
 }
