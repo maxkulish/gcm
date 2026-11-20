@@ -6,6 +6,13 @@
 #   review_usable <phase> <file>
 #       Exit 0 when <file> is a usable report for <phase>:
 #       review | prepr | synthesis-review | synthesis-prepr
+#       Exit 1 when it is not usable, 2 for an unknown phase, and 3 when its
+#       verdict headings give two or more different verdicts, or a verdict line
+#       joins a token other than FAIL to a second token in a form that is not a
+#       template placeholder (a run of 3 or more dashes, or a second token in
+#       another case). Such a line that starts with FAIL is a FAIL verdict.
+#       A conditional FAIL placeholder ("FAIL otherwise") next to a verdict
+#       other than FAIL also exits 3.
 #   review_stderr_excerpt <stderr-file>
 #       First 5 stderr lines on one line, joined with " | ", at most 500 characters.
 #   review_guard <reviewer> <model> <exit-code> <output-file> <stderr-file> <phase>
@@ -15,7 +22,12 @@
 #       Print one REVIEW_FAILED line with the stderr excerpt.
 #   review_classify <success> <output-file> <phase>
 #       Print "usable", "guard" (the output starts with REVIEW_FAILED:), or the
-#       failure reason: "check rejected output", "step failed", "not a usable report".
+#       failure reason: "check rejected output", "step failed", "conflicting verdicts",
+#       "not a usable report".
+#   review_synthesis_reason <syn-success> <phase> <file>
+#       Print the reason for a synthesis that is not usable: "synthesis step did not run",
+#       "synthesis output has conflicting verdicts", "synthesis output failed the
+#       synthesis check", or "synthesis step failed".
 #   review_fill_template <template> <out-file> <KEY>...
 #       Copy <template> to <out-file>, replacing each __KEY__ with the value of the
 #       environment variable RV_KEY, literally (no escapes, no regex).
@@ -78,19 +90,36 @@ review_usable() {
       }
       return 0
     }
-    function single_verdict(s,   r) {
+    function verdict_value(s,   r, v, t, u, sep, dash, end) {
+      if (!verdict_token(s)) return ""
+      if (phase == "synthesis-prepr") {
+        t = rtrim(ltrim(s))
+        if (t == "- PASS - no Must Fix items") return "?"
+        if (t == "- PASS_WITH_NOTES - Must Fix items exist but can be addressed in ONE bounded fix iteration") return "?"
+        if (t == "- FAIL - any Pivot/Fundamental Scope Issue is present, OR the change diverges materially from the design, OR the change cannot be salvaged in one fix iteration") return "?"
+      }
       if (phase == "review" || phase == "synthesis-review") r = "(APPROVE_WITH_SUGGESTIONS|NEEDS_REVISION|APPROVE)"
-      else if (phase == "prepr") r = "(PASS_WITH_NOTES|PASS|FAIL|APPROVE_WITH_CHANGES|APPROVE|REWORK)"
+      else if (phase == "prepr") r = "(PASS_WITH_NOTES|PASS|FAIL|[Aa][Pp][Pp][Rr][Oo][Vv][Ee]_[Ww][Ii][Tt][Hh]_[Cc][Hh][Aa][Nn][Gg][Ee][Ss]|[Aa][Pp][Pp][Rr][Oo][Vv][Ee]|[Rr][Ee][Ww][Oo][Rr][Kk])"
       else r = "(PASS_WITH_NOTES|PASS|FAIL)"
       s = ltrim(s)
       gsub(/^[*_>` \t-]+/, "", s)
       if (tolower(substr(s, 1, 8)) == "overall:") s = substr(s, 9)
       s = ltrim(s)
       gsub(/^[*_` \t]+/, "", s)
-      if (phase == "prepr") s = toupper(s)
-      if (!match(s, "^" r)) return 0
-      s = substr(s, RLENGTH + 1)
-      return !match(s, "^[*_` \t]*([/|,&]|-+|\342\200\224|\342\200\223|([Oo][Rr]|[Aa][Nn][Dd])[ \t])[*_` \t]*" r "([^A-Za-z0-9_]|$)")
+      if (!match(s, "^" r)) return ""
+      v = toupper(substr(s, 1, RLENGTH))
+      t = substr(s, RLENGTH + 1)
+      sep = "([/|,&]|([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
+      dash = "(--?|\342\200\224|\342\200\223)"
+      if (match(t, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "?"
+      end = "([*` \t.)]*$|[*` \t]*([/|,&]|--?([^-]|$)|\342\200\224|\342\200\223)|[*` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
+      if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r end)) return "?"
+      if (match(tolower(t), "^[*_` \t]*[ \t][*_` \t]*(if|when|unless|otherwise)([^a-z0-9_]|$)")) return (v == "FAIL") ? "~" : "?"
+      u = toupper(t)
+      dash = "(-+|\342\200\224|\342\200\223)"
+      end = "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
+      if (match(u, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9]|$)") || match(u, "^[*_` \t]*" dash "[*_` \t]*" r end)) return (v == "FAIL") ? v : "!"
+      return v
     }
     BEGIN { n = 0; fence = 0; noreviews = 0 }
     {
@@ -105,29 +134,37 @@ review_usable() {
     END {
       if (phase != "review" && phase != "prepr" && phase != "synthesis-review" && phase != "synthesis-prepr") exit 2
       if (phase ~ /^synthesis/ && noreviews) exit 1
-      verdict = 0; vline = 0
-      for (i = 1; i <= n && !verdict; i++) {
+      nv = 0; vline = 0; amb = 0; failph = 0
+      for (i = 1; i <= n; i++) {
         if (L[i] !~ /^#+[ \t]/) continue
         lo = tolower(L[i])
         p = index(lo, "verdict")
         if (p == 0) continue
         rest = substr(L[i], p + 7)
         gsub(/^[*_ \t]*:?[ \t]*/, "", rest)
-        found = 0; bad = 0
-        if (rtrim(rest) != "" && verdict_token(rest)) { found = 1; if (!single_verdict(rest)) bad = 1 }
+        found = 0; bad = 0; sv = ""
+        if (rtrim(rest) != "") { v = verdict_value(rest); if (v == "!") amb = 1; if (v == "~") failph = 1; if (v == "?" || v == "!" || v == "~") bad = 1; else if (v != "") { found = 1; sv = v } }
         seen = 0
         for (j = i + 1; j <= n && seen < 3; j++) {
           t = rtrim(ltrim(L[j]))
           if (t == "") continue
           if (t ~ /^#+[ \t]/) break
           seen++
-          if (verdict_token(t)) {
-            if (found || !single_verdict(t)) bad = 1
-            found = 1
-          }
+          v = verdict_value(t)
+          if (v == "") continue
+          if (v == "!") amb = 1
+          if (v == "~") failph = 1
+          if (v == "?" || v == "!" || v == "~" || found) bad = 1
+          found = 1; sv = v
         }
-        if (found && !bad) { verdict = 1; vline = i }
+        if (found && !bad) {
+          if (!vline) vline = i
+          if (!(sv in V)) { V[sv] = 1; nv++ }
+        }
       }
+      if (nv > 1 || amb) exit 3
+      if (failph && nv == 1 && !("FAIL" in V)) exit 3
+      verdict = (nv == 1)
       if (!verdict) exit 1
       af = 0; pa = 0; mf = 0; other = 0; nonaf = 0
       for (i = 1; i <= n; i++) {
@@ -191,9 +228,16 @@ review_guard() {
     review_fail_line "$_rg_name" "$_rg_model" "help or usage text ($_rg_help)" "$_rg_err"
     return 0
   fi
-  if [ "${REVIEW_GUARD_SKIP_USABLE:-0}" != 1 ] && ! review_usable "$_rg_phase" "$_rg_out"; then
-    review_fail_line "$_rg_name" "$_rg_model" "not a usable report" "$_rg_err"
-    return 0
+  if [ "${REVIEW_GUARD_SKIP_USABLE:-0}" != 1 ]; then
+    _rg_urc=0
+    review_usable "$_rg_phase" "$_rg_out" || _rg_urc=$?
+    if [ "$_rg_urc" -eq 3 ]; then
+      review_fail_line "$_rg_name" "$_rg_model" "conflicting verdicts" "$_rg_err"
+      return 0
+    elif [ "$_rg_urc" -ne 0 ]; then
+      review_fail_line "$_rg_name" "$_rg_model" "not a usable report" "$_rg_err"
+      return 0
+    fi
   fi
   cat "$_rg_out"
   return 0
@@ -208,7 +252,28 @@ review_classify() {
     if grep -q '[^[:space:]]' "$2" 2>/dev/null; then echo "check rejected output"; else echo "step failed"; fi
     return 0
   fi
-  if review_usable "$3" "$2"; then echo usable; else echo "not a usable report"; fi
+  _rc_rc=0
+  review_usable "$3" "$2" || _rc_rc=$?
+  case "$_rc_rc" in
+    0) echo usable ;;
+    3) echo "conflicting verdicts" ;;
+    *) echo "not a usable report" ;;
+  esac
+}
+
+review_synthesis_reason() {
+  case "$1" in
+    skipped) echo "synthesis step did not run" ;;
+    true)
+      _sr_rc=0
+      review_usable "$2" "$3" || _sr_rc=$?
+      if [ "$_sr_rc" -eq 3 ]; then
+        echo "synthesis output has conflicting verdicts"
+      else
+        echo "synthesis output failed the synthesis check"
+      fi ;;
+    *) echo "synthesis step failed" ;;
+  esac
 }
 
 review_fill_template() {

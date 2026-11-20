@@ -59,5 +59,8 @@ jobs:
       - name: Review guard test
         run: sh scripts/test-review-guard.sh
 
+      - name: Review guard tests
+        run: sh .lok/tests/review-guard-test.sh
+
       - name: Build (release)
         run: cargo build --release

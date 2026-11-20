@@ -1,0 +1,169 @@
+task_id: clo-946
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "review_usable in .lok/lib/review-guard.sh plus one synthesis line in each of 3 lok workflows, a new test script and one CI step (6 files)" }
+    architecture_novelty: { lean: spec, note: "No new dependency or interface; changes the heading loop that stops at the first verdict" }
+    prior_art: { lean: spec, note: "verdict_token and single_verdict helpers already exist; CLO-945 stub-test approach is the template" }
+    requirement_clarity: { lean: neutral, note: "Five concrete acceptance criteria; the definition of a template placeholder line is still open" }
+    scope_signal: { lean: spec, note: "No estimate, Bug label, single-file edit plus tests" }
+  rationale: "Single-function parser fix with concrete acceptance criteria; the spec settles the placeholder definition and the test harness."
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Todo
+  blocks: []
+  blocked_by: []
+  related: [CLO-945, CLO-949]
+  branch_suggested: kmamemo/clo-946-fix-the-review-verdict-check-passing-a
+  priority: Medium
+  branch_actual: fix/clo-946-verdict-check
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-11-20T00:00:00Z'
+  updated_at: '2026-11-20T00:00:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-20-clo-946-verdict-check.md
+    approved: true
+    placeholder_definition: "template forms P1-P3 (owner choice 2026-11-20)"
+    review_gemini: docs/reviews/clo-946-spec-review-gemini.md
+    review_codex: docs/reviews/clo-946-spec-review-codex.md
+    review_synthesis: docs/reviews/clo-946-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "A1: AC2 states the exact token case rules per phase; value function tests verdict_token before upper-casing"
+      - "D1: dash alternation counts only when the second token ends the line or another separator follows; fixture FAIL - PASS criteria were not met exits 3"
+      - "D2: per-section rule kept; vline is the first section with a value (same as today)"
+      - "A2: new helper review_synthesis_reason replaces the case block in the 3 workflows; unit-tested in CI"
+      - "A3: CI runs the test script only; corpus sweep, CLO-537 check and workflow stub runs are PR evidence (sub-task 4)"
+      - "A4: exact P3 grammar with word boundary and closing markdown"
+      - "A5: fixtures for unless, otherwise, synthesis-review conflict, review-phase conflict, placeholder then conflict"
+      - "N1: prompt legend fixtures; single echoed legend line stated as a known limit"
+      - "N2: 3-line lookahead stated in AC1"
+      - "N3: AC12 per phase"
+      - "N4/N5: review_guard fixtures padded above 100 chars; red-first checks against main 9772049"
+      - "N6: escalate if CLO-946 pre-PR reviewers quote verdict headings at column 0"
+      - "N7: gate meaning for Pi and the inline gate defined"
+      - "N8/N10: scalar counter, no length(array), no bashisms"
+      - "N9: review_classify header comment updated"
+      - "N11: comparison sha pinned to 9772049"
+    owner_revisions:
+      - "R1 (2026-11-20): P4 added - the three exact pre-PR legend bullets are placeholders in synthesis-prepr only; one fixture per bullet exits 1; non-exact prose stays a verdict"
+      - "R2: Evaluation 13 stubs use APPROVE / NEEDS_REVISION with Priority Actions for spec-review and design-review, PASS / FAIL with Must Fix Before PR for pre-pr-validation"
+      - "R3: AC3 clarified - a P2 line is not a token line, so a real verdict on the next line counts; earlier PASS plus P2 heading with body FAIL exits 3"
+      - "R4: AC5 parity limited to cases where the first qualifying section stays the same; documented 0-to-1 change for H3 conditional PASS then H2 real PASS"
+    flagged_suggestions: []
+  implement:
+    status: complete
+    commits:
+      - "f9b38d0 fix(CLO-946): review verdict check reads every verdict heading"
+      - "9deacbf test(CLO-946): review guard tests in CI"
+      - "723bcfa fix(CLO-946): tighten the alternation matcher"
+      - "12ac629 fix(CLO-946): treat loose alternations as conflicting verdicts"
+      - "910f72f fix(CLO-946): second-token boundary, full dash separator and P3 markdown"
+      - "a6fb88b fix(CLO-946): conditional FAIL and underscore emphasis cannot hide a FAIL"
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-946-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-946-gemini-validation.md
+    gemini_verdict: PASS_WITH_NOTES
+    gate_runs: 2
+    spec_deviation: "A loose alternation (3+ dashes, or a second token in another case) that starts with a token other than FAIL exits 3; the spec read it as the first token. A P3 placeholder on FAIL next to a single non-FAIL verdict exits 3"
+    evidence:
+      tests: "sh and dash on macOS awk; mawk and gawk on ubuntu:24.04 - all tests passed"
+      red_first: "23 cases fail against the guard at 9772049 (conflicts, P3/P4 placeholders, h3cond, named reasons)"
+      sweep: "836 checks over docs/reviews x 4 phases, no difference vs 9772049"
+      clo_537: "prepr exit 0 (verdict FAIL, template line 30 ignored)"
+      ac12: "clo-946 spec-review gemini/codex exit 0 in review; synthesis exit 0 in synthesis-review"
+      stub_runs: "spec-review and design-review (APPROVE then NEEDS_REVISION, Priority Actions) and pre-pr-validation (PASS then FAIL, Must Fix Before PR) all write SYNTHESIS_FAILED: synthesis output has conflicting verdicts; pre-pr lok exit 1"
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/93
+    pr_number: 93
+    ci_passed: false
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: "New workflow for CLO-946 on branch fix/clo-946-verdict-check"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended=specification chosen=specification confidence=high"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work row added (1/3); ROADMAP.md Maintenance row In Progress, summary 6/5; DEPENDENCIES.md had no row to remove"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_drafted
+    phase: spec
+    details: "Spec written; owner chose template-forms placeholder rule; prototype sweep over 206 reports x 4 phases shows no change; CLO-537 stays usable (FAIL)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "lok spec-review exit 0; Gemini APPROVE_WITH_SUGGESTIONS, Codex NEEDS_REVISION, synthesis NEEDS_REVISION"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "All synthesis Priority Actions applied; prototype re-validated (824 checks, no difference vs 9772049; all fixtures as expected); no ADR conflicts"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Owner chose revise: P4 legend placeholders, Evaluation 13 phase tokens, AC3 P2 rule, AC5 parity narrowed; prototype re-validated (836 checks, no difference vs 9772049; new fixtures as expected)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Owner approved revised spec (2b4b18e); proceeding to implement"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 1-4 done: verdict scan, named failures, test script plus CI step, evidence (sweep, red-first, stub runs)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-946-verdict-check pushed with f9b38d0 and 9deacbf"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Gate at d141fc4: usable=2; Codex FAIL (dash matcher accepts --- and PASSor; prepr upper-cases the second token), Gemini PASS_WITH_NOTES; both Codex findings reproduced"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Gate 2 at 1ca7d7e (Codex also read 12ac629): usable=2; Codex FAIL (FAIL - PASS_ and FAIL - PASS --- details hide a later FAIL; FAIL - fail exits 3; PASS **if** not a placeholder), Gemini PASS_WITH_NOTES (stale snapshot diff, P3 markdown, _ in closing class); all reproduced and fixed with tests; security review fail-open (PASS / fail, PASS --- FAIL) fixed in 12ac629"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "Owner chose proceed after gate 2 fixes (910f72f); no third gate run"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check, clippy -D warnings, cargo test all pass; security review findings (FAIL unless, _FAIL_ emphasis) fixed with tests before PR"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #93 created; Linear CLO-946 set to In Review with PR comment"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: ci_passed
+    phase: pr
+    details: "PR #93 CI green on ubuntu-latest and macos-latest; mergeable CLEAN"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: rebased_on_main
+    phase: pr
+    details: "Rebased onto origin/main bb503c6 (CLO-947, PR #92); ci.yml keeps both guard-test steps, PROJECT.md and ROADMAP.md keep both rows (Maintenance 7/5); scripts/test-review-guard.sh and .lok/tests/review-guard-test.sh pass under sh and dash"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: rebased_on_main
+    phase: pr
+    details: "Rebased onto origin/main 622f03b (CLO-947 close-out, PR #94); PROJECT.md and ROADMAP.md take main as base with CLO-947 Done and add only the CLO-946 row, WIP note and Maintenance 7/6; both guard test scripts pass under sh and dash"

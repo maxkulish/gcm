@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-20 (CLO-947 merged in PR #92)
+**Last Updated**: 2026-11-20 (CLO-947 merged in PR #92; CLO-946 started)
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 15 | 12 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
-| Maintenance (cross-cutting) | 6 | 6 | Complete |
+| Maintenance (cross-cutting) | 7 | 6 | In Progress |
 
 ## Phase 6: Library Extraction
 
@@ -127,3 +127,4 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 | [CLO-942](https://linear.app/cloud-ai/issue/CLO-942) | Move the orchestrate pi extension to pi 1.5.x and remove the undici and minimatch overrides | Done | PR #81 (follow-up) |
 | [CLO-945](https://linear.app/cloud-ai/issue/CLO-945) | Fix the task-phase review gates when a reviewer CLI or pinned model is unavailable | Done | CLO-941, CLO-942 (related - found in their review reports); PR #90 |
 | [CLO-947](https://linear.app/cloud-ai/issue/CLO-947) | Fix review report publication succeeding when the target path is an existing directory | Done | CLO-945 (follow-up from the PR #90 review); PR #92 |
+| [CLO-946](https://linear.app/cloud-ai/issue/CLO-946) | Fix the review verdict check passing a report when a later verdict says FAIL | In Progress | CLO-945 (related - PR #90 review follow-up), CLO-949 (related) |
