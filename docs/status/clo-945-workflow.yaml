@@ -24,7 +24,7 @@ linear:
   priority: Medium
   branch_actual: fix/clo-945-review-gates
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-11-19T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
@@ -131,8 +131,14 @@ phases:
       - "Gemini: env -u CLAUDECODE for claude -p; disproved by a probe with CLAUDECODE=1"
     revised_5_sha256_prefix: d9c54fcfb20a
   implement:
-    status: in_progress
-    last_phase_completed: evaluation
+    status: complete
+    last_phase_completed: validation_gate
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-945-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-945-gemini-validation.md
+    gemini_verdict: PASS_WITH_NOTES
+    gate_decision: proceed  # owner chose proceed; remaining findings are PR follow-ups
     commits:
       - 5cf6b4a  # sub-task 1: shared review guard and usable-report check
       - 20b65c9  # sub-task 2: spec-review workflow
@@ -146,6 +152,10 @@ phases:
       - 969e52f  # evaluation fix: input-failure synthesis names its reviewers (AC10)
       - 9f7d630  # evaluation fix: design resume checks the review results (AC9)
       - 3801f83  # evaluation fix: inline gate exports the template variables
+      - caad7c4  # state: evaluation and implementation_complete
+      - 78fb83a  # gate fix: guard rejects dash-joined verdicts, review_valid_slug
+      - 0c5d19c  # gate fix: workflows check the slug, timeout -k, fallback prompt check
+      - 7545d1a  # gate fix: inline gate stages both reports, exit 1 handling
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -257,3 +267,15 @@ history:
     action: implementation_complete
     phase: implement
     details: "All 7 sub-tasks and the evaluation fixes are on the branch; continuing to the validation gate"
+  - timestamp: '2026-11-20T12:30:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Gate at caad7c4: Codex FAIL, Gemini PASS_WITH_NOTES, usable=2; owner chose fix"
+  - timestamp: '2026-11-20T13:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "Gate fixes 78fb83a, 0c5d19c, 7545d1a at 7545d1a: dash separators, slug check before rm -rf, timeout -k 20 within the AC7 margin, fallback prompt check, inline gate stages both reports; 11 fixtures pass, 391 real reports unchanged, stub matrix passes"
+  - timestamp: '2026-11-20T13:10:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Gate rerun at 7545d1a: exit 0, 233 s, Codex FAIL (multi-heading verdicts and mv onto a directory, both deferred; slug in middle steps, skip-usable bypass, outer exit status), Gemini PASS_WITH_NOTES, usable=2; owner chose proceed, findings go to the PR body as follow-ups"
