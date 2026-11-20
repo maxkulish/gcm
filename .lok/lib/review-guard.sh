@@ -11,6 +11,8 @@
 #       joins a token other than FAIL to a second token in a form that is not a
 #       template placeholder (a run of 3 or more dashes, or a second token in
 #       another case). Such a line that starts with FAIL is a FAIL verdict.
+#       A conditional FAIL placeholder ("FAIL otherwise") next to a verdict
+#       other than FAIL also exits 3.
 #   review_stderr_excerpt <stderr-file>
 #       First 5 stderr lines on one line, joined with " | ", at most 500 characters.
 #   review_guard <reviewer> <model> <exit-code> <output-file> <stderr-file> <phase>
@@ -112,11 +114,11 @@ review_usable() {
       if (match(t, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)")) return "?"
       end = "([*` \t.)]*$|[*` \t]*([/|,&]|--?([^-]|$)|\342\200\224|\342\200\223)|[*` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
       if (match(t, "^[*_` \t]*" dash "[*_` \t]*" r end)) return "?"
-      if (match(tolower(t), "^[*_` \t]*[ \t][*_` \t]*(if|when|unless|otherwise)([^a-z0-9_]|$)")) return "?"
+      if (match(tolower(t), "^[*_` \t]*[ \t][*_` \t]*(if|when|unless|otherwise)([^a-z0-9_]|$)")) return (v == "FAIL") ? "~" : "?"
       u = toupper(t)
       dash = "(-+|\342\200\224|\342\200\223)"
-      end = "([*` \t.)]*$|[*` \t]*([/|,&]|" dash ")|[*` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
-      if (match(u, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9_]|$)") || match(u, "^[*_` \t]*" dash "[*_` \t]*" r end)) return (v == "FAIL") ? v : "!"
+      end = "([*_` \t.)]*$|[*_` \t]*([/|,&]|" dash ")|[*_` \t]+([Oo][Rr]|[Aa][Nn][Dd])[ \t])"
+      if (match(u, "^[*_` \t]*" sep "[*_` \t]*" r "([^A-Za-z0-9]|$)") || match(u, "^[*_` \t]*" dash "[*_` \t]*" r end)) return (v == "FAIL") ? v : "!"
       return v
     }
     BEGIN { n = 0; fence = 0; noreviews = 0 }
@@ -132,7 +134,7 @@ review_usable() {
     END {
       if (phase != "review" && phase != "prepr" && phase != "synthesis-review" && phase != "synthesis-prepr") exit 2
       if (phase ~ /^synthesis/ && noreviews) exit 1
-      nv = 0; vline = 0; amb = 0
+      nv = 0; vline = 0; amb = 0; failph = 0
       for (i = 1; i <= n; i++) {
         if (L[i] !~ /^#+[ \t]/) continue
         lo = tolower(L[i])
@@ -141,7 +143,7 @@ review_usable() {
         rest = substr(L[i], p + 7)
         gsub(/^[*_ \t]*:?[ \t]*/, "", rest)
         found = 0; bad = 0; sv = ""
-        if (rtrim(rest) != "") { v = verdict_value(rest); if (v == "!") amb = 1; if (v == "?" || v == "!") bad = 1; else if (v != "") { found = 1; sv = v } }
+        if (rtrim(rest) != "") { v = verdict_value(rest); if (v == "!") amb = 1; if (v == "~") failph = 1; if (v == "?" || v == "!" || v == "~") bad = 1; else if (v != "") { found = 1; sv = v } }
         seen = 0
         for (j = i + 1; j <= n && seen < 3; j++) {
           t = rtrim(ltrim(L[j]))
@@ -151,7 +153,8 @@ review_usable() {
           v = verdict_value(t)
           if (v == "") continue
           if (v == "!") amb = 1
-          if (v == "?" || v == "!" || found) bad = 1
+          if (v == "~") failph = 1
+          if (v == "?" || v == "!" || v == "~" || found) bad = 1
           found = 1; sv = v
         }
         if (found && !bad) {
@@ -160,6 +163,7 @@ review_usable() {
         }
       }
       if (nv > 1 || amb) exit 3
+      if (failph && nv == 1 && !("FAIL" in V)) exit 3
       verdict = (nv == 1)
       if (!verdict) exit 1
       af = 0; pa = 0; mf = 0; other = 0; nonaf = 0

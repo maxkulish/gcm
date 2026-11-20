@@ -95,6 +95,14 @@ fx conflict-dash-3dash '## Verdict: PASS' '' '## Findings' '- none' '' '## Final
 expect prepr conflict-dash-3dash 3
 fx conflict-dash-syn '## Verdict' 'PASS' '' '## Must Fix Before PR' '- none' '' '## Final Verdict' 'FAIL - PASS criteria were not met'
 expect synthesis-prepr conflict-dash-syn 3
+fx conflict-fail-unless '## Verdict: PASS' '' '## Findings' '- none' '' '## Final Verdict: FAIL **unless** X'
+expect prepr conflict-fail-unless 3
+fx fail-unless-fail '## Verdict: FAIL unless X' '' '## Verdict: FAIL' '' '## Findings' '- none'
+expect prepr fail-unless-fail 0
+fx amb-italic '## Verdict: PASS - _FAIL_' '' '## Findings' '- none'
+expect prepr amb-italic 3
+fx amb-em-bold '## Verdict: PASS — __FAIL__' '' '## Findings' '- none'
+expect prepr amb-em-bold 3
 fx fail-lower '## Verdict: FAIL - fail' '' '## Findings' '- none'
 expect prepr fail-lower 0
 fx ph-if-bold '## Verdict: PASS **if** tests pass' '' '## Findings' '- none'

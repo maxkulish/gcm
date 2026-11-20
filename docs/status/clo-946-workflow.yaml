@@ -24,7 +24,7 @@ linear:
   priority: Medium
   branch_actual: fix/clo-946-verdict-check
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-11-20T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
@@ -66,17 +66,20 @@ phases:
       - "R4: AC5 parity limited to cases where the first qualifying section stays the same; documented 0-to-1 change for H3 conditional PASS then H2 real PASS"
     flagged_suggestions: []
   implement:
-    status: in_progress
+    status: complete
     commits:
       - "f9b38d0 fix(CLO-946): review verdict check reads every verdict heading"
       - "9deacbf test(CLO-946): review guard tests in CI"
       - "723bcfa fix(CLO-946): tighten the alternation matcher"
       - "12ac629 fix(CLO-946): treat loose alternations as conflicting verdicts"
+      - "910f72f fix(CLO-946): second-token boundary, full dash separator and P3 markdown"
     codex_validated: true
     codex_verdict: FAIL
     codex_report: docs/reviews/clo-946-codex-validation.md
     gemini_validation_report: docs/reviews/clo-946-gemini-validation.md
     gemini_verdict: PASS_WITH_NOTES
+    gate_runs: 2
+    spec_deviation: "A loose alternation (3+ dashes, or a second token in another case) that starts with a token other than FAIL exits 3; the spec read it as the first token. A P3 placeholder on FAIL next to a single non-FAIL verdict exits 3"
     evidence:
       tests: "sh and dash on macOS awk; mawk and gawk on ubuntu:24.04 - all tests passed"
       red_first: "23 cases fail against the guard at 9772049 (conflicts, P3/P4 placeholders, h3cond, named reasons)"
@@ -135,3 +138,11 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Gate 2 at 1ca7d7e (Codex also read 12ac629): usable=2; Codex FAIL (FAIL - PASS_ and FAIL - PASS --- details hide a later FAIL; FAIL - fail exits 3; PASS **if** not a placeholder), Gemini PASS_WITH_NOTES (stale snapshot diff, P3 markdown, _ in closing class); all reproduced and fixed with tests; security review fail-open (PASS / fail, PASS --- FAIL) fixed in 12ac629"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "Owner chose proceed after gate 2 fixes (910f72f); no third gate run"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check, clippy -D warnings, cargo test all pass; security review findings (FAIL unless, _FAIL_ emphasis) fixed with tests before PR"
