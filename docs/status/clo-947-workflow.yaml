@@ -27,8 +27,8 @@ linear:
   priority: Medium
   branch_actual: fix/clo-947-report-publish
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-11-20T00:00:00Z'
   updated_at: '2026-11-20T00:00:00Z'
 phases:
@@ -82,11 +82,20 @@ phases:
       - "Round 2: Codex PASS_WITH_NOTES, Gemini PASS; inline && chain now asserted by the wiring test"
     evaluation: "Unit + wiring 19/19 (sh, dash); lok stub runs #8 (6 slug x entry combos), #9, #10, #10a, #11, #14 and inline #12, #13, #13a, #14 all as specified"
   pr:
-    status: in_progress
+    status: complete
+    approved: true
+    merge_commit: bb503c6
     pr_url: https://github.com/maxkulish/gcm/pull/92
     pr_number: 92
     ci_passed: true
-  complete: { status: pending }
+  complete:
+    status: complete
+    merged_at: '2026-11-20T21:17:01Z'
+    aggregation_files_updated: true
+    linear_status: Done
+    closeout_branch: docs/clo-947-complete
+    lessons: [.pi/lessons/clo-947-report-publish-lessons.md#L1]
+    follow_ups: "Listed in the PR #92 body; not filed as Linear issues"
 history:
   - timestamp: '2026-11-20T00:00:00Z'
     action: workflow_started
@@ -144,3 +153,15 @@ history:
     action: ci_passed
     phase: pr
     details: "CI run 44817097243 green on ubuntu and macos, Review guard test passed on both"
+  - timestamp: '2026-11-20T21:17:01Z'
+    action: pr_merged
+    phase: pr
+    details: "PR #92 squash-merged as bb503c6 after CI passed, on the owner's instruction"
+  - timestamp: '2026-11-20T21:30:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT.md: CLO-947 to Recently Completed; ROADMAP.md: Done, Maintenance 6/6"
+  - timestamp: '2026-11-20T21:30:00Z'
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-947 fully completed"
