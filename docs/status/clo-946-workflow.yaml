@@ -92,7 +92,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/93
     pr_number: 93
-    ci_passed: false
+    ci_passed: true
   complete: { status: pending }
 history:
   - timestamp: '2026-11-20T00:00:00Z'
@@ -155,3 +155,7 @@ history:
     action: pr_created
     phase: pr
     details: "PR #93 created; Linear CLO-946 set to In Review with PR comment"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: ci_passed
+    phase: pr
+    details: "PR #93 CI green on ubuntu-latest and macos-latest; mergeable CLEAN"
