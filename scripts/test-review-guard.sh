@@ -85,6 +85,39 @@ else
   esac
 fi
 
+# stub_mv <case-dir> <stub body>: run review_publish with a stub mv first on PATH
+stub_mv() {
+  mkdir -p "$1/bin"
+  printf '#!/bin/sh\n%s\n' "$2" > "$1/bin/mv"; chmod +x "$1/bin/mv"
+  printf 'report\n' > "$1/src"
+  _p=$PATH; PATH="$1/bin:$PATH"
+  run_publish "$1/run" "$1/src" "$1/target"
+  PATH=$_p
+}
+
+C="$W/mv-silent"; stub_mv "$C" 'exit 4'
+if [ "$RC" -ne 0 ] && [ -z "$OUT" ] && [ "$ERR" = "REVIEW_PUBLISH_FAILED: $C/target: mv failed: exit 4" ]; then
+  ok "mv fails with empty stderr"
+else
+  fail "mv fails with empty stderr" "rc=$RC stdout=$OUT stderr=$ERR"
+fi
+
+C="$W/mv-multi"; stub_mv "$C" 'printf "\n  \nfirst reason\nsecond line\n" >&2; exit 1'
+if [ "$RC" -ne 0 ] && [ -z "$OUT" ] && [ "$ERR" = "REVIEW_PUBLISH_FAILED: $C/target: mv failed: first reason" ]; then
+  ok "mv fails with several stderr lines"
+else
+  fail "mv fails with several stderr lines" "rc=$RC stdout=$OUT stderr=$ERR"
+fi
+
+# Record cannot be written: stderr holds only the full line
+C="$W/record-dir"; mkdir -p "$C/target" "$C/publish-failed"; printf 'report\n' > "$C/src"
+run_publish "$C/run" "$C/src" "$C/target" "$C/publish-failed"
+if [ "$RC" -ne 0 ] && [ -z "$OUT" ] && [ "$ERR" = "REVIEW_PUBLISH_FAILED: $C/target: target is a directory" ]; then
+  ok "record cannot be written"
+else
+  fail "record cannot be written" "rc=$RC stdout=$OUT stderr=$ERR"
+fi
+
 # Source is a directory: mv succeeds, the target is not a regular file afterwards
 C="$W/srcdir"; mkdir -p "$C/src"
 run_publish "$C/run" "$C/src" "$C/target"

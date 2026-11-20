@@ -342,7 +342,7 @@ Full reviews saved to: docs/reviews/
 
 **Check review results**
 
-If lok exited non-zero, treat the run as "no AI reviews available" and read no report file. If lok also shows `REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read `.lok/local/review-runs/<slug>/publish-failed` before any rerun: its line names the first report target that was not published (for example a directory at that path) and the reason. Later targets of that run were not attempted, and the next run deletes the file. Otherwise read `docs/reviews/clo-[XX]-review-synthesis.md`. A report has failed only when its first line starts with `REVIEW_FAILED:`. A synthesis whose first line is `SYNTHESIS_FAILED: <reason>` lists the usable individual reports to read instead. Otherwise the synthesis starts with a **Reviewer Status** table showing which models succeeded, failed, or were skipped.
+If lok exited non-zero, treat the run as "no AI reviews available" and read no report file, with or without a marker line. If lok also shows `REVIEW_PUBLISH_FAILED: see the run publish-failed file`, read `.lok/local/review-runs/<slug>/publish-failed` before any rerun: its line names the first report target that was not published (for example a directory at that path) and the reason. Later targets of that run were not attempted, and the next run deletes the file. If lok exited 0, read `docs/reviews/clo-[XX]-review-synthesis.md`. A report has failed only when its first line starts with `REVIEW_FAILED:`. A synthesis whose first line is `SYNTHESIS_FAILED: <reason>` lists the usable individual reports to read instead. Otherwise the synthesis starts with a **Reviewer Status** table showing which models succeeded, failed, or were skipped.
 
 **Interpreting the synthesis:**
 

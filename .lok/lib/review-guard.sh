@@ -241,7 +241,7 @@ review_publish() {
   if [ -d "$_rp_tgt" ]; then
     _rp_why="target is a directory"
   else
-    _rp_err=$(mv -f "$_rp_src" "$_rp_tgt" 2>&1)
+    _rp_err=$(mv -f -- "$_rp_src" "$_rp_tgt" 2>&1)
     _rp_rc=$?
     if [ "$_rp_rc" -ne 0 ]; then
       _rp_first=$(printf '%s\n' "$_rp_err" | awk 'NF { sub(/\r$/, ""); print; exit }')
@@ -253,7 +253,7 @@ review_publish() {
     fi
   fi
   _rp_line="REVIEW_PUBLISH_FAILED: $_rp_tgt: $_rp_why"
-  if [ -n "$_rp_rec" ] && printf '%s\n' "$_rp_line" >> "$_rp_rec" 2>/dev/null; then
+  if [ -n "$_rp_rec" ] && printf '%s\n' "$_rp_line" 2>/dev/null >> "$_rp_rec"; then
     printf '%s\n' 'REVIEW_PUBLISH_FAILED: see the run publish-failed file' >&2
   else
     printf '%s\n' "$_rp_line" >&2
