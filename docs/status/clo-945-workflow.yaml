@@ -156,7 +156,10 @@ phases:
       - 78fb83a  # gate fix: guard rejects dash-joined verdicts, review_valid_slug
       - 0c5d19c  # gate fix: workflows check the slug, timeout -k, fallback prompt check
       - 7545d1a  # gate fix: inline gate stages both reports, exit 1 handling
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/90
+    pr_number: 90
   complete: { status: pending }
 history:
   - timestamp: '2026-11-19T00:00:00Z'
@@ -279,3 +282,7 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Gate rerun at 7545d1a: exit 0, 233 s, Codex FAIL (multi-heading verdicts and mv onto a directory, both deferred; slug in middle steps, skip-usable bypass, outer exit status), Gemini PASS_WITH_NOTES, usable=2; owner chose proceed, findings go to the PR body as follow-ups"
+  - timestamp: '2026-11-20T13:20:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #90 created after merging origin/main twice (PROJECT.md and ROADMAP.md conflicts resolved); Linear CLO-945 set to In Review with a PR comment; all gate findings listed as follow-ups in the PR body"
