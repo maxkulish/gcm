@@ -26,10 +26,10 @@ linear:
   priority: Medium
   branch_actual: fix/clo-944-ac-488-1
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-11-19T00:00:00Z'
-  updated_at: '2026-11-19T00:00:00Z'
+  updated_at: '2026-11-20T08:00:00Z'
 phases:
   discovery: { status: skipped, skip_reason: "Operational task", approved: true }
   design: { status: skipped, reason: "Operational task" }
@@ -47,8 +47,23 @@ phases:
     status: complete
     status_file: docs/status/clo-944-ac-488-1-retry-notice.md
     follow_ups: []
-  pr: { status: pending, required: true }
-  complete: { status: pending }
+  pr:
+    status: complete
+    approved: true
+    merge_commit: b77e804
+    required: true
+    pr_url: https://github.com/maxkulish/gcm/pull/86
+    pr_number: 86
+    ci_passed: true
+    commits: [dd61d5a, 1fd8a63]
+  complete:
+    status: complete
+    merged_at: '2026-11-20T07:46:43Z'
+    aggregation_files_updated: true
+    linear_status: Done
+    closeout_branch: docs/clo-944-complete
+    lessons: [.pi/lessons/clo-944-ac-488-1-lessons.md#L1]
+    note: "Squash commit b77e804 still carries Co-authored-by: Claude trailers"
 history:
   - timestamp: '2026-11-19T00:00:00Z'
     action: workflow_started
@@ -70,3 +85,27 @@ history:
     action: phase_completed
     phase: document
     details: "Status file written; no follow-ups"
+  - timestamp: '2026-11-19T20:45:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "cargo fmt --check, clippy --all-targets -D warnings, cargo test all green"
+  - timestamp: '2026-11-19T20:47:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #86 created; Linear CLO-944 -> In Review with PR comment; mergeable"
+  - timestamp: '2026-11-19T20:55:00Z'
+    action: ci_passed
+    phase: pr
+    details: "build/test ubuntu-latest and macos-latest pass; no reviews yet; PR checkpoint presented"
+  - timestamp: '2026-11-20T07:46:43Z'
+    action: pr_merged
+    phase: pr
+    details: "PR #86 squash-merged by owner as b77e804"
+  - timestamp: '2026-11-20T08:00:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: "PROJECT.md Recently Completed, ROADMAP Done (Bug fixes 12/15), DEPENDENCIES timestamp; no dependents to unblock"
+  - timestamp: '2026-11-20T08:00:00Z'
+    action: workflow_complete
+    phase: complete
+    details: "Linear CLO-944 Done; close-out docs PR carries aggregation files and lesson L1"
