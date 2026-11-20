@@ -81,7 +81,11 @@ phases:
       - "Round 1: Codex FAIL, Gemini PASS_WITH_NOTES; 5 findings fixed in 1f7cc10 (Pi slug case, review.md zero-exit read, record-write stderr leak, mv stderr tests, mv --)"
       - "Round 2: Codex PASS_WITH_NOTES, Gemini PASS; inline && chain now asserted by the wiring test"
     evaluation: "Unit + wiring 19/19 (sh, dash); lok stub runs #8 (6 slug x entry combos), #9, #10, #10a, #11, #14 and inline #12, #13, #13a, #14 all as specified"
-  pr: { status: pending, ci_passed: false }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/92
+    pr_number: 92
+    ci_passed: false
   complete: { status: pending }
 history:
   - timestamp: '2026-11-20T00:00:00Z'
@@ -132,3 +136,7 @@ history:
     action: phase_completed
     phase: implement
     details: "Implement complete; moving to PR"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #92 opened after pre-flight checks passed"
