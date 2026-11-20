@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-11-19 (CLO-943 started)
+**Last Updated**: 2026-11-19 (CLO-943 and CLO-944 started)
 
 ## Current Blockers
 
@@ -21,7 +21,6 @@
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | No dependencies; approach written against the three wire schemas (CLO-797 landed in PR #73 - shares the grouping call) | 2026-10-29 |
 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | No dependencies; root cause confirmed by PTY reproduction, candidate directions written | 2026-09-18 |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | CLO-797 merged; owner decision needed on replacing the D4 estimator | 2026-10-29 |
-| [CLO-944](https://linear.app/cloud-ai/issue/CLO-944) | No dependencies; the cause is not yet found | 2026-11-18 |
 
 > **All three bugs of 2026-09-16 are closed.** CLO-797 (the grouping prompt overflowed the context
 > window) merged in PR #73 on 2026-10-29; it came out of the same investigation of a 515-file commit as CLO-798, see

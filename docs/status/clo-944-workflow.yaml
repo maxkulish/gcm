@@ -1,0 +1,72 @@
+task_id: clo-944
+task_title: "Fix acceptance case AC-488-1 (HTTP 429 retried then succeeds) failing on main"
+linear_url: https://linear.app/cloud-ai/issue/CLO-944
+task_type: operational
+classification:
+  recommended: operational
+  chosen: operational
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "scripts/acceptance.sh only (AC-488-1 at :789-797); no src change" }
+    architecture_novelty: { lean: spec, note: "No new interface; assertion text drifted from intentional CLO-798 behaviour" }
+    prior_art: { lean: spec, note: "AC-488-8b already asserts the retry notice under GCM_DEBUG; failure text fixed in src/provider/identity.rs:35" }
+    requirement_clarity: { lean: spec, note: "Root cause reproduced: only the 'rate limit' grep fails, it matches the CLO-798 [warn] retry notice" }
+    scope_signal: { lean: spec, note: "No estimate; one-assertion test fix" }
+  rationale: "Test drift with a reproduced cause and a one-file fix; the streamlined operational path fits, PR required because the script changes."
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  blocks: []
+  blocked_by: []
+  related: [CLO-940, CLO-945]
+  branch_suggested: kmamemo/clo-944-fix-acceptance-case-ac-488-1-http-429
+  priority: Medium
+  branch_actual: fix/clo-944-ac-488-1
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-11-19T00:00:00Z'
+  updated_at: '2026-11-19T00:00:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Operational task", approved: true }
+  design: { status: skipped, reason: "Operational task" }
+  plan: { status: skipped, reason: "Operational task" }
+  execute:
+    status: complete
+    status_file: docs/status/clo-944-ac-488-1-retry-notice.md
+    failing_assertion: "grep -qi 'rate limit' /tmp/gcm-out -> 'user saw a rate-limit failure despite recovery'"
+    baseline: "acceptance.sh at b724366 (main): PASS=294 FAIL=1 SKIP=1"
+    root_cause: "CLO-798 (96116ed, PR #60) promoted the retry notice to warn_log! by default (spec AC-3); its text 'rate limited (HTTP 429)' matches the case-insensitive grep"
+    fix: "AC-488-1 negative grep narrowed to 'rate limit reached' (terminal RateLimit Display); positive check for 'attempt 2 of' added"
+    result: "acceptance.sh fresh release build: PASS=296 FAIL=0 SKIP=1"
+    negative_check: "GCM_RETRY_MAX=1 on /retry429/ -> exit 1, 'rate limit reached' printed and matched"
+  document:
+    status: complete
+    status_file: docs/status/clo-944-ac-488-1-retry-notice.md
+    follow_ups: []
+  pr: { status: pending, required: true }
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: "New workflow; Linear CLO-944 fetched (Backlog, no comments)"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended operational, chosen operational, confidence high; AC-488-1 reproduced before classification"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work (1/3), ROADMAP In Progress, removed from DEPENDENCIES Unblocked & Ready"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: phase_completed
+    phase: execute
+    details: "Cause: CLO-798 retry notice matched the broad grep; assertion fixed; suite 296/0/1"
+  - timestamp: '2026-11-19T00:00:00Z'
+    action: phase_completed
+    phase: document
+    details: "Status file written; no follow-ups"
