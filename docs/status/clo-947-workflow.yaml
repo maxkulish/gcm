@@ -35,12 +35,35 @@ phases:
   discovery: { status: skipped, skip_reason: "Specification task", approved: true }
   design: { status: skipped, reason: "Specification task - using /spec instead" }
   spec:
-    status: reviewing
+    status: checkpoint
     spec_file: docs/specs/2026-11-20-clo-947-report-publish.md
     approved: false
     decisions:
       - "Test home: scripts/test-review-guard.sh run in CI on ubuntu and macos (owner choice 2026-11-20)"
-      - "Named line goes to stderr: lok 20261107.0.2 prints a failed step's stderr and drops its stdout (probe 2026-11-20)"
+      - "Superseded: named line to stderr alone. lok classifies a failed step's stderr (429, not found, ...) and cuts it to 80 chars (probe 2026-11-20)"
+      - "lok route: full line in .lok/local/review-runs/<slug>/publish-failed, fixed stderr line 'REVIEW_PUBLISH_FAILED: see the run publish-failed file' (owner choice 2026-11-20)"
+    review_gemini: docs/reviews/clo-947-spec-review-gemini.md
+    review_codex: docs/reviews/clo-947-spec-review-codex.md
+    review_synthesis: docs/reviews/clo-947-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "A1: test the AC3 post-move branch (src is a directory)"
+      - "A2: name write_reports beside write_reviews"
+      - "A3/D1: lok diagnostic route via run file + fixed stderr line (owner decision), tested with 429 and long slugs under lok run and lok workflow run"
+      - "N1: combined diff + synthesis failure, reader docs name publish-failed and input-failed"
+      - "N2: inline exit contract (child status, printed gate exit N, no success lines, directory unchanged); wrapper status left to CLO-949"
+      - "N3: wiring check counts occurrences"
+      - "N4: valid stubs, logged invocations, writer-only usable= check, no new entry, no reports published marker"
+      - "N5: inline partial publication ($GR only)"
+      - "N6: dependency order stated"
+      - "N7: empty mv stderr falls back to exit <rc>"
+      - "N9: wiring check matches any mv command"
+      - "N10: normal case covers new and replaced files"
+    flagged_suggestions:
+      - "D1 contradicted the stderr-only decision; owner chose run file + fixed line"
+      - "N8 declined: keep [ -f ] after the move; mv replaces a symlink at the target, so -f is enough"
   implement: { status: pending }
   pr: { status: pending }
   complete: { status: pending }
@@ -61,3 +84,11 @@ history:
     action: spec_draft_ready
     phase: spec
     details: "docs/specs/2026-11-20-clo-947-report-publish.md written; lok output-channel probe done; advisor review applied"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "lok exit 0; Gemini APPROVE_WITH_SUGGESTIONS, Codex NEEDS_REVISION; synthesis NEEDS_REVISION (lok stderr classification hides the named line)"
+  - timestamp: '2026-11-20T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "Owner chose run-file route for lok diagnostics; 11 findings applied, N8 declined; fixed line probed through lok workflow run"
