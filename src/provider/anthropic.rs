@@ -331,7 +331,8 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            files: r#"[{"path":"a.rs","xy":" M"},{"path":"b.md","xy":"??"}]"#.to_string(),
+            files: r#"[{"i":0,"path":"a.rs","xy":" M"},{"i":1,"path":"b.md","xy":"??"}]"#
+                .to_string(),
             stat: "2 files changed".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
@@ -362,6 +363,11 @@ mod tests {
             json!("Return the commit grouping plan")
         );
         assert!(tools[0]["input_schema"]["properties"]["groups"].is_object());
+        assert_eq!(
+            tools[0]["input_schema"]
+                .pointer("/properties/groups/items/properties/files/items/type"),
+            Some(&json!("integer"))
+        );
 
         // tool_choice forces the tool
         assert_eq!(p["tool_choice"]["type"], json!("tool"));

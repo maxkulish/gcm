@@ -208,7 +208,7 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            files: r#"[{"path":"a.rs","xy":" M"}]"#.to_string(),
+            files: r#"[{"i":0,"path":"a.rs","xy":" M"}]"#.to_string(),
             stat: "1 file".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
@@ -240,6 +240,11 @@ mod tests {
         assert_eq!(rf["type"], json!("json_schema"));
         assert_eq!(rf["json_schema"]["strict"], json!(true));
         assert!(rf["json_schema"]["schema"]["properties"]["groups"].is_object());
+        assert_eq!(
+            rf["json_schema"]["schema"]
+                .pointer("/properties/groups/items/properties/files/items/type"),
+            Some(&json!("integer"))
+        );
     }
 
     #[test]

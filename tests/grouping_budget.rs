@@ -494,6 +494,59 @@ fn anthropic_515_files_send_one_plan_call_and_group_by_index() {
     }
 }
 
+/// An Anthropic plan reply cut at `max_tokens` is not a plan: gcm falls back
+/// to one message request and a single commit.
+#[test]
+fn anthropic_truncated_plan_falls_back_to_a_sent_message() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    tree_of(repo.path(), 3, 1);
+    let truncated = serde_json::json!({
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [{ "type": "text", "text": "{\"groups\": [{\"files\": [0, 1" }],
+        "stop_reason": "max_tokens"
+    })
+    .to_string();
+    let message = serde_json::json!({
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [{ "type": "text", "text": "feat: add the sidebar sections" }],
+        "stop_reason": "end_turn"
+    })
+    .to_string();
+    let (url, captured) = capture(vec![(200, truncated), (200, message)]);
+
+    let out = run(anthropic(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--dry-run"],
+    ));
+    let requests = captured.lock().unwrap().clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        requests.len(),
+        2,
+        "the plan call, then the message: {stderr}"
+    );
+    let plan: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
+    assert!(plan.get("tools").is_some(), "the plan call");
+    let fallback: serde_json::Value = serde_json::from_str(&requests[1]).unwrap();
+    assert!(fallback.get("tools").is_none(), "not the plan call");
+    let env = envelope(&out);
+    assert_eq!(env["status"], "plan", "{env}");
+    assert_eq!(env["mode"], "single");
+    assert!(
+        stderr.contains("Falling back to single-commit mode"),
+        "{stderr}"
+    );
+}
+
 /// 2,000 indices still exceed Anthropic's 4096-token plan cap: no plan call,
 /// and the refusal names the cap.
 #[test]

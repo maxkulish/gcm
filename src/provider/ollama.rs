@@ -253,7 +253,7 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            files: r#"[{"path":"a.rs","xy":" M"}]"#.to_string(),
+            files: r#"[{"i":0,"path":"a.rs","xy":" M"}]"#.to_string(),
             stat: "1 file".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
@@ -267,9 +267,14 @@ mod tests {
         assert_eq!(p["options"]["temperature"], json!(0.2));
         // native `format` carries the plain JSON-Schema object (not an OpenAI envelope)
         assert!(p["format"]["properties"]["groups"].is_object());
+        assert_eq!(
+            p["format"].pointer("/properties/groups/items/properties/files/items/type"),
+            Some(&json!("integer"))
+        );
         assert_eq!(p["messages"][0]["role"], json!("system"));
         let user = p["messages"][1]["content"].as_str().unwrap();
         assert!(user.contains("Changed files"));
+        assert!(user.contains(r#"group by "i""#), "{user}");
         assert!(user.contains("a.rs"));
     }
 

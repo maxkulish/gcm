@@ -68,6 +68,11 @@ phases:
     last_phase_completed: 'Sub-task 4: build plan, budget, cache and integration tests'
     commits:
     - 38d0911
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-801-codex-validation.md
+    gemini_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-801-gemini-validation.md
     live_checks_open:
     - AC10 Vertex 515-file run
     - AC11 Anthropic 515-file run
@@ -123,3 +128,7 @@ history:
   action: implementation_complete
   phase: implement
   details: Sub-task 5 (live re-measure AC10, AC11, Ollama) left for the owner; commands go in the PR body
+- timestamp: '2026-11-21T12:10:00Z'
+  action: codex_validation_complete
+  phase: implement
+  details: 'Codex PASS_WITH_NOTES, Gemini PASS_WITH_NOTES (usable=2). Both flagged the missing eval row 16 capture test; fixed with anthropic_truncated_plan_falls_back_to_a_sent_message, plus integer-schema assertions in provider payload tests (row 17), a prompt test, and the PROJECT.md phase. Left: index_echo_tokens allocation (matches AC8 literally), no on-disk v3 cache-file test (golden digest covers it)'

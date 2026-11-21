@@ -447,6 +447,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn grouping_prompt_asks_for_inventory_indices() {
+        let p = GROUPING_SYSTEM_PROMPT;
+        assert!(p.contains(r#""files": [0, 2]"#), "integer example");
+        assert!(p.contains(r#"Every "i" from the changed-files inventory"#));
+        assert!(!p.contains("old_path"), "the rename rule is gone");
+        assert!(!p.contains("path strings"), "strings are not advertised");
+    }
+
+    #[test]
     fn pick_provider_id_precedence() {
         // flag wins over env
         assert_eq!(

@@ -183,7 +183,8 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            files: r#"[{"path":"a.rs","xy":" M"},{"path":"b.md","xy":"??"}]"#.to_string(),
+            files: r#"[{"i":0,"path":"a.rs","xy":" M"},{"i":1,"path":"b.md","xy":"??"}]"#
+                .to_string(),
             stat: "2 files changed".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
@@ -197,9 +198,15 @@ mod tests {
         assert_eq!(rf["json_schema"]["name"], json!("commit_plan"));
         assert_eq!(rf["json_schema"]["strict"], json!(true));
         assert!(rf["json_schema"]["schema"]["properties"]["groups"].is_object());
+        assert_eq!(
+            rf["json_schema"]["schema"]
+                .pointer("/properties/groups/items/properties/files/items/type"),
+            Some(&json!("integer"))
+        );
         assert_eq!(p["include_reasoning"], json!(false));
         let user = p["messages"][1]["content"].as_str().unwrap();
         assert!(user.contains("Changed files"));
+        assert!(user.contains(r#"group by "i""#), "{user}");
         assert!(user.contains("a.rs"));
         assert!(
             user.contains(r#""xy":" M""#),
