@@ -85,7 +85,7 @@ phases:
     status: in_progress
     pr_url: https://github.com/maxkulish/gcm/pull/96
     pr_number: 96
-    ci_passed: false
+    ci_passed: true
   complete: { status: pending }
 history:
   - timestamp: '2026-11-21T00:00:00Z'
@@ -156,3 +156,7 @@ history:
     action: pr_created
     phase: pr
     details: "PR #96 created; Linear CLO-805 moved to In Review with a PR comment"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: ci_passed
+    phase: pr
+    details: "PR #96 build/test passed on macos-latest and ubuntu-latest at 256649d; MERGEABLE CLEAN; no reviews yet"
