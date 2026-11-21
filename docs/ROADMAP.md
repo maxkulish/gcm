@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-21 (Linear sync: CLO-950 done on main as `53bcd89`; CLO-948, CLO-949 added; Done issues archived in Linear)
+**Last Updated**: 2026-11-21 (CLO-805 started: spec phase on `fix/clo-805-enable-models`)
 
 ## Summary
 
@@ -100,7 +100,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Done | CLO-555 (related) |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | Backlog | CLO-797, CLO-798 (related) |
 | [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | Done | CLO-799 (related - same complaint, next wizard step) |
-| [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | Backlog | CLO-799, CLO-802 (related - third occurrence of the same complaint family) |
+| [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | In Progress | CLO-799, CLO-802 (related - third occurrence of the same complaint family) |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | Backlog | CLO-797 (follow-up) |
 | [CLO-940](https://linear.app/cloud-ai/issue/CLO-940) | Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message | Done | CLO-487 (related); PR #82 |
 | [CLO-941](https://linear.app/cloud-ai/issue/CLO-941) | Fix grouping failing with "unexpected end of file" when exactly one file changed | Done | CLO-487 (related); PR #79 |
