@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use super::http::{self, HttpRequest};
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 use gcm::provider::identity;
 
 const NAME: &str = "Ollama";
@@ -99,7 +99,7 @@ impl Provider for Ollama {
         NAME
     }
 
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError> {
         let payload = build_plan_payload(ctx, &self.model);
         let json = self.chat(&payload)?;
         if json.is_empty() {

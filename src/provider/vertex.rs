@@ -21,7 +21,7 @@ use super::gemini;
 use super::http::{self, HttpRequest};
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 
 const NAME: &str = "Vertex";
 const TOKEN_ENV: &str = "GCM_VERTEX_TOKEN";
@@ -149,7 +149,7 @@ impl Provider for Vertex {
         NAME
     }
 
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError> {
         let (token, project, location) = self.target()?;
         let payload = gemini::build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&token, &project, &location, &payload))

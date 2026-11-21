@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use super::http::{self, HttpRequest};
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 
 const NAME: &str = "Anthropic";
 const API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
@@ -70,7 +70,7 @@ impl Provider for Anthropic {
         NAME
     }
 
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError> {
         let key = self.api_key()?;
         let payload = build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;
@@ -84,7 +84,7 @@ impl Provider for Anthropic {
         // Attempt direct deserialization first (review suggestion 3): the
         // tool_use input is already a parsed JSON value, so try from_value
         // before falling back to parse_defensive.
-        if let Ok(plan) = serde_json::from_str::<Plan>(&json_str) {
+        if let Ok(plan) = serde_json::from_str::<PlanReply>(&json_str) {
             return Ok(plan);
         }
         crate::plan::parse_defensive(&json_str).map_err(|e| ProviderError {
@@ -138,7 +138,7 @@ impl Provider for Anthropic {
 // ---------------------------------------------------------------------------
 
 /// `max_tokens` for the plan call. The prompt budget reads it too (CLO-797),
-/// so the payload and the path-echo check cannot drift apart.
+/// so the payload and the index-echo check (CLO-801) cannot drift apart.
 pub(crate) const PLAN_MAX_TOKENS: usize = 4096;
 /// `max_tokens` for the message call; also read by the message budget.
 pub(crate) const MESSAGE_MAX_TOKENS: usize = 1024;
@@ -254,7 +254,7 @@ fn extract_tool_use_input(provider: &'static str, raw: &str) -> Result<String, P
     for block in &resp.content {
         if let ContentBlock::ToolUse { input, .. } = block {
             // Attempt direct deserialization first (review suggestion 3).
-            if let Ok(plan) = serde_json::from_value::<Plan>(input.clone()) {
+            if let Ok(plan) = serde_json::from_value::<PlanReply>(input.clone()) {
                 return serde_json::to_string(&plan)
                     .map_err(|e| err(ErrorKind::Deserialize(e.to_string())));
             }
@@ -475,11 +475,29 @@ mod tests {
             "stop_reason": "tool_use"
         }"#;
         let result = extract_tool_use_input(NAME, raw).unwrap();
-        // The result should be a valid Plan JSON string
-        let plan: Plan = serde_json::from_str(&result).unwrap();
+        // The result should be a valid PlanReply JSON string
+        let plan: PlanReply = serde_json::from_str(&result).unwrap();
         assert_eq!(plan.groups.len(), 1);
-        assert_eq!(plan.groups[0].files, vec!["a.rs".to_string()]);
+        assert_eq!(
+            plan.groups[0].files,
+            vec![crate::plan::FileRef::Path("a.rs".to_string())]
+        );
         assert_eq!(plan.groups[0].summary, "core");
+    }
+
+    #[test]
+    fn extract_tool_use_input_with_integer_files() {
+        let raw = r#"{
+            "content": [
+                { "type": "tool_use", "id": "toolu_abc", "name": "commit_plan",
+                  "input": { "groups": [{"files": [1, 0], "summary": "core", "commit_message": "feat: a"}] } }
+            ],
+            "stop_reason": "tool_use"
+        }"#;
+        let result = extract_tool_use_input(NAME, raw).unwrap();
+        let reply: PlanReply = serde_json::from_str(&result).unwrap();
+        let plan = crate::plan::resolve(reply, &["a.rs", "b.rs"]).unwrap();
+        assert_eq!(plan.groups[0].files, vec!["b.rs", "a.rs"]);
     }
 
     // -----------------------------------------------------------------------

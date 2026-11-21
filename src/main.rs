@@ -622,7 +622,7 @@ fn build_plan(
         reason: e.to_string(),
         raw_code: PROMPT_BUDGET_CODE.to_string(),
     };
-    let grouping = limits.grouping(&diff::files_json(changed)).map_err(
+    let grouping = limits.grouping(changed.len()).map_err(
         |GroupingRejected::OutputCap { echo_tokens, cap }| {
             refused(GcmError::PromptTooLarge(budget::PromptTooLarge {
                 cause: budget::PromptCause::GroupingOutputCap { echo_tokens, cap },
@@ -674,7 +674,7 @@ fn build_plan(
     );
     let outcome = provider.generate_plan(&ctx);
     progress.finish();
-    let plan = outcome.map_err(|e| {
+    let reply = outcome.map_err(|e| {
         // A missing or rejected key fails the single-commit fallback identically;
         // do not pretend to recover. Every other provider error degrades to the
         // single-commit path (the simpler message call may still succeed where the
@@ -695,11 +695,24 @@ fn build_plan(
             }
         }
     })?;
-    let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
-    plan::validate(&plan, &change_set).map_err(|e| BuildError::Fallback {
+    resolve_reply(reply, changed)
+}
+
+/// Turn a provider reply into a validated [`Plan`] (CLO-801): log the reply
+/// shape, map each index to its path in `changed` (never the possibly
+/// redacted prompt text), then check the partition. Any failure is a
+/// `PlanValidation` fallback.
+fn resolve_reply(reply: plan::PlanReply, changed: &[ChangedFile]) -> Result<Plan, BuildError> {
+    let (index_refs, path_refs) = reply.ref_counts();
+    crate::debug_log!("plan reply: {index_refs} index refs, {path_refs} path refs");
+    let fallback = |e: plan::PlanError| BuildError::Fallback {
         reason: e.to_string(),
         raw_code: output::fallback_raw_code(&e.to_string()),
-    })?;
+    };
+    let paths: Vec<&str> = changed.iter().map(|c| c.path.as_str()).collect();
+    let plan = plan::resolve(reply, &paths).map_err(fallback)?;
+    let change_set: HashSet<String> = changed.iter().map(|c| c.path.clone()).collect();
+    plan::validate(&plan, &change_set).map_err(fallback)?;
     Ok(plan)
 }
 
@@ -1287,5 +1300,72 @@ mod tests {
     #[test]
     fn grouped_summary_last_group_omits_remaining_line() {
         assert_eq!(grouped_commit_summary(1, 0), "Committed group 1 of 1.");
+    }
+
+    fn file(path: &str, orig_path: Option<&str>) -> ChangedFile {
+        ChangedFile {
+            x: if orig_path.is_some() { b'R' } else { b' ' },
+            y: if orig_path.is_some() { b' ' } else { b'M' },
+            path: path.to_string(),
+            orig_path: orig_path.map(str::to_string),
+        }
+    }
+
+    fn reply(json: &str) -> plan::PlanReply {
+        plan::parse_defensive(json).unwrap()
+    }
+
+    #[test]
+    fn resolve_reply_takes_paths_from_changed() {
+        let changed = [file("a.rs", None), file("b.rs", None), file("c.rs", None)];
+        let r = reply(
+            r#"{"groups":[{"files":[0,"b.rs",2],"summary":"s","commit_message":"feat: x"}]}"#,
+        );
+        let Ok(plan) = resolve_reply(r, &changed) else {
+            panic!("a valid mixed reply resolves");
+        };
+        assert_eq!(plan.groups[0].files, vec!["a.rs", "b.rs", "c.rs"]);
+    }
+
+    #[test]
+    fn resolve_reply_out_of_range_is_a_plan_validation_fallback() {
+        let changed = [file("a.rs", None)];
+        let r = reply(r#"{"groups":[{"files":[0,1],"summary":"s","commit_message":"feat: x"}]}"#);
+        match resolve_reply(r, &changed) {
+            Err(BuildError::Fallback { reason, raw_code }) => {
+                assert_eq!(raw_code, "PlanValidation");
+                assert!(reason.contains("index 1"), "{reason}");
+            }
+            _ => panic!("expected a PlanValidation fallback"),
+        }
+    }
+
+    #[test]
+    fn resolve_reply_maps_an_index_to_the_real_path_not_the_redacted_one() {
+        // The inventory text sent to the model can hold a redacted path; the
+        // index still resolves against `changed`.
+        let real = "config/AKIAIOSFODNN7EXAMPLE.env";
+        let changed = [file(real, None)];
+        let r = reply(r#"{"groups":[{"files":[0],"summary":"s","commit_message":"feat: x"}]}"#);
+        let Ok(plan) = resolve_reply(r, &changed) else {
+            panic!("index 0 resolves");
+        };
+        assert_eq!(plan.groups[0].files, vec![real]);
+    }
+
+    #[test]
+    fn resolve_reply_rename_index_gives_the_new_path_only() {
+        let changed = [file("new.rs", Some("old.rs")), file("b.rs", None)];
+        let r = reply(
+            r#"{"groups":[{"files":[0],"summary":"s","commit_message":"feat: x"},{"files":[1],"summary":"t","commit_message":null}]}"#,
+        );
+        let Ok(plan) = resolve_reply(r, &changed) else {
+            panic!("rename index resolves");
+        };
+        assert_eq!(plan.groups[0].files, vec!["new.rs"]);
+        assert!(plan
+            .groups
+            .iter()
+            .all(|g| !g.files.iter().any(|f| f == "old.rs")));
     }
 }

@@ -7,24 +7,29 @@ use crate::error::GcmError;
 use crate::git::{ChangedFile, Repo};
 use crate::provider::grouping_user_content;
 
-/// One changed path in the grouping inventory (CLO-797): the path the model
-/// groups by, its porcelain `XY` code, and the source path of a rename or copy.
+/// One changed path in the grouping inventory (CLO-797): its 0-based position
+/// `i`, which the model returns to assign the file to a group (CLO-801), the
+/// path, its porcelain `XY` code, and the source path of a rename or copy.
 #[derive(serde::Serialize)]
 struct InventoryEntry<'a> {
+    i: usize,
     path: &'a str,
     xy: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     old_path: Option<&'a str>,
 }
 
-/// JSON-encode the changed files as one inventory, `[{path, xy, old_path?}]`,
-/// so the prompt carries each path once (CLO-797) and a path containing a
+/// JSON-encode the changed files as one inventory, `[{i, path, xy, old_path?}]`,
+/// where `i` is the entry's position in `changed`, so the prompt carries each
+/// path once (CLO-797), the reply names files by `i` (CLO-801), and a path containing a
 /// newline (or any character) stays a single discrete element - newline-joining
 /// would split it and the model would group phantom paths (CLO-487).
 pub fn files_json(changed: &[ChangedFile]) -> String {
     let entries: Vec<InventoryEntry> = changed
         .iter()
-        .map(|c| InventoryEntry {
+        .enumerate()
+        .map(|(i, c)| InventoryEntry {
+            i,
             path: &c.path,
             xy: format!("{}{}", c.x as char, c.y as char),
             old_path: c.orig_path.as_deref(),
@@ -139,8 +144,8 @@ impl GatheredDiff {
 /// discrete), the diff `--stat`, and the per-file-truncated full diff. Distinct
 /// from [`GatheredDiff`] to keep the tracer's single-message concerns separate.
 pub struct GroupingContext {
-    /// JSON array of `{path, xy, old_path?}` - the one path inventory the model
-    /// groups by (CLO-797).
+    /// JSON array of `{i, path, xy, old_path?}` - the one path inventory; the
+    /// model groups by `i` (CLO-797, CLO-801).
     pub files: String,
     pub stat: String,
     pub body: String,
@@ -790,8 +795,8 @@ mod tests {
         assert_eq!(
             entries,
             vec![
-                serde_json::json!({"path": "a.rs", "xy": " M"}),
-                serde_json::json!({"path": "b.md", "xy": "??"}),
+                serde_json::json!({"i": 0, "path": "a.rs", "xy": " M"}),
+                serde_json::json!({"i": 1, "path": "b.md", "xy": "??"}),
             ]
         );
     }
@@ -805,14 +810,27 @@ mod tests {
         let entries = inventory(&files);
         assert_eq!(
             entries[0],
-            serde_json::json!({"path": "new.rs", "xy": "R ", "old_path": "old.rs"})
+            serde_json::json!({"i": 0, "path": "new.rs", "xy": "R ", "old_path": "old.rs"})
         );
         assert_eq!(
             entries[1],
-            serde_json::json!({"path": "copy.rs", "xy": "C ", "old_path": "src.rs"})
+            serde_json::json!({"i": 1, "path": "copy.rs", "xy": "C ", "old_path": "src.rs"})
         );
         // Both names still reach staging, which reads the same ChangedFile.
         assert_eq!(files[0].stage_paths(), vec!["new.rs", "old.rs"]);
+    }
+
+    #[test]
+    fn inventory_index_is_the_position_in_changed() {
+        let entries = inventory(&[
+            changed(b' ', b'M', "z.rs", None),
+            changed(b'R', b' ', "new.rs", Some("old.rs")),
+            changed(b'?', b'?', "a.md", None),
+        ]);
+        let indices: Vec<u64> = entries.iter().map(|e| e["i"].as_u64().unwrap()).collect();
+        assert_eq!(indices, vec![0, 1, 2]);
+        assert_eq!(entries[1]["path"], "new.rs");
+        assert_eq!(entries[1]["old_path"], "old.rs");
     }
 
     #[test]

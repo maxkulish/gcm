@@ -15,7 +15,7 @@ use super::http::{self, HttpRequest};
 use super::OPENAI_SUPPORTED_MODELS;
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 
 const NAME: &str = "OpenAI";
 const API_KEY_ENV: &str = "OPENAI_API_KEY";
@@ -73,7 +73,7 @@ impl Provider for OpenAi {
         NAME
     }
 
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError> {
         let key = self.api_key()?;
         let payload = build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;

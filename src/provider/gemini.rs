@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use super::http::{self, HttpRequest};
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 
 const NAME: &str = "Google";
 const API_KEY_ENV: &str = "GEMINI_API_KEY";
@@ -73,7 +73,7 @@ impl Provider for Gemini {
         NAME
     }
 
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError> {
         let key = self.api_key()?;
         let payload = build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;
