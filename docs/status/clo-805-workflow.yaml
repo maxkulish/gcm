@@ -24,8 +24,8 @@ classification:
     scope_signal: { lean: spec, note: "No estimate; single-function change plus one PTY regression test" }
   rationale: "Contained single-module bug fix with direct prior art; the one open UX fork is settled inside /spec"
 workflow:
-  current_phase: pr
-  status: in_progress
+  current_phase: complete
+  status: complete
   created_at: '2026-11-21T00:00:00Z'
   updated_at: '2026-11-21T00:00:00Z'
 phases:
@@ -82,11 +82,16 @@ phases:
     codex_report: docs/reviews/clo-805-codex-validation.md
     gemini_validation_report: docs/reviews/clo-805-gemini-validation.md
   pr:
-    status: in_progress
+    status: complete
     pr_url: https://github.com/maxkulish/gcm/pull/96
     pr_number: 96
     ci_passed: true
-  complete: { status: pending }
+    approved: true
+    merge_commit: 9856035
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-11-21T00:00:00Z'
 history:
   - timestamp: '2026-11-21T00:00:00Z'
     action: workflow_started
@@ -160,3 +165,27 @@ history:
     action: ci_passed
     phase: pr
     details: "PR #96 build/test passed on macos-latest and ubuntu-latest at 256649d; MERGEABLE CLEAN; no reviews yet"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: workflow_blocked
+    phase: pr
+    details: "PR #96 CONFLICTING after CLO-801 (PR #97) merged; docs-only conflicts in PROJECT.md, ROADMAP.md, DEPENDENCIES.md"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: workflow_unblocked
+    phase: pr
+    details: "Merged origin/main as 9763aa6 keeping both sides; make check pass, acceptance PASS=304 FAIL=0 SKIP=1; CI green, MERGEABLE CLEAN"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pr_approved
+    phase: pr
+    details: "Owner: merge when CI is green"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pr_merged
+    phase: pr
+    details: "PR #96 squash-merged as 9856035"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: project_sync_complete
+    phase: complete
+    details: "CLO-805 moved to Recently Completed; ROADMAP Done, bug fixes 14/15"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: workflow_complete
+    phase: complete
+    details: "Task CLO-805 fully completed"

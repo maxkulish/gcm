@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-21 (CLO-805 in the PR phase on `fix/clo-805-enable-models`; CLO-801 merged in PR #97, live checks AC10, AC11 and the Ollama run are owner-run)
+**Last Updated**: 2026-11-21 (CLO-805 merged in PR #96; CLO-801 merged in PR #97, live checks AC10, AC11 and the Ollama run are owner-run)
 
 ## Summary
 
@@ -11,7 +11,7 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 15 | 13 | In Progress |
+| Bug fixes (cross-cutting) | 15 | 14 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 10 | 8 | In Progress |
 
@@ -100,7 +100,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Done | CLO-555 (related) |
 | [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | Done | CLO-797, CLO-798 (related); PR #97 |
 | [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | Done | CLO-799 (related - same complaint, next wizard step) |
-| [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | In Progress | CLO-799, CLO-802 (related - third occurrence of the same complaint family) |
+| [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | Done | CLO-799, CLO-802 (related - third occurrence of the same complaint family); PR #96 |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | Backlog | CLO-797 (follow-up) |
 | [CLO-940](https://linear.app/cloud-ai/issue/CLO-940) | Fix `--plan-only --all` returning an empty plan instead of previewing the single-commit message | Done | CLO-487 (related); PR #82 |
 | [CLO-941](https://linear.app/cloud-ai/issue/CLO-941) | Fix grouping failing with "unexpected end of file" when exactly one file changed | Done | CLO-487 (related); PR #79 |
