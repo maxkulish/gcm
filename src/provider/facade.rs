@@ -38,7 +38,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 
 /// One LLM provider (FR-11). Synchronous (ADR-001 Decision 2). Both calls are
 /// required: the structured grouping plan and the single commit message (tracer,
@@ -46,8 +46,10 @@ use crate::plan::Plan;
 pub trait Provider {
     /// Stable display name for messages/debug (e.g. "Groq" / "Google" / "OpenAI").
     fn name(&self) -> &'static str;
-    /// Structured grouping plan; defensively parsed into a typed [`Plan`].
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError>;
+    /// Structured grouping plan, defensively parsed into a [`PlanReply`] whose
+    /// files are inventory indices or paths (CLO-801). The caller maps it to a
+    /// `Plan` with `plan::resolve` against the real change set.
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError>;
     /// A single conventional-commit message for the gathered diff.
     fn generate_message(&self, diff: &GatheredDiff) -> Result<String, ProviderError>;
     /// Provider-qualified model id folded into the cache freshness fingerprint
@@ -351,35 +353,35 @@ Do NOT include any explanation - output ONLY the commit message.";
 /// providers do not enforce it - notably Ollama cloud (`:cloud`/`-cloud`)
 /// passthrough models, where `format` is a no-op (CLO-517). So the prompt itself
 /// restates the exact JSON shape and gives an example; the schema and this prompt
-/// must be kept in sync (see `plan::schema`).
+/// must be kept in sync (see `plan::schema`). Files are named by the inventory
+/// index `i` (CLO-801), so the reply size does not grow with path length.
 pub(super) const GROUPING_SYSTEM_PROMPT: &str = "\
 Analyze these git changes. Group related files into logical commits by semantic relevance.
 
 Output ONLY a single JSON object, no prose or markdown fences. The shape is EXACTLY:
 {
   \"groups\": [
-    { \"files\": [\"path/one.rs\", \"path/two.rs\"], \"summary\": \"one-line description\", \"commit_message\": \"feat(scope): full conventional commit\" },
-    { \"files\": [\"path/three.rs\"], \"summary\": \"one-line description\", \"commit_message\": null }
+    { \"files\": [0, 2], \"summary\": \"one-line description\", \"commit_message\": \"feat(scope): full conventional commit\" },
+    { \"files\": [1], \"summary\": \"one-line description\", \"commit_message\": null }
   ]
 }
 
 The top-level key MUST be \"groups\" (an array). Do NOT use \"commits\". Each group object MUST
-have exactly these keys: \"files\" (array of exact path strings), \"summary\" (string), and
-\"commit_message\" (string for groups[0], null for every other group).
+have exactly these keys: \"files\" (array of integers: the \"i\" values of the inventory entries),
+\"summary\" (string), and \"commit_message\" (string for groups[0], null for every other group).
 
 Rules:
-- Every \"path\" from the changed-files inventory must appear in exactly one group.
+- Every \"i\" from the changed-files inventory must appear in exactly one group.
 - Prefer fewer groups (1-3) unless changes are truly unrelated.
 - commit_message: a full conventional-commit message for groups[0] ONLY; null for every other group.
 - Conventional format <type>(<scope>): <description>, first line under 72 chars; add a blank line
   and bullet points for details when there are multiple significant changes.
-- For renamed or copied files, use \"path\" (the NEW path), never \"old_path\".
 - summary: a one-line description of each group.";
 
 /// The grouping-plan user content (shared by every provider's plan call).
 pub(super) fn grouping_user_content(ctx: &GroupingContext) -> String {
     format!(
-        "Changed files (JSON array of {{path, xy, old_path?}} - group by \"path\"):\n{}\n\n\
+        "Changed files (JSON array of {{i, path, xy, old_path?}} - group by \"i\"):\n{}\n\n\
          Diff stats:\n{}\n\nFull diff:\n{}",
         ctx.files, ctx.stat, ctx.body
     )
@@ -443,6 +445,15 @@ fn strip_think(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grouping_prompt_asks_for_inventory_indices() {
+        let p = GROUPING_SYSTEM_PROMPT;
+        assert!(p.contains(r#""files": [0, 2]"#), "integer example");
+        assert!(p.contains(r#"Every "i" from the changed-files inventory"#));
+        assert!(!p.contains("old_path"), "the rename rule is gone");
+        assert!(!p.contains("path strings"), "strings are not advertised");
+    }
 
     #[test]
     fn pick_provider_id_precedence() {

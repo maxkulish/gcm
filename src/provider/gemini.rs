@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use super::http::{self, HttpRequest};
 use super::{ErrorKind, Provider, ProviderError};
 use crate::diff::{DiffBudget, GatheredDiff, GroupingContext};
-use crate::plan::Plan;
+use crate::plan::PlanReply;
 
 const NAME: &str = "Google";
 const API_KEY_ENV: &str = "GEMINI_API_KEY";
@@ -73,7 +73,7 @@ impl Provider for Gemini {
         NAME
     }
 
-    fn generate_plan(&self, ctx: &GroupingContext) -> Result<Plan, ProviderError> {
+    fn generate_plan(&self, ctx: &GroupingContext) -> Result<PlanReply, ProviderError> {
         let key = self.api_key()?;
         let payload = build_plan_payload(ctx, &self.model);
         let raw = http::post_json(&self.request(&key, &payload))?;
@@ -285,7 +285,7 @@ mod tests {
 
     fn ctx() -> GroupingContext {
         GroupingContext {
-            files: r#"[{"path":"a.rs","xy":" M"}]"#.to_string(),
+            files: r#"[{"i":0,"path":"a.rs","xy":" M"}]"#.to_string(),
             stat: "1 file".to_string(),
             body: "diff --git a/a.rs b/a.rs".to_string(),
         }
@@ -299,6 +299,10 @@ mod tests {
         assert_eq!(gc["thinkingConfig"]["thinkingLevel"], json!("MINIMAL"));
         // OpenAPI-subset schema (upper-case types)
         assert_eq!(gc["responseSchema"]["type"], json!("OBJECT"));
+        assert_eq!(
+            gc["responseSchema"].pointer("/properties/groups/items/properties/files/items/type"),
+            Some(&json!("INTEGER"))
+        );
         assert_eq!(
             p["systemInstruction"]["parts"][0]["text"],
             json!(super::super::GROUPING_SYSTEM_PROMPT)
