@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-20 (CLO-946 merged in PR #93)
+**Last Updated**: 2026-11-21 (Linear sync: CLO-950 done on main as `53bcd89`; CLO-948, CLO-949 added; Done issues archived in Linear)
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | Phase 5: Provider expansion | 1 | 1 | Complete |
 | Bug fixes (cross-cutting) | 15 | 12 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
-| Maintenance (cross-cutting) | 7 | 7 | Complete |
+| Maintenance (cross-cutting) | 10 | 8 | In Progress |
 
 ## Phase 6: Library Extraction
 
@@ -128,3 +128,6 @@ Provider-catalog upkeep: keep the shipped model IDs current as providers publish
 | [CLO-945](https://linear.app/cloud-ai/issue/CLO-945) | Fix the task-phase review gates when a reviewer CLI or pinned model is unavailable | Done | CLO-941, CLO-942 (related - found in their review reports); PR #90 |
 | [CLO-947](https://linear.app/cloud-ai/issue/CLO-947) | Fix review report publication succeeding when the target path is an existing directory | Done | CLO-945 (follow-up from the PR #90 review); PR #92 |
 | [CLO-946](https://linear.app/cloud-ai/issue/CLO-946) | Fix the review verdict check passing a report when a later verdict says FAIL | Done | CLO-945 (related - PR #90 review follow-up), CLO-949 (related); PR #93 |
+| [CLO-950](https://linear.app/cloud-ai/issue/CLO-950) | Fix Pi spec review to pass the saved spec path and read lok's published reports | Done | Committed on main as `53bcd89`, no PR |
+| [CLO-948](https://linear.app/cloud-ai/issue/CLO-948) | Fix review workflow steps writing outside the run directory when the slug holds `..` | Todo | CLO-945 (follow-up from the PR #90 review) |
+| [CLO-949](https://linear.app/cloud-ai/issue/CLO-949) | Fix the minor review gate defects left open after CLO-945 | Todo | CLO-945 (follow-up from the PR #90 review) |
