@@ -68,10 +68,19 @@ phases:
     commits:
       - "9918528 docs(CLO-805): spec, spec reviews and project sync for the Enable-models confirm"
       - "1b4d13c fix(CLO-805): confirm before saving an unchanged Enable-models set"
+      - "b0e7626 docs(CLO-805): workflow implement state"
+      - "b0da917 test(CLO-805): harden the Enable-models PTY cases after pre-PR validation"
     acceptance: "scripts/acceptance.sh on the fresh release build: PASS=304 FAIL=0 SKIP=1 (AC-7 pre-existing); CLO-805 PTY cases no/yes/esc/no-twice-ctrl-c all pass, not skipped"
     baseline: "origin/main 4c04ce0 release build, case no: filtered ENTER reached Default model (rc=10), no hint"
     make_check: pass
     public_surface: pass
+    validation_round_1: "Codex FAIL (3 MEDIUM, 2 LOW: unbounded EOF wait, cksum + whole-second mtime, /tmp log paths, color-dependent redraw match, stale PROJECT.md); Gemini PASS_WITH_NOTES (3 LOW). Owner chose fix; all findings fixed in b0da917"
+    acceptance_after_fix: "PASS=304 FAIL=0 SKIP=1; NO_COLOR=1 case no passes; same-content rewrite changes the stamp; origin/main baseline case no rc=10"
+    validation_round_2: "Codex FAIL (2 MEDIUM: fixture failure did not stop the spawn, Linux LANG=C draws [+] not the filled box); Gemini PASS_WITH_NOTES (2 LOW: PROJECT.md header, line wrap). All fixed in the round-2 commit; suite PASS=304 FAIL=0 SKIP=1, guard returns 40 on empty, unseeded and mode-644 fixtures"
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-805-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-805-gemini-validation.md
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -119,3 +128,19 @@ history:
     action: implementation_complete
     phase: implement
     details: "acceptance PASS=304 FAIL=0 SKIP=1 with CLO-805 PTY cases non-skipped; pre-fix baseline reaches Default model; make check and public-surface check pass"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Round 1: Codex FAIL, Gemini PASS_WITH_NOTES, usable=2; owner chose fix"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: commit_created
+    phase: implement
+    details: "b0da917 harness hardening for all round-1 findings"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-805-enable-models at b0da917; validation round 2 started"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Round 2: Codex FAIL (2 MEDIUM harness), Gemini PASS_WITH_NOTES (2 LOW), usable=2; all four findings fixed and verified"

@@ -1,6 +1,6 @@
 # Project Dashboard - gcm
 
-**Last Updated**: 2026-11-21 (CLO-805 started: spec phase on `fix/clo-805-enable-models`)
+**Last Updated**: 2026-11-21 (CLO-805 in the implement phase on `fix/clo-805-enable-models`)
 
 > `gcm` is a Rust CLI that turns working-tree changes into clean, logically-grouped,
 > GPG-signed git commits. An LLM splits the diff into semantic groups and commits one

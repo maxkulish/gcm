@@ -1604,8 +1604,7 @@ CLO805_A="llama-3.3-70b-versatile"
 CLO805_B="openai/gpt-oss-20b"
 clo805_seed() {
   printf 'version = 2\ndefault = "groq"\n\n[[providers]]\nid = "groq"\nmodels = ["%s"]\nmodel = "%s"\n' \
-    "$CLO805_A" "$CLO805_A" > "$1/config.toml"
-  chmod 600 "$1/config.toml"
+    "$CLO805_A" "$CLO805_A" > "$1/config.toml" && chmod 600 "$1/config.toml"
 }
 clo805_stamp() { # exact bytes (hex) and the nanosecond mtime
   python3 -c 'import os, sys
@@ -1621,9 +1620,13 @@ print(",".join(sorted(p.get("models", []))) + "|" + p.get("model", ""))' "$1/con
 # Exit codes: 0/1 = gcm exit status; 10 = the filtered ENTER reached "Default model"
 # (pre-fix behavior); 11 = a second "Nothing changed" after a real change;
 # 99 = gcm was killed by a signal (the signal name is printed as "KILLED <sig>");
-# 20-32 = a prompt did not appear or gcm did not exit in time.
-# CLICOLOR_FORCE keeps the reverse-video filter cursor that the redraw match needs.
+# 20-32 = a prompt did not appear or gcm did not exit in time; 40 = the fixture was
+# not set up, so gcm was not started.
+# CLICOLOR_FORCE keeps the reverse-video filter cursor that the redraw match needs;
+# a 200-column PTY keeps each prompt line unwrapped.
 clo805_run() { # <case> <config dir> <log>
+  [ -n "$2" ] && [ -d "$2" ] && [ -s "$2/config.toml" ] \
+    && [ -n "$(find "$2/config.toml" -perm 600)" ] || return 40
   CLO805_CASE="$1" CFG="$2" GCM_BIN="$BIN" expect -c '
     set timeout 15
     proc need {re code} {
@@ -1648,6 +1651,7 @@ clo805_run() { # <case> <config dir> <log>
       }
     }
     spawn -noecho env -u GROQ_API_KEY -u GCM_PROVIDER -u NO_COLOR CLICOLOR_FORCE=1 GCM_CONFIG=$env(CFG) $env(GCM_BIN) provider
+    catch {stty rows 50 cols 200 < $spawn_out(slave,name)}
     need {Provider} 21
     send "\r"
     need {API key} 22
@@ -1661,7 +1665,7 @@ clo805_run() { # <case> <config dir> <log>
         send "oss-20"
         need {oss-20\x1b\[7m[^\r]*\r\n[^\r]*gpt-oss-20b[^\r]*SPACE to select} 24
         send " "
-        need {\u25fc[^\r]*gpt-oss-20b} 30
+        need {(?:\u25fc|\[\+\])[^\r]*gpt-oss-20b} 30
         send "\r"
         expect {
           -re {Nothing changed} { exit 11 }
