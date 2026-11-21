@@ -207,7 +207,10 @@ Pick a provider, and gcm fetches that provider's available models live from its 
 the list, `space` to toggle the models you want to **enable**, `enter` to submit, then
 choose one as the default. Filtering only narrows the view - it does not change what is
 checked, and `enter` saves exactly the checked set (an on-screen note says so before you
-start); press `space` on a model to add or remove it. The selection is saved to
+start); press `space` on a model to add or remove it. The highlighted row shows a
+`SPACE to select` hint while it is unchecked. If `enter` submits the same set that was
+already enabled, the wizard names the models that stay enabled and asks you to confirm;
+answer No to reopen the list. The selection is saved to
 `config.toml`, preserving every other provider you have configured.
 
 Once a provider has a non-empty enabled set, gcm enforces it: a `--model` (or per-provider
