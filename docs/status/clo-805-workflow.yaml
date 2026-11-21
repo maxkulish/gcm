@@ -63,7 +63,15 @@ phases:
       - "N11 clone + line range"
     flagged_suggestions: []
     direction_chosen: "Confirm on unchanged set + SPACE hint theme (owner, 2026-11-21)"
-  implement: { status: pending }
+  implement:
+    status: in_progress
+    commits:
+      - "9918528 docs(CLO-805): spec, spec reviews and project sync for the Enable-models confirm"
+      - "1b4d13c fix(CLO-805): confirm before saving an unchanged Enable-models set"
+    acceptance: "scripts/acceptance.sh on the fresh release build: PASS=304 FAIL=0 SKIP=1 (AC-7 pre-existing); CLO-805 PTY cases no/yes/esc/no-twice-ctrl-c all pass, not skipped"
+    baseline: "origin/main 4c04ce0 release build, case no: filtered ENTER reached Default model (rc=10), no hint"
+    make_check: pass
+    public_surface: pass
   pr: { status: pending }
   complete: { status: pending }
 history:
@@ -99,3 +107,15 @@ history:
     action: spec_approved
     phase: spec
     details: "Owner approved spec blob df488de0; proceed to implement without re-review; non-skipped release-build PTY run still required"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 1-3 done: confirm loop + helpers + ThemeGuard in src/config/facade.rs, README AC10 sentence, four PTY cases in scripts/acceptance.sh"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: commit_created
+    phase: implement
+    details: "9918528 (docs), 1b4d13c (fix)"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "acceptance PASS=304 FAIL=0 SKIP=1 with CLO-805 PTY cases non-skipped; pre-fix baseline reaches Default model; make check and public-surface check pass"
