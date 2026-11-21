@@ -1,0 +1,170 @@
+task_id: clo-801
+title: Return group assignments by index so the grouping plan stops echoing every changed path
+linear_url: https://linear.app/cloud-ai/issue/CLO-801/return-group-assignments-by-index-so-the-grouping-plan-stops-echoing
+task_type: specification
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: high
+  method: probe
+  evidence:
+    blast_radius:
+      lean: neutral
+      note: src/plan.rs, src/provider/facade.rs, src/budget.rs, plus payload tests in 5 provider files; one concern
+    architecture_novelty:
+      lean: spec
+      note: Changes the model reply contract only; Group.files, validate_partition and the plan cache stay unchanged; no new dependency
+    prior_art:
+      lean: spec
+      note: CLO-517 parse_defensive and the commits-alias recovery (src/plan.rs:80, tests 756-848) are the template
+    requirement_clarity:
+      lean: spec
+      note: 'Ticket has scope and 4 acceptance criteria; open point: CLO-797 budget.rs PATH_ECHO_FACTOR/GroupingOutputCap assumes the path echo and is not named in the ticket'
+    scope_signal:
+      lean: spec
+      note: High priority, no estimate, about M
+  rationale: Single-concern wire-contract change with a parser template and clear acceptance criteria; the spec must add the budget.rs echo estimate as a fifth surface.
+pending_human_action: null
+linear:
+  team: Cloud-ai
+  project: GCM
+  status_at_start: Backlog
+  labels: []
+  blocks: []
+  blocked_by: []
+  related:
+  - CLO-797
+  - CLO-798
+  - CLO-517
+  branch_suggested: kmamemo/clo-801-return-group-assignments-by-index-so-the
+  priority: High
+  branch_actual: feat/clo-801-group-index
+workflow:
+  current_phase: complete
+  status: complete
+  created_at: '2026-11-21T00:00:00Z'
+  updated_at: '2026-11-21T13:15:00Z'
+phases:
+  discovery:
+    status: skipped
+    skip_reason: Specification task
+    approved: true
+  design:
+    status: skipped
+    reason: Specification task - using /spec instead
+  spec:
+    status: complete
+    spec_file: docs/specs/2026-11-21-clo-801-group-index.md
+    approved: true
+    approved_blob: 654c1c45f877f0c6f4c9ab0f23b6a0143f8ce274
+    review_completed: '2026-11-21T09:08:00Z'
+    review_verdict: NEEDS_REVISION
+    review_gemini: docs/reviews/clo-801-spec-review-gemini.md
+    review_codex: docs/reviews/clo-801-spec-review-codex.md
+    review_synthesis: docs/reviews/clo-801-spec-review-synthesis.md
+  implement:
+    status: complete
+    status_file: docs/status/clo-801-group-index.md
+    last_phase_completed: 'Sub-task 4: build plan, budget, cache and integration tests'
+    commits:
+    - 38d0911
+    - 459117f
+    codex_validated: true
+    codex_verdict: PASS_WITH_NOTES
+    codex_report: docs/reviews/clo-801-codex-validation.md
+    gemini_verdict: PASS_WITH_NOTES
+    gemini_validation_report: docs/reviews/clo-801-gemini-validation.md
+    live_checks_open:
+    - AC10 Vertex 515-file run
+    - AC11 Anthropic 515-file run
+    - Ollama prompt-only run
+  pr:
+    status: complete
+    approved: true
+    pr_url: https://github.com/maxkulish/gcm/pull/97
+    pr_number: 97
+    ci_passed: true
+  complete:
+    status: complete
+    aggregation_files_updated: true
+    merged_at: '2026-11-21T11:08:16Z'
+    merge_commit: e144156
+history:
+- timestamp: '2026-11-21T00:00:00Z'
+  action: workflow_started
+  phase: init
+  details: New workflow for CLO-801 on feat/clo-801-group-index
+- timestamp: '2026-11-21T00:00:00Z'
+  action: task_classified
+  phase: init
+  details: 'recommended: specification, chosen: specification, confidence: high'
+- timestamp: '2026-11-21T00:00:00Z'
+  action: project_sync_start
+  phase: init
+  details: PROJECT.md Active Work (1/3), Up Next renumbered; ROADMAP.md In Progress; removed from DEPENDENCIES.md Unblocked & Ready
+- timestamp: '2026-11-21T00:00:00Z'
+  action: spec_written
+  phase: spec
+  details: docs/specs/2026-11-21-clo-801-group-index.md; owner chose explicit inventory index field and integer-or-string parsing
+- timestamp: '2026-11-21T09:08:00Z'
+  action: spec_review_complete
+  phase: spec
+  details: lok exit 0; Gemini APPROVE_WITH_SUGGESTIONS, Codex NEEDS_REVISION, synthesis NEEDS_REVISION; 9 priority actions, all additive or refinement
+- timestamp: '2026-11-21T09:20:00Z'
+  action: spec_review_applied
+  phase: spec
+  details: 'Applied all 9 priority actions: grouping_budget.rs scope and 515/2000-file cases, AC6 error classes, AC7 expected test changes, executable live ACs, usize index type, generate_plan as requirement,
+    Serialize on wire types, AC12 fenced prompt-only test, echo-only cap policy, eval rows 4/6/8/10/16/18-24/28; fallback_raw_code DuplicateFile mislabel left as PR follow-up'
+- timestamp: '2026-11-21T10:05:00Z'
+  action: spec_review_applied
+  phase: spec
+  details: 'Owner revision: pinned GCM_CONTEXT_WINDOW_TOKENS for live Vertex (1048576, same on main) and Ollama runs; main Anthropic GroupingOutputCap refusal recorded as AC11 baseline; grouping_cannot_fit_falls_back_to_a_sent_message
+    window 80000 -> 35000 in sub-task 4 (eval 24a); Ollama run records integer/string ref counts via a debug line in build_plan (eval 18a) and classes outcomes as adherence or compatibility (eval 28)'
+- timestamp: '2026-11-21T10:20:00Z'
+  action: spec_approved
+  phase: spec
+  details: 'Owner approved spec blob 654c1c45f877f0c6f4c9ab0f23b6a0143f8ce274. Keep the build_plan debug ref-count line. Live-run rule: if the Ollama reply fails to parse before build_plan receives it, record the failure with counts unavailable, never as zero counts. Row 24a verifies the 35000 window in implementation; AC10, AC11 and the Ollama run stay open for live verification'
+- timestamp: '2026-11-21T11:25:00Z'
+  action: phase_completed
+  phase: implement
+  details: 'Sub-tasks 1-4 in 38d0911: inventory i field, PlanReply/FileRef/resolve, prompt and providers, build_plan resolve_reply with debug ref counts, index-echo budget, FINGERPRINT_VERSION 4, grouping_budget 515/2000/debug/35000 cases. cargo test, clippy -D warnings and check-public-surface pass'
+- timestamp: '2026-11-21T11:26:00Z'
+  action: pushed_to_remote
+  phase: implement
+  details: feat/clo-801-group-index at 38d0911
+- timestamp: '2026-11-21T11:30:00Z'
+  action: implementation_complete
+  phase: implement
+  details: Sub-task 5 (live re-measure AC10, AC11, Ollama) left for the owner; commands go in the PR body
+- timestamp: '2026-11-21T12:10:00Z'
+  action: codex_validation_complete
+  phase: implement
+  details: 'Codex PASS_WITH_NOTES, Gemini PASS_WITH_NOTES (usable=2). Both flagged the missing eval row 16 capture test; fixed with anthropic_truncated_plan_falls_back_to_a_sent_message, plus integer-schema assertions in provider payload tests (row 17), a prompt test, and the PROJECT.md phase. Left: index_echo_tokens allocation (matches AC8 literally), no on-disk v3 cache-file test (golden digest covers it)'
+- timestamp: '2026-11-21T12:20:00Z'
+  action: phase_transition
+  phase: pr
+  details: Owner chose proceed after the gate fixes in 459117f
+- timestamp: '2026-11-21T12:55:00Z'
+  action: pre_flight_checks_passed
+  phase: pr
+  details: cargo fmt --check, clippy --all-targets -D warnings, cargo test
+- timestamp: '2026-11-21T13:00:00Z'
+  action: pr_created
+  phase: pr
+  details: PR #97; Linear CLO-801 moved to In Review with a PR comment
+- timestamp: '2026-11-21T13:05:00Z'
+  action: ci_passed
+  phase: pr
+  details: CI run 44896975398 green on macos-latest and ubuntu-latest; PR mergeable CLEAN
+- timestamp: '2026-11-21T13:10:00Z'
+  action: pr_merged
+  phase: pr
+  details: Owner squash-merged PR #97 as e144156
+- timestamp: '2026-11-21T13:12:00Z'
+  action: project_sync_complete
+  phase: complete
+  details: PROJECT.md Recently Completed, ROADMAP.md Done (bug fixes 13/15), DEPENDENCIES.md note updated; Linear Done
+- timestamp: '2026-11-21T13:15:00Z'
+  action: workflow_complete
+  phase: complete
+  details: CLO-801 complete; live checks AC10, AC11 and the Ollama run stay owner-run (commands in PR #97 body)

@@ -25,6 +25,79 @@ pub struct Group {
     pub commit_message: Option<String>,
 }
 
+/// The grouping reply as the model sends it (CLO-801): like [`Plan`], except
+/// that each group names its files by [`FileRef`]. [`resolve`] turns it into a
+/// [`Plan`] against the real change set. `Serialize` so a provider can
+/// re-encode a reply it already parsed.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct PlanReply {
+    pub groups: Vec<ReplyGroup>,
+}
+
+/// One group of a [`PlanReply`]; `summary` and `commit_message` mean the same
+/// as on [`Group`].
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ReplyGroup {
+    pub files: Vec<FileRef>,
+    pub summary: String,
+    pub commit_message: Option<String>,
+}
+
+/// A file reference in a reply. The schemas and the prompt ask for the
+/// inventory index `i`; a JSON string is still accepted as a path so a model
+/// that ignores the schema (CLO-517) keeps working. Any other JSON value, a
+/// negative number or a number with a fraction or exponent fails the parse.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum FileRef {
+    Index(usize),
+    Path(String),
+}
+
+impl PlanReply {
+    /// How many file references are indices and how many are paths, in that
+    /// order, before [`resolve`] maps them.
+    pub fn ref_counts(&self) -> (usize, usize) {
+        let refs = self.groups.iter().flat_map(|g| &g.files);
+        let indices = refs
+            .clone()
+            .filter(|f| matches!(f, FileRef::Index(_)))
+            .count();
+        (indices, refs.count() - indices)
+    }
+}
+
+/// Map every [`FileRef`] in `reply` to a path: an index is looked up in
+/// `paths` (the `changed` paths in inventory order, never the possibly
+/// redacted prompt text), a string is taken as the path itself. An index
+/// outside `paths` is [`PlanError::UnknownIndex`]; it is never clamped or
+/// dropped. Duplicates, omissions and unknown paths are left for [`validate`].
+pub fn resolve(reply: PlanReply, paths: &[&str]) -> Result<Plan, PlanError> {
+    let groups = reply
+        .groups
+        .into_iter()
+        .map(|g| {
+            let files = g
+                .files
+                .into_iter()
+                .map(|f| match f {
+                    FileRef::Index(i) => paths
+                        .get(i)
+                        .map(|p| p.to_string())
+                        .ok_or(PlanError::UnknownIndex(i)),
+                    FileRef::Path(p) => Ok(p),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Group {
+                files,
+                summary: g.summary,
+                commit_message: g.commit_message,
+            })
+        })
+        .collect::<Result<Vec<_>, PlanError>>()?;
+    Ok(Plan { groups })
+}
+
 /// Why a plan was rejected by [`validate`]. Each maps to an announced fallback
 /// to the single-commit path (FR-23 full: the plan must partition the change set
 /// - no omissions, no duplicates, no empty groups, message on `groups[0]`).
@@ -38,6 +111,9 @@ pub enum PlanError {
     MissingFirstMessage,
     /// A plan file is not in the real change set (a hallucinated path).
     UnknownFile(String),
+    /// A reply index has no inventory entry (CLO-801), for example a model
+    /// that numbers from 1.
+    UnknownIndex(usize),
     /// A changed file is listed in more than one group (or twice in one group);
     /// staging would record it under two commits (FR-23 case c).
     DuplicateFile(String),
@@ -60,6 +136,12 @@ impl fmt::Display for PlanError {
             PlanError::UnknownFile(p) => {
                 write!(f, "plan references unknown file '{p}'")
             }
+            PlanError::UnknownIndex(i) => {
+                write!(
+                    f,
+                    "plan references file index {i}, which is not in the inventory"
+                )
+            }
             PlanError::DuplicateFile(p) => {
                 write!(f, "file '{p}' appears in more than one group")
             }
@@ -71,21 +153,21 @@ impl fmt::Display for PlanError {
     }
 }
 
-/// Recover a typed [`Plan`] from possibly-noisy model output (FR-20). Tries each
-/// candidate JSON string (per-fence inner content -> every balanced `{...}`
+/// Recover a typed [`PlanReply`] from possibly-noisy model output (FR-20). Tries
+/// each candidate JSON string (per-fence inner content -> every balanced `{...}`
 /// substring -> the whole content) and, per candidate, either a direct
-/// `Plan` parse or a `groups`-array recovery re-wrapped as `{"groups": ..}`;
-/// returns the first that yields a `Plan`. The `<think>` strip happens upstream,
-/// so candidates are already reasoning-free.
-pub fn parse_defensive(content: &str) -> Result<Plan, PlanError> {
+/// `PlanReply` parse or a `groups`-array recovery re-wrapped as `{"groups": ..}`;
+/// returns the first that yields a `PlanReply`. The `<think>` strip happens
+/// upstream, so candidates are already reasoning-free.
+pub fn parse_defensive(content: &str) -> Result<PlanReply, PlanError> {
     for cand in candidates(content) {
-        if let Ok(plan) = serde_json::from_str::<Plan>(&cand) {
+        if let Ok(plan) = serde_json::from_str::<PlanReply>(&cand) {
             return Ok(plan);
         }
         if let Ok(value) = serde_json::from_str::<Value>(&cand) {
             if let Some(groups) = recover_groups(&value) {
                 let groups = normalize_recovered_groups(groups);
-                if let Ok(plan) = serde_json::from_value::<Plan>(json!({ "groups": groups })) {
+                if let Ok(plan) = serde_json::from_value::<PlanReply>(json!({ "groups": groups })) {
                     return Ok(plan);
                 }
             }
@@ -195,7 +277,7 @@ const WRAPPER_KEYS: [&str; 5] = ["commit_plan", "plan", "result", "data", "respo
 /// real `groups` anywhere always wins over a stray `commits`.
 fn recover_groups(v: &Value) -> Option<Value> {
     // A bare top-level array is treated as the groups array itself (a model that
-    // dropped the {"groups": ..} wrapper). The re-wrap + Plan deserialize still
+    // dropped the {"groups": ..} wrapper). The re-wrap + PlanReply deserialize still
     // validates the element shape, so a non-group array simply fails downstream.
     if v.is_array() {
         return Some(v.clone());
@@ -236,7 +318,7 @@ fn find_key_dfs(v: &Value, key: &str) -> Option<Value> {
 }
 
 /// Normalize a recovered `groups` array in place so a near-miss group shape still
-/// deserializes into [`Group`] (CLO-517). Per group object, when - and only when -
+/// deserializes into [`ReplyGroup`] (CLO-517). Per group object, when - and only when -
 /// the canonical key is absent:
 /// - `commit_message` is filled from a `message` alias, but **only for the first
 ///   group** (`groups[0]`). Per ADR-001 Decision 6 only `groups[0]` carries a
@@ -265,7 +347,7 @@ fn normalize_recovered_groups(groups: Value) -> Value {
 }
 
 /// Apply the [`normalize_recovered_groups`] per-group rules to one value (a
-/// non-object is returned untouched so it fails the [`Group`] deserialize as
+/// non-object is returned untouched so it fails the [`ReplyGroup`] deserialize as
 /// before). `is_first` gates the `message` -> `commit_message` alias to `groups[0]`.
 fn normalize_group(group: Value, is_first: bool) -> Value {
     let Value::Object(mut map) = group else {
@@ -305,8 +387,8 @@ fn first_nonempty_line(text: Option<&str>) -> Option<String> {
 
 /// The inner JSON Schema object sent with `response_format` (ADR-001 Decision 5,
 /// Groq strict mode): every property is `required` and every object sets
-/// `additionalProperties: false`; `commit_message` is nullable so later groups
-/// can carry `null`.
+/// `additionalProperties: false`; `files` holds inventory indices (CLO-801);
+/// `commit_message` is nullable so later groups can carry `null`.
 pub fn schema() -> Value {
     json!({
         "type": "object",
@@ -316,7 +398,7 @@ pub fn schema() -> Value {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "files": { "type": "array", "items": { "type": "string" } },
+                        "files": { "type": "array", "items": { "type": "integer" } },
                         "summary": { "type": "string" },
                         "commit_message": { "type": ["string", "null"] }
                     },
@@ -334,8 +416,8 @@ pub fn schema() -> Value {
 /// subset** Gemini accepts, which differs from [`schema`] (JSON-Schema strict):
 /// types are upper-case (`OBJECT`/`ARRAY`/`STRING`), nullability is `nullable:
 /// true` (not a `["string","null"]` union), there is **no** `additionalProperties`
-/// (silently ignored), and `propertyOrdering` hints field order. The `Plan`/`Group`
-/// structs and `parse_defensive` are shared; only the wire schema differs.
+/// (silently ignored), and `propertyOrdering` hints field order. The
+/// `PlanReply` type and `parse_defensive` are shared; only the wire schema differs.
 pub fn gemini_schema() -> Value {
     json!({
         "type": "OBJECT",
@@ -345,7 +427,7 @@ pub fn gemini_schema() -> Value {
                 "items": {
                     "type": "OBJECT",
                     "properties": {
-                        "files": { "type": "ARRAY", "items": { "type": "STRING" } },
+                        "files": { "type": "ARRAY", "items": { "type": "INTEGER" } },
                         "summary": { "type": "STRING" },
                         "commit_message": { "type": "STRING", "nullable": true }
                     },
@@ -456,6 +538,31 @@ mod tests {
 
     fn parse(json_str: &str) -> Plan {
         serde_json::from_str(json_str).expect("valid plan json")
+    }
+
+    fn refs(paths: &[&str]) -> Vec<FileRef> {
+        paths.iter().map(|p| FileRef::Path(p.to_string())).collect()
+    }
+
+    fn files_of(plan: &Plan) -> Vec<Vec<&str>> {
+        plan.groups
+            .iter()
+            .map(|g| g.files.iter().map(String::as_str).collect())
+            .collect()
+    }
+
+    /// A reply whose groups carry the given raw JSON `files` arrays; group 0
+    /// has a commit message, later groups have none.
+    fn reply_json(files: &[&str]) -> String {
+        let groups: Vec<String> = files
+            .iter()
+            .enumerate()
+            .map(|(n, f)| {
+                let msg = if n == 0 { "\"feat: x\"" } else { "null" };
+                format!(r#"{{"files":{f},"summary":"s{n}","commit_message":{msg}}}"#)
+            })
+            .collect();
+        format!(r#"{{"groups":[{}]}}"#, groups.join(","))
     }
 
     #[test]
@@ -612,13 +719,14 @@ mod tests {
             PlanError::EmptyGroup(1).to_string(),
             PlanError::MissingFirstMessage.to_string(),
             PlanError::UnknownFile("x".into()).to_string(),
+            PlanError::UnknownIndex(3).to_string(),
             PlanError::DuplicateFile("x".into()).to_string(),
             PlanError::OmittedFile("x".into()).to_string(),
             PlanError::Parse("x".into()).to_string(),
         ];
         assert!(msgs.iter().all(|m| !m.is_empty()), "no empty Display");
         let unique: HashSet<&String> = msgs.iter().collect();
-        assert_eq!(unique.len(), msgs.len(), "all 7 Display strings distinct");
+        assert_eq!(unique.len(), msgs.len(), "all 8 Display strings distinct");
         // 0-based store, 1-based render.
         assert!(PlanError::EmptyGroup(1).to_string().contains("group 2"));
     }
@@ -679,7 +787,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.groups.len(), 1);
-        assert_eq!(p.groups[0].files, vec!["a.rs"]);
+        assert_eq!(p.groups[0].files, refs(&["a.rs"]));
     }
 
     #[test]
@@ -698,7 +806,7 @@ mod tests {
     fn parse_defensive_prose_with_decoy_brace() {
         // Review point 1: a decoy {..} precedes the real JSON; must skip it.
         let s = r#"Here is my plan {it's solid}: {"groups":[{"files":["a"],"summary":"s","commit_message":"feat: a"}]}"#;
-        assert_eq!(parse_defensive(s).unwrap().groups[0].files, vec!["a"]);
+        assert_eq!(parse_defensive(s).unwrap().groups[0].files, refs(&["a"]));
     }
 
     #[test]
@@ -711,7 +819,7 @@ mod tests {
     #[test]
     fn parse_defensive_wrapper_key() {
         let s = r#"{"commit_plan":{"groups":[{"files":["a"],"summary":"s","commit_message":"feat: a"}]}}"#;
-        assert_eq!(parse_defensive(s).unwrap().groups[0].files, vec!["a"]);
+        assert_eq!(parse_defensive(s).unwrap().groups[0].files, refs(&["a"]));
     }
 
     #[test]
@@ -734,14 +842,17 @@ mod tests {
         let s = r#"[{"files":["a"],"summary":"s","commit_message":"feat: a"},{"files":["b"],"summary":"s2","commit_message":null}]"#;
         let p = parse_defensive(s).unwrap();
         assert_eq!(p.groups.len(), 2);
-        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].files, refs(&["a"]));
     }
 
     #[test]
     fn parse_defensive_brace_inside_string_value() {
         // Hardening: a brace inside a JSON string must not truncate the candidate.
         let s = r#"{"groups":[{"files":["a}b.txt"],"summary":"s","commit_message":"feat: a"}]}"#;
-        assert_eq!(parse_defensive(s).unwrap().groups[0].files, vec!["a}b.txt"]);
+        assert_eq!(
+            parse_defensive(s).unwrap().groups[0].files,
+            refs(&["a}b.txt"])
+        );
     }
 
     #[test]
@@ -760,7 +871,7 @@ mod tests {
         let s = r#"{"commits":[{"message":"feat: a","files":["a"]}]}"#;
         let p = parse_defensive(s).unwrap();
         assert_eq!(p.groups.len(), 1);
-        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].files, refs(&["a"]));
         assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
         assert!(
             !p.groups[0].summary.trim().is_empty(),
@@ -804,14 +915,14 @@ mod tests {
         let s = r#"{"groups":[{"files":["a"],"summary":"real","commit_message":"feat: a"}],"commits":[{"files":["b"],"message":"feat: b"}]}"#;
         let p = parse_defensive(s).unwrap();
         assert_eq!(p.groups.len(), 1);
-        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].files, refs(&["a"]));
         assert_eq!(p.groups[0].summary, "real");
     }
 
     #[test]
     fn parse_defensive_commits_missing_files_still_fails() {
         // `files` is the partition key and is NEVER synthesized: a commits group
-        // without files must still fail to parse (no Plan recovered).
+        // without files must still fail to parse (no PlanReply recovered).
         let s = r#"{"commits":[{"message":"feat: a","summary":"s"}]}"#;
         match parse_defensive(s) {
             Err(PlanError::Parse(_)) => {}
@@ -841,7 +952,7 @@ mod tests {
         let s = r#"{"result":{"commits":[{"message":"feat: a","files":["a"]}]}}"#;
         let p = parse_defensive(s).unwrap();
         assert_eq!(p.groups.len(), 1);
-        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].files, refs(&["a"]));
     }
 
     #[test]
@@ -852,7 +963,7 @@ mod tests {
         let s = r#"{"output":{"inner":{"commits":[{"message":"feat: a","files":["a"]}]}}}"#;
         let p = parse_defensive(s).unwrap();
         assert_eq!(p.groups.len(), 1);
-        assert_eq!(p.groups[0].files, vec!["a"]);
+        assert_eq!(p.groups[0].files, refs(&["a"]));
         assert_eq!(p.groups[0].commit_message.as_deref(), Some("feat: a"));
     }
 
@@ -904,5 +1015,176 @@ mod tests {
             item["properties"]["commit_message"]["type"],
             json!(["string", "null"])
         );
+        assert_eq!(
+            item["properties"]["files"],
+            json!({ "type": "array", "items": { "type": "integer" } })
+        );
+    }
+
+    #[test]
+    fn gemini_schema_files_are_integers() {
+        assert_eq!(
+            gemini_schema()["properties"]["groups"]["items"]["properties"]["files"],
+            json!({ "type": "ARRAY", "items": { "type": "INTEGER" } })
+        );
+    }
+
+    #[test]
+    fn index_reply_resolves_against_the_inventory() {
+        let reply = parse_defensive(&reply_json(&["[0,2]", "[1]"])).unwrap();
+        let plan = resolve(reply, &["a", "b", "c"]).unwrap();
+        assert_eq!(files_of(&plan), vec![vec!["a", "c"], vec!["b"]]);
+        assert_eq!(plan.groups[0].commit_message.as_deref(), Some("feat: x"));
+        assert_eq!(plan.groups[1].commit_message, None);
+        assert_eq!(validate(&plan, &change_set(&["a", "b", "c"])), Ok(()));
+    }
+
+    #[test]
+    fn indices_follow_inventory_order_not_path_order() {
+        let reply = parse_defensive(&reply_json(&["[2,0]", "[1]"])).unwrap();
+        let plan = resolve(reply, &["z.rs", "a.rs", "m.rs"]).unwrap();
+        assert_eq!(files_of(&plan), vec![vec!["m.rs", "z.rs"], vec!["a.rs"]]);
+    }
+
+    #[test]
+    fn mixed_index_and_path_items_resolve() {
+        let reply = parse_defensive(&reply_json(&[r#"[0,"b.rs"]"#])).unwrap();
+        assert_eq!(reply.ref_counts(), (1, 1));
+        let plan = resolve(reply, &["a.rs", "b.rs"]).unwrap();
+        assert_eq!(files_of(&plan), vec![vec!["a.rs", "b.rs"]]);
+    }
+
+    #[test]
+    fn numeric_string_is_a_path_not_an_index() {
+        let named = resolve(
+            parse_defensive(&reply_json(&[r#"["1"]"#])).unwrap(),
+            &["0", "1"],
+        )
+        .unwrap();
+        assert_eq!(files_of(&named), vec![vec!["1"]]);
+        assert_eq!(
+            validate(&named, &change_set(&["1"])),
+            Ok(()),
+            "a file literally named 1 validates as a path"
+        );
+        let unnamed = resolve(
+            parse_defensive(&reply_json(&[r#"["0"]"#])).unwrap(),
+            &["a.rs"],
+        )
+        .unwrap();
+        assert_eq!(
+            validate(&unnamed, &change_set(&["a.rs"])),
+            Err(PlanError::UnknownFile("0".to_string()))
+        );
+    }
+
+    #[test]
+    fn out_of_range_index_is_unknown_index() {
+        let reply = parse_defensive(&reply_json(&["[0,1,2,3]"])).unwrap();
+        let err = resolve(reply, &["a", "b", "c"]).unwrap_err();
+        assert_eq!(err, PlanError::UnknownIndex(3));
+        assert!(!err.to_string().contains("plan parse error"));
+    }
+
+    #[test]
+    fn one_based_numbering_is_rejected() {
+        let past_end = parse_defensive(&reply_json(&["[1,2]"])).unwrap();
+        assert_eq!(
+            resolve(past_end, &["a", "b"]).unwrap_err(),
+            PlanError::UnknownIndex(2)
+        );
+        let missing_zero =
+            resolve(parse_defensive(&reply_json(&["[1]"])).unwrap(), &["a", "b"]).unwrap();
+        assert_eq!(
+            validate(&missing_zero, &change_set(&["a", "b"])),
+            Err(PlanError::OmittedFile("a".to_string()))
+        );
+    }
+
+    #[test]
+    fn invalid_file_items_are_parse_errors() {
+        for item in [
+            "-1",
+            "1.5",
+            "1.0",
+            "1e0",
+            "18446744073709551616",
+            "true",
+            "null",
+            "{}",
+            "[0]",
+        ] {
+            let json = reply_json(&[&format!("[{item}]")]);
+            match parse_defensive(&json) {
+                Err(PlanError::Parse(_)) => {}
+                other => panic!("item {item}: expected Parse error, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn duplicate_index_is_a_duplicate_file() {
+        let reply = parse_defensive(&reply_json(&["[0]", "[0,1]"])).unwrap();
+        let plan = resolve(reply, &["a", "b"]).unwrap();
+        assert_eq!(
+            validate(&plan, &change_set(&["a", "b"])),
+            Err(PlanError::DuplicateFile("a".to_string()))
+        );
+    }
+
+    #[test]
+    fn empty_group_survives_resolution() {
+        let reply = parse_defensive(&reply_json(&["[0]", "[]"])).unwrap();
+        let plan = resolve(reply, &["a"]).unwrap();
+        assert_eq!(
+            validate(&plan, &change_set(&["a"])),
+            Err(PlanError::EmptyGroup(1))
+        );
+    }
+
+    #[test]
+    fn commits_alias_with_index_files_recovers() {
+        let s =
+            r#"{"commits":[{"message":"feat: a","files":[1]},{"message":"feat: b","files":[0]}]}"#;
+        let reply = parse_defensive(s).unwrap();
+        let plan = resolve(reply, &["a", "b"]).unwrap();
+        assert_eq!(files_of(&plan), vec![vec!["b"], vec!["a"]]);
+        assert_eq!(plan.groups[0].commit_message.as_deref(), Some("feat: a"));
+        assert_eq!(plan.groups[1].commit_message, None);
+        assert_eq!(validate(&plan, &change_set(&["a", "b"])), Ok(()));
+    }
+
+    #[test]
+    fn large_index_reply_parses_resolves_and_validates() {
+        let paths: Vec<String> = (0..515).map(|n| format!("dir/file-{n}.md")).collect();
+        let path_refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let first: Vec<String> = (0..300).map(|n| n.to_string()).collect();
+        let second: Vec<String> = (300..515).map(|n| n.to_string()).collect();
+        let json = reply_json(&[
+            &format!("[{}]", first.join(",")),
+            &format!("[{}]", second.join(",")),
+        ]);
+        let reply = parse_defensive(&json).unwrap();
+        assert_eq!(reply.ref_counts(), (515, 0));
+        let plan = resolve(reply, &path_refs).unwrap();
+        assert_eq!(validate(&plan, &paths.iter().cloned().collect()), Ok(()));
+    }
+
+    #[test]
+    fn prompt_only_fenced_reply_parses_with_indices_and_with_paths() {
+        let paths = ["src/a.rs", "docs/b.md"];
+        for files in [["[0]", "[1]"], [r#"["src/a.rs"]"#, r#"["docs/b.md"]"#]] {
+            let content = format!("Here is the plan:\n```json\n{}\n```\n", reply_json(&files));
+            let plan = resolve(parse_defensive(&content).unwrap(), &paths).unwrap();
+            assert_eq!(validate(&plan, &change_set(&paths)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn reply_round_trips_through_serialize() {
+        let reply = parse_defensive(&reply_json(&[r#"[0,"b"]"#])).unwrap();
+        let again: PlanReply =
+            serde_json::from_str(&serde_json::to_string(&reply).unwrap()).unwrap();
+        assert_eq!(again, reply);
     }
 }

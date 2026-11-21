@@ -5,7 +5,8 @@
 //!
 //! Two kinds of call carry a diff and get separate budgets. The grouping call
 //! sends the changed-file inventory and must leave room for the model to echo
-//! every path back; a message call sends only the stat and the diff.
+//! every file index back (CLO-801); a message call sends only the stat and the
+//! diff.
 
 use crate::diff::GroupingRung;
 use crate::error::GcmError;
@@ -23,10 +24,8 @@ const MAX_WINDOW_OVERRIDE: usize = 10_000_000;
 /// Room for the request envelope around the system prompt and user content
 /// (roles, JSON framing, tool wrappers).
 const ENVELOPE_SLACK: usize = 1_024;
-/// Output a reply needs beyond the path echo: summaries and one commit message.
+/// Output a reply needs beyond the index echo: summaries and one commit message.
 const FIXED_OUTPUT_OVERHEAD: usize = 1_024;
-/// The plan echoes every path, plus JSON quoting and separators.
-const PATH_ECHO_FACTOR: f64 = 1.15;
 /// Output reserved for reasoning a request does not disable. No provider
 /// publishes a bound for hidden or minimal reasoning; this is gcm's reserve.
 const REASONING_ALLOWANCE: usize = 4_096;
@@ -267,8 +266,8 @@ pub struct Limits {
 }
 
 impl Limits {
-    pub fn grouping(&self, files_json: &str) -> Result<PromptBudget, GroupingRejected> {
-        PromptBudget::grouping(self.window.tokens, &self.target, files_json)
+    pub fn grouping(&self, files: usize) -> Result<PromptBudget, GroupingRejected> {
+        PromptBudget::grouping(self.window.tokens, &self.target, files)
     }
 
     pub fn message(&self) -> PromptBudget {
@@ -334,7 +333,7 @@ pub struct PromptBudget {
 /// The grouping call cannot be made at all, whatever the diff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GroupingRejected {
-    /// Echoing the paths back would exceed the provider's plan output cap.
+    /// Echoing the file indices back would exceed the provider's plan output cap.
     OutputCap { echo_tokens: usize, cap: usize },
 }
 
@@ -343,7 +342,7 @@ pub enum GroupingRejected {
 pub enum PromptCause {
     /// The grouping prompt does not fit even with inventory and stat only.
     GroupingCannotFit,
-    /// The plan's path echo exceeds the provider's plan output cap.
+    /// The plan's index echo exceeds the provider's plan output cap.
     GroupingOutputCap { echo_tokens: usize, cap: usize },
     /// A message prompt does not fit the window.
     MessageCannotFit,
@@ -367,9 +366,9 @@ impl std::fmt::Display for PromptTooLarge {
         match self.cause {
             PromptCause::GroupingOutputCap { echo_tokens, cap } => write!(
                 f,
-                "the {label} reply would echo about {echo_tokens} tokens of paths for {} \
-                 file(s), more than the provider's {cap}-token plan output cap; no {label} \
-                 request was sent",
+                "the {label} reply would echo about {echo_tokens} tokens of file indices for \
+                 {} file(s), more than the provider's {cap}-token plan output cap; no \
+                 {label} request was sent",
                 self.files
             ),
             PromptCause::GroupingCannotFit | PromptCause::MessageCannotFit => write!(
@@ -419,17 +418,26 @@ pub fn ensure_prompt_fits(
     }))
 }
 
+/// Estimated tokens of a reply that lists every index `0..files` once,
+/// joined by `,`.
+fn index_echo_tokens(files: usize) -> usize {
+    let indices: Vec<String> = (0..files).map(|i| i.to_string()).collect();
+    estimate_tokens(&indices.join(","))
+}
+
 impl PromptBudget {
-    /// The grouping budget. The reply echoes every path in `files_json`, so
-    /// the echo is reserved, and a provider whose plan output cap cannot hold
-    /// it is rejected before any diff body is gathered.
+    /// The grouping budget. The reply names each of the `files` inventory
+    /// entries by its index (CLO-801), so that index echo is reserved, and a
+    /// provider whose plan output cap cannot hold it is rejected before any
+    /// diff body is gathered. The check counts only the echo, not the
+    /// summaries or the commit message.
     pub fn grouping(
         window: usize,
         target: &Target,
-        files_json: &str,
+        files: usize,
     ) -> Result<Self, GroupingRejected> {
         let facts = output_facts(target);
-        let echo_tokens = (estimate_tokens(files_json) as f64 * PATH_ECHO_FACTOR).ceil() as usize;
+        let echo_tokens = index_echo_tokens(files);
         if let Some(cap) = facts.plan_output_cap {
             if echo_tokens > cap {
                 return Err(GroupingRejected::OutputCap { echo_tokens, cap });
@@ -592,8 +600,7 @@ mod tests {
     #[test]
     fn kinds_grouping_and_message_differ() {
         let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
-        let files = r#"[{"path":"a.rs","xy":" M"}]"#;
-        let g = PromptBudget::grouping(131_072, &t, files).unwrap();
+        let g = PromptBudget::grouping(131_072, &t, 1).unwrap();
         let m = PromptBudget::message(131_072, &t);
         assert_eq!(g.kind, BudgetKind::Grouping);
         assert_eq!(m.kind, BudgetKind::Message);
@@ -609,22 +616,55 @@ mod tests {
     }
 
     #[test]
-    fn kinds_path_echo_reserve_grows_with_the_inventory() {
+    fn kinds_index_echo_reserve_grows_with_the_file_count() {
         let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
-        let small = PromptBudget::grouping(131_072, &t, "[]").unwrap();
-        let big = PromptBudget::grouping(131_072, &t, &"x".repeat(20_000)).unwrap();
-        assert!(big.completion_reserve >= small.completion_reserve + 10_000);
+        let small = PromptBudget::grouping(131_072, &t, 0).unwrap();
+        let big = PromptBudget::grouping(131_072, &t, 5_000).unwrap();
+        assert_eq!(
+            big.completion_reserve - small.completion_reserve,
+            index_echo_tokens(5_000)
+        );
+    }
+
+    #[test]
+    fn index_echo_counts_the_joined_indices() {
+        assert_eq!(index_echo_tokens(0), 0);
+        assert_eq!(index_echo_tokens(3), estimate_tokens("0,1,2"));
+        let joined: Vec<String> = (0..515).map(|i| i.to_string()).collect();
+        assert_eq!(index_echo_tokens(515), estimate_tokens(&joined.join(",")));
+    }
+
+    #[test]
+    fn anthropic_515_files_fit_the_plan_output_cap() {
+        let t = target(ProviderId::Anthropic, "claude-haiku-4-5");
+        let base = PromptBudget::grouping(200_000, &t, 0).unwrap();
+        let g = PromptBudget::grouping(200_000, &t, 515).unwrap();
+        assert_eq!(
+            g.completion_reserve - base.completion_reserve,
+            index_echo_tokens(515)
+        );
+        assert!(index_echo_tokens(515) < 1_000, "{}", index_echo_tokens(515));
     }
 
     #[test]
     fn kinds_anthropic_output_cap_rejects_grouping_not_message() {
         let t = target(ProviderId::Anthropic, "claude-haiku-4-5");
-        // ~8,000 estimated tokens of paths: the echo cannot fit in 4096.
-        let files = "p".repeat(16_000);
-        match PromptBudget::grouping(200_000, &t, &files) {
+        // 2,000 indices are about 4,450 estimated tokens: more than 4096.
+        match PromptBudget::grouping(200_000, &t, 2_000) {
             Err(GroupingRejected::OutputCap { echo_tokens, cap }) => {
                 assert_eq!(cap, crate::provider::ANTHROPIC_PLAN_MAX_TOKENS);
                 assert!(echo_tokens > cap);
+                let text = PromptTooLarge {
+                    cause: PromptCause::GroupingOutputCap { echo_tokens, cap },
+                    operation: Operation::Grouping,
+                    files: 2_000,
+                    estimate: echo_tokens,
+                    available: cap,
+                    window: 200_000,
+                }
+                .to_string();
+                assert!(text.contains("indices"), "{text}");
+                assert!(text.contains("plan output cap"), "{text}");
             }
             other => panic!("expected an output-cap rejection, got {other:?}"),
         }
@@ -669,7 +709,7 @@ mod tests {
     fn preflight_message_uses_the_generous_estimate_and_grouping_does_not() {
         let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
         let m = PromptBudget::message(131_072, &t);
-        let g = PromptBudget::grouping(131_072, &t, "[]").unwrap();
+        let g = PromptBudget::grouping(131_072, &t, 0).unwrap();
         let three_x = "x".repeat(m.available() * 3);
         assert!(ensure_prompt_fits(&three_x, &m, Operation::SingleMessage, 1).is_ok());
         assert!(ensure_prompt_fits(&three_x, &g, Operation::Grouping, 1).is_err());
@@ -698,7 +738,7 @@ mod tests {
     #[test]
     fn preflight_cause_follows_the_budget_kind() {
         let t = target(ProviderId::Groq, "openai/gpt-oss-120b");
-        let g = PromptBudget::grouping(4_096, &t, "[]").unwrap();
+        let g = PromptBudget::grouping(4_096, &t, 0).unwrap();
         let err = ensure_prompt_fits(&"x".repeat(40_000), &g, Operation::Grouping, 9).unwrap_err();
         assert!(matches!(
             err,

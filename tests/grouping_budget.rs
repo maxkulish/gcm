@@ -271,6 +271,9 @@ fn ac2_each_path_appears_once_in_one_inventory() {
         let listed = inventory.iter().filter(|e| e["path"] == *path).count();
         assert_eq!(listed, 1, "{path} listed {listed} times");
     }
+    for (i, entry) in inventory.iter().enumerate() {
+        assert_eq!(entry["i"], i, "entry {i} carries its own index");
+    }
     assert!(!user.contains("Git status"), "no second path list");
     assert_eq!(
         user.matches("further untracked files past the read cap")
@@ -420,17 +423,137 @@ fn cached_group_message_over_budget_sends_nothing() {
     assert_eq!(std::fs::read(&index).ok(), index_before, "index changed");
 }
 
-/// Anthropic caps the plan reply at 4096 tokens; 515 echoed paths exceed it,
-/// so gcm skips the grouping call and the message fallback commits.
+/// An Anthropic command against the capture listener at `url`.
+fn anthropic(repo: &Path, cfg: &Path, url: &str, args: &[&str]) -> Command {
+    let mut cmd = command(repo, cfg, args);
+    cmd.env("ANTHROPIC_API_KEY", "sk-test")
+        .env("GCM_PROVIDER", "anthropic")
+        .env("GCM_MODEL", "claude-haiku-4-5")
+        .env("GCM_ANTHROPIC_BASE_URL", url);
+    cmd
+}
+
+/// An Anthropic `tool_use` reply whose input is `plan`.
+fn anthropic_plan_reply(plan: serde_json::Value) -> (u16, String) {
+    let body = serde_json::json!({
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [{ "type": "tool_use", "id": "toolu_test", "name": "commit_plan", "input": plan }],
+        "stop_reason": "tool_use"
+    });
+    (200, body.to_string())
+}
+
+/// Anthropic caps the plan reply at 4096 tokens. 515 echoed paths exceeded it;
+/// 515 indices fit (CLO-801), so the plan call is made and an integer-index
+/// reply groups the change set.
 #[test]
-fn output_cap_rejection_falls_back_to_one_message_request() {
-    if !signing_available() {
-        eprintln!("skipping: git commit -S is not available here");
-        return;
-    }
+fn anthropic_515_files_send_one_plan_call_and_group_by_index() {
     let repo = tempfile::tempdir().unwrap();
     let cfg = tempfile::tempdir().unwrap();
-    large_tree(repo.path());
+    let paths = large_tree(repo.path());
+    let first: Vec<usize> = (0..300).collect();
+    let second: Vec<usize> = (300..paths.len()).collect();
+    let plan = serde_json::json!({ "groups": [
+        { "files": first, "summary": "first sections", "commit_message": "feat: add the first sidebar sections" },
+        { "files": second, "summary": "second sections", "commit_message": null }
+    ]});
+    let (url, captured) = capture(vec![anthropic_plan_reply(plan)]);
+
+    let out = run(anthropic(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--dry-run", "--yes"],
+    ));
+    let requests = captured.lock().unwrap().clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(requests.len(), 1, "one request, the plan call: {stderr}");
+    let payload: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
+    assert!(payload.get("tools").is_some(), "the plan call");
+    assert_eq!(payload["max_tokens"], 4096);
+    let user = payload["messages"][0]["content"].as_str().unwrap();
+    let start = user.find(":\n").expect("inventory label") + 2;
+    let end = user.find("\n\nDiff stats").expect("stat label");
+    let inventory: Vec<serde_json::Value> =
+        serde_json::from_str(&user[start..end]).expect("the inventory is one JSON array");
+    assert_eq!(inventory.len(), paths.len());
+    let env = envelope(&out);
+    assert_eq!(env["status"], "plan", "{env}");
+    let groups = env["plan"]["groups"].as_array().expect("groups");
+    assert_eq!(groups.len(), 2, "{env}");
+    let resolved: Vec<&serde_json::Value> = groups
+        .iter()
+        .flat_map(|g| g["files"].as_array().unwrap())
+        .collect();
+    assert_eq!(groups[0]["files"].as_array().unwrap().len(), 300);
+    for (i, path) in resolved.iter().enumerate() {
+        assert_eq!(**path, inventory[i]["path"], "index {i} maps to its entry");
+    }
+}
+
+/// An Anthropic plan reply cut at `max_tokens` is not a plan: gcm falls back
+/// to one message request and a single commit.
+#[test]
+fn anthropic_truncated_plan_falls_back_to_a_sent_message() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    tree_of(repo.path(), 3, 1);
+    let truncated = serde_json::json!({
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [{ "type": "text", "text": "{\"groups\": [{\"files\": [0, 1" }],
+        "stop_reason": "max_tokens"
+    })
+    .to_string();
+    let message = serde_json::json!({
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [{ "type": "text", "text": "feat: add the sidebar sections" }],
+        "stop_reason": "end_turn"
+    })
+    .to_string();
+    let (url, captured) = capture(vec![(200, truncated), (200, message)]);
+
+    let out = run(anthropic(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--dry-run"],
+    ));
+    let requests = captured.lock().unwrap().clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        requests.len(),
+        2,
+        "the plan call, then the message: {stderr}"
+    );
+    let plan: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
+    assert!(plan.get("tools").is_some(), "the plan call");
+    let fallback: serde_json::Value = serde_json::from_str(&requests[1]).unwrap();
+    assert!(fallback.get("tools").is_none(), "not the plan call");
+    let env = envelope(&out);
+    assert_eq!(env["status"], "plan", "{env}");
+    assert_eq!(env["mode"], "single");
+    assert!(
+        stderr.contains("Falling back to single-commit mode"),
+        "{stderr}"
+    );
+}
+
+/// 2,000 indices still exceed Anthropic's 4096-token plan cap: no plan call,
+/// and the refusal names the cap.
+#[test]
+fn anthropic_2000_files_refuse_the_plan_call() {
+    let repo = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    tree_of(repo.path(), 2_000, 1);
     let reply = serde_json::json!({
         "id": "msg_test",
         "type": "message",
@@ -442,22 +565,49 @@ fn output_cap_rejection_falls_back_to_one_message_request() {
     .to_string();
     let (url, captured) = capture(vec![(200, reply)]);
 
-    let mut cmd = command(repo.path(), cfg.path(), &["--json", "--yes"]);
-    cmd.env("ANTHROPIC_API_KEY", "sk-test")
-        .env("GCM_PROVIDER", "anthropic")
-        .env("GCM_MODEL", "claude-haiku-4-5")
-        .env("GCM_ANTHROPIC_BASE_URL", &url);
-    let out = run(cmd);
+    let out = run(anthropic(
+        repo.path(),
+        cfg.path(),
+        &url,
+        &["--json", "--dry-run"],
+    ));
     let requests = captured.lock().unwrap().clone();
-    assert_eq!(requests.len(), 1, "one request, the message");
-    let payload: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
-    assert!(payload.get("tools").is_none(), "not the plan call");
-    assert_eq!(payload["max_tokens"], 1024);
-    let env = envelope(&out);
-    assert_eq!(env["status"], "fallback", "{env}");
-    assert_eq!(env["fallback"]["raw_code"], "PromptBudget");
+    for request in &requests {
+        let payload: serde_json::Value = serde_json::from_str(request).unwrap();
+        assert!(payload.get("tools").is_none(), "no plan call was sent");
+    }
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("plan output cap"), "{stderr}");
+    assert!(stderr.contains("file indices"), "{stderr}");
+}
+
+/// The reply-shape line counts the integer and string references of the reply
+/// that produced the plan, at debug level only.
+#[test]
+fn plan_reply_ref_counts_are_logged_at_debug_level() {
+    let run_with = |level: Option<&str>| {
+        let repo = tempfile::tempdir().unwrap();
+        let cfg = tempfile::tempdir().unwrap();
+        let paths = tree_of(repo.path(), 3, 1);
+        let plan = serde_json::json!({ "groups": [
+            { "files": [0, paths[1], 2], "summary": "s", "commit_message": "feat: add sections" }
+        ]});
+        let (url, _captured) = capture(vec![groq_reply(&plan.to_string())]);
+        let mut cmd = groq(repo.path(), cfg.path(), &url, &["--json", "--dry-run"]);
+        if let Some(level) = level {
+            cmd.env("GCM_LOG_LEVEL", level);
+        }
+        let out = run(cmd);
+        assert_eq!(envelope(&out)["status"], "plan");
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let debug = run_with(Some("debug"));
+    assert!(
+        debug.contains("plan reply: 2 index refs, 1 path refs"),
+        "{debug}"
+    );
+    let default = run_with(None);
+    assert!(!default.contains("plan reply:"), "{default}");
 }
 
 /// A Groq chat reply whose content is `text`.
@@ -557,7 +707,7 @@ fn provider_context_window_error_stays_actionable() {
     assert!(message.contains("single-commit message"), "{message}");
 }
 
-/// The grouping prompt cannot fit even as paths and stat, while the fallback
+/// The grouping prompt cannot fit even as inventory and stat, while the fallback
 /// message, a line per file, fits the generous estimate: the plan call is
 /// skipped and the one request is a message that succeeds.
 #[test]
@@ -568,7 +718,7 @@ fn grouping_cannot_fit_falls_back_to_a_sent_message() {
     let (url, captured) = capture(vec![groq_reply("feat: add the sidebar sections")]);
 
     let mut cmd = groq(repo.path(), cfg.path(), &url, &["--json", "--dry-run"]);
-    cmd.env("GCM_CONTEXT_WINDOW_TOKENS", "80000");
+    cmd.env("GCM_CONTEXT_WINDOW_TOKENS", "35000");
     let out = run(cmd);
     let requests = captured.lock().unwrap().clone();
     let stderr = String::from_utf8_lossy(&out.stderr);
