@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-11-21 (Linear sync: CLO-950 done on main as `53bcd89`; CLO-948, CLO-949 added; Done issues archived in Linear)
+**Last Updated**: 2026-11-21 (CLO-801 merged in PR #97; live checks AC10, AC11 and the Ollama run are owner-run)
 
 ## Current Blockers
 
@@ -30,8 +30,8 @@
 > held: CLO-801 (return group assignments by index) would remove the ~36K-token output that makes the
 > grouping call slow, so a fix built purely around a longer timeout risked being obsoleted by it. CLO-798
 > shipped visibility and left `DEFAULT_TIMEOUT_SECS`, the retry constants and `is_retryable` untouched,
-> so CLO-801 can still land without undoing it - and a 515-file grouping call still needs
-> `GCM_HTTP_TIMEOUT_SECS` until one of the two input-side fixes lands.
+> and CLO-801 landed without undoing it in PR #97 (2026-11-21). Whether a 515-file grouping call
+> now fits the default timeout is AC10 of CLO-801, an owner-run live check.
 >
 > **CLO-799 did not close the complaint, and that is worth keeping on the record (2026-09-17).** CLO-799
 > shipped in v0.8.0 and fixed the step it targeted - the enable-models multiselect. The user hit the

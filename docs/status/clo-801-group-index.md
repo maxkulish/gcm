@@ -7,11 +7,12 @@
 
 ---
 
-## Current Status: Implemented, live checks open
+## Current Status: Complete, live checks open
 
 **Overall Progress**: sub-tasks 1-4 done; sub-task 5 (live re-measure) is owner-run
 **Branch**: feat/clo-801-group-index
-**Commit**: 38d0911
+**Commits**: 38d0911, 459117f
+**PR**: #97, squash-merged 2026-11-21 as e144156
 
 ---
 

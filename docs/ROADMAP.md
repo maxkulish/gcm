@@ -1,6 +1,6 @@
 # Roadmap - gcm
 
-**Last Updated**: 2026-11-21 (Linear sync: CLO-950 done on main as `53bcd89`; CLO-948, CLO-949 added; Done issues archived in Linear)
+**Last Updated**: 2026-11-21 (CLO-801 merged in PR #97; live checks AC10, AC11 and the Ollama run are owner-run)
 
 ## Summary
 
@@ -11,7 +11,7 @@
 | Phase 3: v2 Introspection & Config | 2 | 2 | Complete |
 | Phase 4: `gcm resolve` (conflict resolution) | 4 | 4 | Complete |
 | Phase 5: Provider expansion | 1 | 1 | Complete |
-| Bug fixes (cross-cutting) | 15 | 12 | In Progress |
+| Bug fixes (cross-cutting) | 15 | 13 | In Progress |
 | Phase 6: Library Extraction | 5 | 5 | Complete |
 | Maintenance (cross-cutting) | 10 | 8 | In Progress |
 
@@ -98,7 +98,7 @@ New backend: Google **Vertex AI** as a first-class provider (`ProviderId::Vertex
 | [CLO-798](https://linear.app/cloud-ai/issue/CLO-798) | Add progress and failure visibility to provider calls so a slow or retrying request is not silent | Done | CLO-488, CLO-493 (related) |
 | [CLO-799](https://linear.app/cloud-ai/issue/CLO-799) | Fix the enabled-model set pinning gcm to one model so a newer Gemini can never take effect | Done | CLO-516, CLO-547 (related) |
 | [CLO-800](https://linear.app/cloud-ai/issue/CLO-800) | Fix `gcm provider` discarding the user's `[conflict]` settings on every run | Done | CLO-555 (related) |
-| [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | In Progress | CLO-797, CLO-798 (related) |
+| [CLO-801](https://linear.app/cloud-ai/issue/CLO-801) | Return group assignments by index so the grouping plan stops echoing every changed path | Done | CLO-797, CLO-798 (related); PR #97 |
 | [CLO-802](https://linear.app/cloud-ai/issue/CLO-802) | Fix `gcm provider` keeping the old default model after the user enables a newer one | Done | CLO-799 (related - same complaint, next wizard step) |
 | [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap | Backlog | CLO-799, CLO-802 (related - third occurrence of the same complaint family) |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | Grouping token estimate undercounts emoji-heavy text | Backlog | CLO-797 (follow-up) |
