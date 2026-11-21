@@ -24,7 +24,7 @@ classification:
     scope_signal: { lean: spec, note: "No estimate; single-function change plus one PTY regression test" }
   rationale: "Contained single-module bug fix with direct prior art; the one open UX fork is settled inside /spec"
 workflow:
-  current_phase: implement
+  current_phase: pr
   status: in_progress
   created_at: '2026-11-21T00:00:00Z'
   updated_at: '2026-11-21T00:00:00Z'
@@ -64,7 +64,7 @@ phases:
     flagged_suggestions: []
     direction_chosen: "Confirm on unchanged set + SPACE hint theme (owner, 2026-11-21)"
   implement:
-    status: in_progress
+    status: complete
     commits:
       - "9918528 docs(CLO-805): spec, spec reviews and project sync for the Enable-models confirm"
       - "1b4d13c fix(CLO-805): confirm before saving an unchanged Enable-models set"
@@ -81,7 +81,11 @@ phases:
     codex_verdict: FAIL
     codex_report: docs/reviews/clo-805-codex-validation.md
     gemini_validation_report: docs/reviews/clo-805-gemini-validation.md
-  pr: { status: pending }
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/96
+    pr_number: 96
+    ci_passed: false
   complete: { status: pending }
 history:
   - timestamp: '2026-11-21T00:00:00Z'
@@ -144,3 +148,11 @@ history:
     action: codex_validation_complete
     phase: implement
     details: "Round 2: Codex FAIL (2 MEDIUM harness), Gemini PASS_WITH_NOTES (2 LOW), usable=2; all four findings fixed and verified"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt --check, clippy -D warnings (lib and tests), cargo test 623 passed"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #96 created; Linear CLO-805 moved to In Review with a PR comment"
