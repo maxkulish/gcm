@@ -1607,9 +1607,10 @@ clo805_seed() {
     "$CLO805_A" "$CLO805_A" > "$1/config.toml"
   chmod 600 "$1/config.toml"
 }
-clo805_stamp() {
-  printf '%s %s' "$(cksum < "$1/config.toml")" \
-    "$(stat -f '%m' "$1/config.toml" 2>/dev/null || stat -c '%Y' "$1/config.toml" 2>/dev/null)"
+clo805_stamp() { # exact bytes (hex) and the nanosecond mtime
+  python3 -c 'import os, sys
+p = sys.argv[1]
+print(open(p, "rb").read().hex(), os.stat(p).st_mtime_ns)' "$1/config.toml"
 }
 clo805_models() {
   python3 -c 'import sys, tomllib
@@ -1620,7 +1621,8 @@ print(",".join(sorted(p.get("models", []))) + "|" + p.get("model", ""))' "$1/con
 # Exit codes: 0/1 = gcm exit status; 10 = the filtered ENTER reached "Default model"
 # (pre-fix behavior); 11 = a second "Nothing changed" after a real change;
 # 99 = gcm was killed by a signal (the signal name is printed as "KILLED <sig>");
-# 20-29 = a prompt did not appear.
+# 20-32 = a prompt did not appear or gcm did not exit in time.
+# CLICOLOR_FORCE keeps the reverse-video filter cursor that the redraw match needs.
 clo805_run() { # <case> <config dir> <log>
   CLO805_CASE="$1" CFG="$2" GCM_BIN="$BIN" expect -c '
     set timeout 15
@@ -1645,7 +1647,7 @@ clo805_run() { # <case> <config dir> <log>
         eof { exit 26 }
       }
     }
-    spawn -noecho env -u GROQ_API_KEY -u GCM_PROVIDER GCM_CONFIG=$env(CFG) $env(GCM_BIN) provider
+    spawn -noecho env -u GROQ_API_KEY -u GCM_PROVIDER -u NO_COLOR CLICOLOR_FORCE=1 GCM_CONFIG=$env(CFG) $env(GCM_BIN) provider
     need {Provider} 21
     send "\r"
     need {API key} 22
@@ -1657,7 +1659,7 @@ clo805_run() { # <case> <config dir> <log>
         send "n"
         need {Enable models \(} 23
         send "oss-20"
-        need {oss-20\x1b\[7m[^\r]*\r\n[^\r]*gpt-oss-20b} 24
+        need {oss-20\x1b\[7m[^\r]*\r\n[^\r]*gpt-oss-20b[^\r]*SPACE to select} 24
         send " "
         need {\u25fc[^\r]*gpt-oss-20b} 30
         send "\r"
@@ -1685,8 +1687,11 @@ clo805_run() { # <case> <config dir> <log>
         send "\x03"
       }
     }
-    expect eof
-    catch wait r
+    expect {
+      eof {}
+      timeout { exec kill -9 [exp_pid]; exit 31 }
+    }
+    if {[catch wait r]} { exit 32 }
     if {[lindex $r 4] eq "CHILDKILLED"} { puts "KILLED [lindex $r 5]"; exit 99 }
     exit [lindex $r 3]
   ' >"$3" 2>&1
@@ -1695,40 +1700,40 @@ clo805_run() { # <case> <config dir> <log>
 note "CLO-805: filter to an unchecked model + ENTER asks 'Nothing changed' (PTY)"
 if command -v expect >/dev/null 2>&1 && python3 -c 'import tomllib' 2>/dev/null; then
   c="$(mktemp -d)"; clo805_seed "$c"
-  clo805_run no "$c" /tmp/gcm-clo805-no; rc=$?
+  clo805_run no "$c" "$c/run.log"; rc=$?
   got="$(clo805_models "$c")"
   if [ $rc -eq 10 ]; then
     bad "case no: the filtered ENTER reached 'Default model' where 'Nothing changed' was expected"
   else
     [ $rc -eq 0 ] && ok "case no: confirm named A, No reopened, SPACE+ENTER saved, exit 0" \
-      || bad "case no (rc=$rc): $(tail -c 300 /tmp/gcm-clo805-no)"
+      || bad "case no (rc=$rc): $(tail -c 300 "$c/run.log")"
     [ "$got" = "$CLO805_A,$CLO805_B|$CLO805_B" ] && ok "case no: models exactly {A, B}, model = B" \
       || bad "case no: saved $got"
   fi
   rm -rf "$c"
 
   c="$(mktemp -d)"; clo805_seed "$c"
-  clo805_run yes "$c" /tmp/gcm-clo805-yes; rc=$?
+  clo805_run yes "$c" "$c/run.log"; rc=$?
   got="$(clo805_models "$c")"
   [ $rc -eq 0 ] && ok "case yes: default Yes kept the set, exit 0" \
-    || bad "case yes (rc=$rc): $(tail -c 300 /tmp/gcm-clo805-yes)"
+    || bad "case yes (rc=$rc): $(tail -c 300 "$c/run.log")"
   [ "$got" = "$CLO805_A|$CLO805_A" ] && ok "case yes: models == [A], model = A" \
     || bad "case yes: saved $got"
   rm -rf "$c"
 
   c="$(mktemp -d)"; clo805_seed "$c"; before="$(clo805_stamp "$c")"
-  clo805_run esc "$c" /tmp/gcm-clo805-esc; rc=$?
+  clo805_run esc "$c" "$c/run.log"; rc=$?
   [ $rc -eq 1 ] && ok "case esc: Esc at the confirm -> exit 1" \
-    || bad "case esc (rc=$rc): $(tail -c 300 /tmp/gcm-clo805-esc)"
+    || bad "case esc (rc=$rc): $(tail -c 300 "$c/run.log")"
   [ "$before" = "$(clo805_stamp "$c")" ] && ok "case esc: config bytes and mtime unchanged" \
     || bad "case esc: config changed"
   rm -rf "$c"
 
   c="$(mktemp -d)"; clo805_seed "$c"; before="$(clo805_stamp "$c")"
-  clo805_run no-twice-ctrl-c "$c" /tmp/gcm-clo805-ctrlc; rc=$?
-  [ $rc -eq 99 ] && grep -q 'KILLED SIGINT' /tmp/gcm-clo805-ctrlc \
+  clo805_run no-twice-ctrl-c "$c" "$c/run.log"; rc=$?
+  [ $rc -eq 99 ] && grep -q 'KILLED SIGINT' "$c/run.log" \
     && ok "case no-twice-ctrl-c: Ctrl-C at the third confirm -> SIGINT" \
-    || bad "case no-twice-ctrl-c (rc=$rc): $(tail -c 300 /tmp/gcm-clo805-ctrlc)"
+    || bad "case no-twice-ctrl-c (rc=$rc): $(tail -c 300 "$c/run.log")"
   [ "$before" = "$(clo805_stamp "$c")" ] && ok "case no-twice-ctrl-c: config bytes and mtime unchanged" \
     || bad "case no-twice-ctrl-c: config changed"
   rm -rf "$c"

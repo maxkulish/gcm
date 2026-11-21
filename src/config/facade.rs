@@ -862,8 +862,10 @@ mod tests {
         )
     }
 
-    // (selected, active) for the three row kinds: active unchecked, active checked, inactive.
-    const ROW_KINDS: [(bool, bool); 3] = [(false, true), (true, true), (false, false)];
+    // (selected, active) for the four row kinds: active unchecked, active checked, inactive
+    // unchecked, inactive checked.
+    const ROW_KINDS: [(bool, bool); 4] =
+        [(false, true), (true, true), (false, false), (true, false)];
 
     #[test]
     fn space_hint_only_on_live_active_unchecked_row() {
