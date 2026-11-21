@@ -1,0 +1,162 @@
+task_id: clo-805
+task_type: specification
+linear:
+  team: Cloud-ai
+  project: GCM
+  title: Make the Enable-models multiselect resist the filter-then-forgot-SPACE trap
+  status_at_start: Backlog
+  priority: Medium
+  labels: [Bug]
+  blocks: []
+  blocked_by: []
+  branch_suggested: kmamemo/clo-805-make-the-enable-models-multiselect-resist
+  branch_actual: fix/clo-805-enable-models
+classification:
+  recommended: specification
+  chosen: specification
+  confidence: medium
+  method: probe
+  evidence:
+    blast_radius: { lean: spec, note: "One wizard step: src/config/facade.rs multiselect (Enable models), cliclack 0.5" }
+    architecture_novelty: { lean: dev, note: "cliclack multiselect exposes no filter-state hook; directions A/B need a wrapper or a post-interact check" }
+    prior_art: { lean: spec, note: "CLO-799 (note + candidate list) and CLO-802 (default radio) changed the same function" }
+    requirement_clarity: { lean: dev, note: "Ticket defers the UX direction (re-confirm / ENTER-as-SPACE / visual cue) to design time" }
+    scope_signal: { lean: spec, note: "No estimate; single-function change plus one PTY regression test" }
+  rationale: "Contained single-module bug fix with direct prior art; the one open UX fork is settled inside /spec"
+workflow:
+  current_phase: pr
+  status: in_progress
+  created_at: '2026-11-21T00:00:00Z'
+  updated_at: '2026-11-21T00:00:00Z'
+phases:
+  discovery: { status: skipped, skip_reason: "Specification task", approved: true }
+  design: { status: skipped, reason: "Specification task - using /spec instead" }
+  spec:
+    status: complete
+    spec_file: specs/2026-11-21-clo-805-enable-models-unchanged-confirm.md
+    approved: true
+    approved_blob: df488de0d16e5a14ecae91440aaa404c1945279e
+    review_gemini: docs/reviews/clo-805-spec-review-gemini.md
+    review_codex: docs/reviews/clo-805-spec-review-codex.md
+    review_synthesis: docs/reviews/clo-805-spec-review-synthesis.md
+    review_verdict: NEEDS_REVISION
+    review_completed: true
+    review_applied: true
+    applied_suggestions:
+      - "A1 0600 seed"
+      - "A2 offline no-key fixture"
+      - "A3 exact {A, B} assertion"
+      - "A4 reopen semantics + retype filter"
+      - "A5/N4 state-aware space_hint + renderer tests"
+      - "A6/N5 RAII ThemeGuard"
+      - "A7 Esc case"
+      - "D2 no-key route"
+      - "D3 mirror sibling Err(_) mapping"
+      - "D4 sub-task owns interact()"
+      - "N1 fresh non-skipped PTY run"
+      - "N2 pre-fix baseline"
+      - "N6 default-Yes recorded"
+      - "N7 paging limit scoped"
+      - "N8 wait for redraw"
+      - "N9 hint example"
+      - "N10 README AC10"
+      - "N11 clone + line range"
+    flagged_suggestions: []
+    direction_chosen: "Confirm on unchanged set + SPACE hint theme (owner, 2026-11-21)"
+  implement:
+    status: complete
+    commits:
+      - "9918528 docs(CLO-805): spec, spec reviews and project sync for the Enable-models confirm"
+      - "1b4d13c fix(CLO-805): confirm before saving an unchanged Enable-models set"
+      - "b0e7626 docs(CLO-805): workflow implement state"
+      - "b0da917 test(CLO-805): harden the Enable-models PTY cases after pre-PR validation"
+    acceptance: "scripts/acceptance.sh on the fresh release build: PASS=304 FAIL=0 SKIP=1 (AC-7 pre-existing); CLO-805 PTY cases no/yes/esc/no-twice-ctrl-c all pass, not skipped"
+    baseline: "origin/main 4c04ce0 release build, case no: filtered ENTER reached Default model (rc=10), no hint"
+    make_check: pass
+    public_surface: pass
+    validation_round_1: "Codex FAIL (3 MEDIUM, 2 LOW: unbounded EOF wait, cksum + whole-second mtime, /tmp log paths, color-dependent redraw match, stale PROJECT.md); Gemini PASS_WITH_NOTES (3 LOW). Owner chose fix; all findings fixed in b0da917"
+    acceptance_after_fix: "PASS=304 FAIL=0 SKIP=1; NO_COLOR=1 case no passes; same-content rewrite changes the stamp; origin/main baseline case no rc=10"
+    validation_round_2: "Codex FAIL (2 MEDIUM: fixture failure did not stop the spawn, Linux LANG=C draws [+] not the filled box); Gemini PASS_WITH_NOTES (2 LOW: PROJECT.md header, line wrap). All fixed in the round-2 commit; suite PASS=304 FAIL=0 SKIP=1, guard returns 40 on empty, unseeded and mode-644 fixtures"
+    codex_validated: true
+    codex_verdict: FAIL
+    codex_report: docs/reviews/clo-805-codex-validation.md
+    gemini_validation_report: docs/reviews/clo-805-gemini-validation.md
+  pr:
+    status: in_progress
+    pr_url: https://github.com/maxkulish/gcm/pull/96
+    pr_number: 96
+    ci_passed: true
+  complete: { status: pending }
+history:
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: workflow_started
+    phase: init
+    details: New workflow for CLO-805 on branch fix/clo-805-enable-models
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: task_classified
+    phase: init
+    details: "recommended=specification, chosen=specification, confidence=medium (3/5)"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: project_sync_start
+    phase: init
+    details: "PROJECT.md Active Work (1/3), ROADMAP.md In Progress, DEPENDENCIES.md removed from Unblocked & Ready"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: spec_written
+    phase: spec
+    details: "Owner chose Confirm + hint; spec saved to specs/2026-11-21-clo-805-enable-models-unchanged-confirm.md"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: spec_review_complete
+    phase: spec
+    details: "lok exit 0; Gemini APPROVE_WITH_SUGGESTIONS, Codex NEEDS_REVISION; consensus NEEDS_REVISION"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: spec_review_applied
+    phase: spec
+    details: "18 items applied, 0 ADR conflicts; D3 resolved to mirror sibling prompts (Err(_) => wizard_cancelled)"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: spec_revised
+    phase: spec
+    details: "Owner revise: keep Yes default and D3; version = 2 seed; space+ENTER at key prompt; pre-fix baseline reaches Default model; ENTER without navigation asserts exactly {A, B} with B default; Esc exit 1; No twice + Ctrl-C SIGINT; bytes+mtime on both cancel paths; AC8 panic guarantee limited to unwinding"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: spec_approved
+    phase: spec
+    details: "Owner approved spec blob df488de0; proceed to implement without re-review; non-skipped release-build PTY run still required"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: phase_completed
+    phase: implement
+    details: "Sub-tasks 1-3 done: confirm loop + helpers + ThemeGuard in src/config/facade.rs, README AC10 sentence, four PTY cases in scripts/acceptance.sh"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: commit_created
+    phase: implement
+    details: "9918528 (docs), 1b4d13c (fix)"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: implementation_complete
+    phase: implement
+    details: "acceptance PASS=304 FAIL=0 SKIP=1 with CLO-805 PTY cases non-skipped; pre-fix baseline reaches Default model; make check and public-surface check pass"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Round 1: Codex FAIL, Gemini PASS_WITH_NOTES, usable=2; owner chose fix"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: commit_created
+    phase: implement
+    details: "b0da917 harness hardening for all round-1 findings"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pushed_to_remote
+    phase: implement
+    details: "fix/clo-805-enable-models at b0da917; validation round 2 started"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: codex_validation_complete
+    phase: implement
+    details: "Round 2: Codex FAIL (2 MEDIUM harness), Gemini PASS_WITH_NOTES (2 LOW), usable=2; all four findings fixed and verified"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pre_flight_checks_passed
+    phase: pr
+    details: "fmt --check, clippy -D warnings (lib and tests), cargo test 623 passed"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: pr_created
+    phase: pr
+    details: "PR #96 created; Linear CLO-805 moved to In Review with a PR comment"
+  - timestamp: '2026-11-21T00:00:00Z'
+    action: ci_passed
+    phase: pr
+    details: "PR #96 build/test passed on macos-latest and ubuntu-latest at 256649d; MERGEABLE CLEAN; no reviews yet"

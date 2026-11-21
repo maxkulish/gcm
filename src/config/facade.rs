@@ -234,18 +234,35 @@ pub fn run_provider_wizard() -> Result<bool, GcmError> {
          checked set. Filtering alone does NOT change the selection.",
     )
     .map_err(wizard_io)?;
-    let selected =
-        match multiselect::<String>("Enable models (SPACE toggles; ENTER saves the checked set)")
-            .items(&model_items)
-            .initial_values(initial_enabled)
-            .required(true)
-            .filter_mode()
-            .max_rows(15)
-            .interact()
-        {
+    // CLO-805: an unchanged submit is usually the filter-then-ENTER trap, so confirm it
+    // by name; "No" reopens the list in its fresh state.
+    let selected = loop {
+        let theme = ThemeGuard::new();
+        let result =
+            multiselect::<String>("Enable models (SPACE toggles; ENTER saves the checked set)")
+                .items(&model_items)
+                .initial_values(initial_enabled.clone())
+                .required(true)
+                .filter_mode()
+                .max_rows(15)
+                .interact();
+        drop(theme);
+        let picked = match result {
             Ok(v) => v,
             Err(_) => return wizard_cancelled(),
         };
+        if !enabled_set_unchanged(id, &initial_enabled, &picked) {
+            break picked;
+        }
+        match cliclack::confirm(unchanged_confirm_message(&picked))
+            .initial_value(true)
+            .interact()
+        {
+            Ok(true) => break picked,
+            Ok(false) => continue,
+            Err(_) => return wizard_cancelled(),
+        }
+    };
 
     // 5. Choose exactly one default among the selected models.
     let default_items: Vec<(String, String, &'static str)> = selected
@@ -469,6 +486,88 @@ fn probe_ollama(base_url: &str) -> bool {
 fn wizard_cancelled() -> Result<bool, GcmError> {
     let _ = cliclack::outro_cancel("Cancelled - no changes made.");
     Ok(false)
+}
+
+/// True when the provider already had enabled models and `selected` is that same
+/// set (canonical ids, order ignored) - the submit the CLO-805 confirm guards.
+fn enabled_set_unchanged(id: ProviderId, initial: &[String], selected: &[String]) -> bool {
+    if initial.is_empty() {
+        return false;
+    }
+    let canon = |v: &[String]| -> std::collections::BTreeSet<String> {
+        v.iter().map(|m| canonicalize_model(id, m)).collect()
+    };
+    canon(initial) == canon(selected)
+}
+
+/// The confirm prompt shown when the Enable-models submit did not change the set.
+fn unchanged_confirm_message(selected: &[String]) -> String {
+    let names = selected.join(", ");
+    if selected.len() == 1 {
+        format!("Nothing changed: only {names} stays enabled. Keep it?")
+    } else {
+        format!("Nothing changed: only {names} stay enabled. Keep them?")
+    }
+}
+
+const SPACE_HINT: &str = "SPACE to select";
+
+/// The hint for one Enable-models row: the highlighted unchecked row of a live
+/// prompt also says how to check it; every other row keeps its own hint.
+fn space_hint(state: &cliclack::ThemeState, hint: &str, selected: bool, active: bool) -> String {
+    use cliclack::ThemeState;
+    match state {
+        ThemeState::Active | ThemeState::Error(_) if active && !selected => {
+            if hint.is_empty() {
+                SPACE_HINT.to_string()
+            } else {
+                format!("{hint}; {SPACE_HINT}")
+            }
+        }
+        _ => hint.to_string(),
+    }
+}
+
+/// cliclack's built-in look (its own default theme type is private).
+struct DefaultTheme;
+
+impl cliclack::Theme for DefaultTheme {}
+
+/// The Enable-models theme: the default look plus [`space_hint`] on checkbox rows.
+/// `checkbox_item` is only called by the multiselect. Known cliclack 0.5.4 limit:
+/// narrowing the filter after scrolling past `max_rows` can leave the highlighted
+/// row outside the rendered page, and then no row shows the hint.
+struct EnableModelsTheme;
+
+impl cliclack::Theme for EnableModelsTheme {
+    fn checkbox_item(
+        &self,
+        state: &cliclack::ThemeState,
+        selected: bool,
+        active: bool,
+        label: &str,
+        hint: &str,
+    ) -> String {
+        let hint = space_hint(state, hint, selected, active);
+        DefaultTheme.checkbox_item(state, selected, active, label, &hint)
+    }
+}
+
+/// RAII guard that installs [`EnableModelsTheme`] and restores cliclack's default
+/// theme on drop (submit, cancel, error and an unwinding panic).
+struct ThemeGuard;
+
+impl ThemeGuard {
+    fn new() -> Self {
+        cliclack::set_theme(EnableModelsTheme);
+        ThemeGuard
+    }
+}
+
+impl Drop for ThemeGuard {
+    fn drop(&mut self) {
+        cliclack::reset_theme();
+    }
 }
 
 /// [`read_line`] mapped into the wizard's error type. A read failure mid-setup
@@ -701,6 +800,116 @@ mod tests {
         // (set_echo fails harmlessly and is ignored).
         {
             let _g = EchoGuard::new();
+        }
+    }
+
+    fn strs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn enabled_set_unchanged_true_for_same_set() {
+        let a = strs(&["m1", "m2"]);
+        assert!(enabled_set_unchanged(ProviderId::Groq, &a, &a));
+        assert!(enabled_set_unchanged(
+            ProviderId::Groq,
+            &a,
+            &strs(&["m2", "m1"])
+        ));
+        assert!(enabled_set_unchanged(
+            ProviderId::Ollama,
+            &strs(&["llama3"]),
+            &strs(&["llama3:latest"])
+        ));
+    }
+
+    #[test]
+    fn enabled_set_unchanged_false_for_changed_or_empty_initial() {
+        let a = strs(&["m1", "m2"]);
+        let g = ProviderId::Groq;
+        assert!(!enabled_set_unchanged(g, &a, &strs(&["m1", "m2", "m3"])));
+        assert!(!enabled_set_unchanged(g, &a, &strs(&["m1"])));
+        assert!(!enabled_set_unchanged(g, &a, &strs(&["m1", "m3"])));
+        assert!(!enabled_set_unchanged(g, &[], &strs(&["m1"])));
+    }
+
+    #[test]
+    fn unchanged_confirm_message_names_every_model() {
+        assert_eq!(
+            unchanged_confirm_message(&strs(&["a"])),
+            "Nothing changed: only a stays enabled. Keep it?"
+        );
+        assert_eq!(
+            unchanged_confirm_message(&strs(&["a", "b"])),
+            "Nothing changed: only a, b stay enabled. Keep them?"
+        );
+    }
+
+    fn all_theme_states() -> Vec<cliclack::ThemeState> {
+        use cliclack::ThemeState;
+        vec![
+            ThemeState::Active,
+            ThemeState::Error("bad".to_string()),
+            ThemeState::Submit,
+            ThemeState::Cancel,
+        ]
+    }
+
+    fn is_live(state: &cliclack::ThemeState) -> bool {
+        matches!(
+            state,
+            cliclack::ThemeState::Active | cliclack::ThemeState::Error(_)
+        )
+    }
+
+    // (selected, active) for the four row kinds: active unchecked, active checked, inactive
+    // unchecked, inactive checked.
+    const ROW_KINDS: [(bool, bool); 4] =
+        [(false, true), (true, true), (false, false), (true, false)];
+
+    #[test]
+    fn space_hint_only_on_live_active_unchecked_row() {
+        for state in all_theme_states() {
+            for (selected, active) in ROW_KINDS {
+                for hint in ["", "not in live catalog"] {
+                    let got = space_hint(&state, hint, selected, active);
+                    let want = if is_live(&state) && active && !selected {
+                        if hint.is_empty() {
+                            "SPACE to select".to_string()
+                        } else {
+                            format!("{hint}; SPACE to select")
+                        }
+                    } else {
+                        hint.to_string()
+                    };
+                    assert_eq!(
+                        got, want,
+                        "selected={selected} active={active} hint={hint:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn checkbox_item_matches_default_except_hinted_row() {
+        use cliclack::Theme;
+        for state in all_theme_states() {
+            for (selected, active) in ROW_KINDS {
+                for hint in ["", "not in live catalog"] {
+                    let ours = EnableModelsTheme.checkbox_item(&state, selected, active, "m", hint);
+                    let default = DefaultTheme.checkbox_item(&state, selected, active, "m", hint);
+                    if is_live(&state) && active && !selected {
+                        assert!(ours.contains("SPACE to select"), "{ours:?}");
+                        assert_ne!(ours, default);
+                        if !hint.is_empty() {
+                            assert!(ours.contains("not in live catalog; SPACE to select"));
+                        }
+                    } else {
+                        assert_eq!(ours, default, "selected={selected} active={active}");
+                    }
+                }
+            }
         }
     }
 }

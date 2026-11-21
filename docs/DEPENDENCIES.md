@@ -1,6 +1,6 @@
 # Dependencies - gcm
 
-**Last Updated**: 2026-11-21 (CLO-801 merged in PR #97; live checks AC10, AC11 and the Ollama run are owner-run)
+**Last Updated**: 2026-11-21 (CLO-805 in the PR phase on `fix/clo-805-enable-models`; CLO-801 merged in PR #97, live checks AC10, AC11 and the Ollama run are owner-run)
 
 ## Current Blockers
 
@@ -18,7 +18,6 @@
 
 | Task | Dependencies Satisfied | Ready Since |
 |------|------------------------|-------------|
-| [CLO-805](https://linear.app/cloud-ai/issue/CLO-805) | No dependencies; root cause confirmed by PTY reproduction, candidate directions written | 2026-09-18 |
 | [CLO-921](https://linear.app/cloud-ai/issue/CLO-921) | CLO-797 merged; owner decision needed on replacing the D4 estimator | 2026-10-29 |
 | [CLO-948](https://linear.app/cloud-ai/issue/CLO-948) | CLO-945 merged (PR #90) | 2026-11-20 |
 | [CLO-949](https://linear.app/cloud-ai/issue/CLO-949) | CLO-945 merged (PR #90) | 2026-11-20 |
