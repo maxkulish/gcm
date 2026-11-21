@@ -43,7 +43,7 @@ workflow:
   current_phase: implement
   status: in_progress
   created_at: '2026-11-21T00:00:00Z'
-  updated_at: '2026-11-21T00:00:00Z'
+  updated_at: '2026-11-21T11:30:00Z'
 phases:
   discovery:
     status: skipped
@@ -64,6 +64,14 @@ phases:
     review_synthesis: docs/reviews/clo-801-spec-review-synthesis.md
   implement:
     status: in_progress
+    status_file: docs/status/clo-801-group-index.md
+    last_phase_completed: 'Sub-task 4: build plan, budget, cache and integration tests'
+    commits:
+    - 38d0911
+    live_checks_open:
+    - AC10 Vertex 515-file run
+    - AC11 Anthropic 515-file run
+    - Ollama prompt-only run
   pr:
     status: pending
   complete:
@@ -103,3 +111,15 @@ history:
   action: spec_approved
   phase: spec
   details: 'Owner approved spec blob 654c1c45f877f0c6f4c9ab0f23b6a0143f8ce274. Keep the build_plan debug ref-count line. Live-run rule: if the Ollama reply fails to parse before build_plan receives it, record the failure with counts unavailable, never as zero counts. Row 24a verifies the 35000 window in implementation; AC10, AC11 and the Ollama run stay open for live verification'
+- timestamp: '2026-11-21T11:25:00Z'
+  action: phase_completed
+  phase: implement
+  details: 'Sub-tasks 1-4 in 38d0911: inventory i field, PlanReply/FileRef/resolve, prompt and providers, build_plan resolve_reply with debug ref counts, index-echo budget, FINGERPRINT_VERSION 4, grouping_budget 515/2000/debug/35000 cases. cargo test, clippy -D warnings and check-public-surface pass'
+- timestamp: '2026-11-21T11:26:00Z'
+  action: pushed_to_remote
+  phase: implement
+  details: feat/clo-801-group-index at 38d0911
+- timestamp: '2026-11-21T11:30:00Z'
+  action: implementation_complete
+  phase: implement
+  details: Sub-task 5 (live re-measure AC10, AC11, Ollama) left for the owner; commands go in the PR body
